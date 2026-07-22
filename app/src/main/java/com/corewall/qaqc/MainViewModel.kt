@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.corewall.qaqc.data.AppRepository
 import com.corewall.qaqc.data.AppSettings
 import com.corewall.qaqc.data.SettingsStore
+import com.corewall.qaqc.data.db.BarCountEntity
 import com.corewall.qaqc.data.db.CommentEntity
 import com.corewall.qaqc.data.model.PlanElement
 import com.corewall.qaqc.data.model.ScheduleData
@@ -19,7 +20,14 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class AppTab { PLAN, ATTENTION, TOOLS, SETTINGS }
+/**
+ * أدوات التطبيق — كل أداة ليها تبويباتها السفلية الخاصة.
+ * إضافة أداة جديدة = قيمة جديدة هنا + شاشاتها في MainActivity، والباقي ثابت.
+ */
+enum class AppModule(val title: String) {
+    REINFORCEMENT("Corewall Reinforcement"),
+    COUNTING("Corewall Counting")
+}
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -37,8 +45,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val settings: StateFlow<AppSettings> = settingsStore.settings
 
-    private val _tab = MutableStateFlow(AppTab.PLAN)
-    val tab: StateFlow<AppTab> = _tab
+    private val _module = MutableStateFlow(AppModule.REINFORCEMENT)
+    val module: StateFlow<AppModule> = _module
+
+    /** رقم التبويب السفلي جوّه الأداة الحالية (بيترجّع للأول مع تغيير الأداة). */
+    private val _tabIndex = MutableStateFlow(0)
+    val tabIndex: StateFlow<Int> = _tabIndex
 
     private val _currentLevel = MutableStateFlow("GROUND")
     val currentLevel: StateFlow<String> = _currentLevel
@@ -69,7 +81,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Actions ----------
 
-    fun setTab(tab: AppTab) { _tab.value = tab }
+    fun setModule(module: AppModule) {
+        if (_module.value == module) return
+        _module.value = module
+        _tabIndex.value = 0
+        _selectedElementId.value = null
+        _namingMode.value = false
+    }
+
+    fun setTabIndex(index: Int) { _tabIndex.value = index }
 
     fun setLevel(level: String) {
         if (level in levels) _currentLevel.value = level
@@ -132,6 +152,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.update(transform)
+
+    // ---------- Corewall Counting ----------
+
+    val barCounts: StateFlow<List<BarCountEntity>> = repo.barCounts
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** حفظ صفوف العدّ لعنصر — بيقفل الـSheet بعد الحفظ. */
+    fun saveBarCounts(elementId: String, entries: List<BarCountEntity>) {
+        viewModelScope.launch {
+            repo.replaceBarCounts(elementId, entries)
+            _selectedElementId.value = null
+        }
+    }
 
     // ---------- Derived ----------
 

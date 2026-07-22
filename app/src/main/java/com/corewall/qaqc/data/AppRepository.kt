@@ -2,6 +2,7 @@ package com.corewall.qaqc.data
 
 import android.content.Context
 import com.corewall.qaqc.data.db.AppDatabase
+import com.corewall.qaqc.data.db.BarCountEntity
 import com.corewall.qaqc.data.db.CommentEntity
 import com.corewall.qaqc.data.db.ElementNameEntity
 import com.corewall.qaqc.data.db.InspectionEntity
@@ -69,6 +70,19 @@ class AppRepository(context: Context) {
 
     suspend fun clearRangeEdit(mark: String, rowIndex: Int) = db.rangeEditDao().delete(mark, rowIndex)
 
+    // ---------- عدّاد الأسياخ (Corewall Counting) ----------
+
+    val barCounts: Flow<List<BarCountEntity>> = db.barCountDao().observeAll()
+
+    /** استبدال كل صفوف العدّ لعنصر معيّن (بيتنادى من زرار الحفظ في الـSheet). */
+    suspend fun replaceBarCounts(elementId: String, entries: List<BarCountEntity>) {
+        db.barCountDao().deleteForElement(elementId)
+        val cleaned = entries
+            .filter { it.count > 0 && it.diameter > 0 }
+            .map { it.copy(id = 0, elementId = elementId) }
+        if (cleaned.isNotEmpty()) db.barCountDao().upsertAll(cleaned)
+    }
+
     // ---------- تطبيق التعديلات فوق الجدول المرجعي ----------
 
     fun parsePatch(patchJson: String): Map<String, String> =
@@ -125,7 +139,8 @@ class AppRepository(context: Context) {
         val names: List<ElementNameEntity>,
         val inspections: List<InspectionEntity>,
         val comments: List<CommentEntity>,
-        val rangeEdits: List<RangeEditEntity>
+        val rangeEdits: List<RangeEditEntity>,
+        val barCounts: List<BarCountEntity> = emptyList()
     )
 
     suspend fun exportBackupJson(): String = json.encodeToString(
@@ -134,7 +149,8 @@ class AppRepository(context: Context) {
             names = db.elementNameDao().getAll(),
             inspections = db.inspectionDao().getAll(),
             comments = db.commentDao().getAll(),
-            rangeEdits = db.rangeEditDao().getAll()
+            rangeEdits = db.rangeEditDao().getAll(),
+            barCounts = db.barCountDao().getAll()
         )
     )
 
@@ -145,6 +161,8 @@ class AppRepository(context: Context) {
         db.inspectionDao().upsertAll(backup.inspections)
         db.commentDao().upsertAll(backup.comments)
         db.rangeEditDao().upsertAll(backup.rangeEdits)
-        "تم استيراد ${backup.names.size} اسم و${backup.inspections.size} حالة فحص و${backup.comments.size} كومنت"
+        db.barCountDao().upsertAll(backup.barCounts.map { it.copy(id = 0) })
+        "تم استيراد ${backup.names.size} اسم و${backup.inspections.size} حالة فحص " +
+            "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ"
     }
 }

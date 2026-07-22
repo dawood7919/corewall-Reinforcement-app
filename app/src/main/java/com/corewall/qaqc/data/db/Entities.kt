@@ -33,6 +33,25 @@ data class CommentEntity(
 )
 
 /**
+ * عدّاد أسياخ (أداة Corewall Counting): صف واحد = عدد + قطر
+ * لعنصر معيّن، من مصدر "SITE" (الموقع) أو "DRAWING" (الشوب دروينج).
+ */
+@Serializable
+@Entity(tableName = "bar_counts")
+data class BarCountEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val elementId: String,
+    val source: String,
+    val diameter: Int,
+    val count: Int
+) {
+    companion object {
+        const val SOURCE_SITE = "SITE"
+        const val SOURCE_DRAWING = "DRAWING"
+    }
+}
+
+/**
  * تعديل يدوي على صف من جدول التسليح المرجعي.
  * patchJson: خريطة {اسم الحقل -> القيمة الجديدة} بصيغة JSON،
  * بتتطبق فوق بيانات الأصول (read-only) وقت العرض.

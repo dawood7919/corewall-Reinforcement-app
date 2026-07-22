@@ -61,6 +61,21 @@ interface CommentDao {
 }
 
 @Dao
+interface BarCountDao {
+    @Query("SELECT * FROM bar_counts")
+    fun observeAll(): Flow<List<BarCountEntity>>
+
+    @Query("SELECT * FROM bar_counts")
+    suspend fun getAll(): List<BarCountEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<BarCountEntity>)
+
+    @Query("DELETE FROM bar_counts WHERE elementId = :elementId")
+    suspend fun deleteForElement(elementId: String)
+}
+
+@Dao
 interface RangeEditDao {
     @Query("SELECT * FROM range_edits")
     fun observeAll(): Flow<List<RangeEditEntity>>

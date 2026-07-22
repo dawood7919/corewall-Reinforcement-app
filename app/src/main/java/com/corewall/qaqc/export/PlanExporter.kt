@@ -192,6 +192,114 @@ object PlanExporter {
         }
     }
 
+    // ---------------------------------------------------------------- Counting
+
+    data class CountingConfig(
+        val planData: PlanData,
+        val names: Map<String, String>,
+        /** elementId -> نص العدّ ("22Ø12+4Ø16" أو "22Ø12 / 20Ø12"). */
+        val labels: Map<String, String>,
+        val title: String,
+        val totalsLine: String = ""
+    )
+
+    /**
+     * دروينج العدّ: العناصر بألوان باهتة والأعداد فوقها بخط أسود واضح —
+     * في منتصف كل جدار، موازية له، وحجمها نسبة من سُمك الجدار على البلان.
+     */
+    fun drawCounting(canvas: Canvas, width: Float, height: Float, cfg: CountingConfig) {
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        }
+
+        canvas.drawColor(Color.WHITE)
+
+        val margin = width * 0.03f
+        val titleSize = width * 0.022f
+        text.textSize = titleSize
+        canvas.drawText(cfg.title, margin, margin + titleSize, text)
+        text.textSize = titleSize * 0.6f
+        text.typeface = Typeface.SANS_SERIF
+        val stamp = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ENGLISH).format(Date())
+        canvas.drawText(stamp, margin, margin + titleSize * 1.8f, text)
+
+        val vb = cfg.planData.viewBoxRect
+        val top = margin + titleSize * 2.6f
+        val legendH = titleSize * 2.2f
+        val availW = width - margin * 2
+        val availH = height - top - margin - legendH
+        val scale = min(availW / vb[2], availH / vb[3]).toFloat()
+        val offX = margin + (availW - vb[2] * scale).toFloat() / 2
+        val offY = top + (availH - vb[3] * scale).toFloat() / 2
+
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        }
+
+        for (el in cfg.planData.elements) {
+            val r = RectF(
+                ((el.x - vb[0]) * scale + offX).toFloat(),
+                ((el.y - vb[1]) * scale + offY).toFloat(),
+                ((el.x + el.width - vb[0]) * scale + offX).toFloat(),
+                ((el.y + el.height - vb[1]) * scale + offY).toFloat()
+            )
+            val label = cfg.labels[el.id]
+            fill.color = categoryColor(el.cat)
+            fill.alpha = if (label == null) 45 else 110
+            canvas.drawRect(r, fill)
+
+            if (label != null) {
+                // حجم النص نسبة من سُمك العنصر على البلان نفسه
+                val thickness = min(r.width(), r.height())
+                labelPaint.textSize = (thickness * 0.8f).coerceAtLeast(width * 0.006f)
+                val tw = labelPaint.measureText(label)
+                val cx = r.centerX()
+                val cy = r.centerY()
+                if (el.height > el.width * 1.5) {
+                    canvas.save()
+                    canvas.rotate(-90f, cx, cy)
+                    canvas.drawText(label, cx - tw / 2, cy + labelPaint.textSize / 3, labelPaint)
+                    canvas.restore()
+                } else {
+                    canvas.drawText(label, cx - tw / 2, cy + labelPaint.textSize / 3, labelPaint)
+                }
+            }
+        }
+
+        if (cfg.totalsLine.isNotEmpty()) {
+            text.textSize = titleSize * 0.7f
+            text.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            text.color = Color.BLACK
+            canvas.drawText(cfg.totalsLine, margin, height - margin, text)
+        }
+    }
+
+    fun renderCountingBitmap(cfg: CountingConfig, widthPx: Int = 2400): Bitmap {
+        val vb = cfg.planData.viewBoxRect
+        val heightPx = (widthPx * (vb[3] / vb[2]) * 1.18).toInt()
+        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        drawCounting(Canvas(bitmap), widthPx.toFloat(), heightPx.toFloat(), cfg)
+        return bitmap
+    }
+
+    fun writeCountingPng(os: OutputStream, cfg: CountingConfig) {
+        renderCountingBitmap(cfg).compress(Bitmap.CompressFormat.PNG, 100, os)
+    }
+
+    fun writeCountingPdf(os: OutputStream, cfg: CountingConfig) {
+        val pageW = 842
+        val pageH = 595
+        val doc = PdfDocument()
+        val page = doc.startPage(PdfDocument.PageInfo.Builder(pageW, pageH, 1).create())
+        drawCounting(page.canvas, pageW.toFloat(), pageH.toFloat(), cfg)
+        doc.finishPage(page)
+        doc.writeTo(os)
+        doc.close()
+    }
+
     fun renderBitmap(cfg: Config, widthPx: Int = 2400): Bitmap {
         val vb = cfg.planData.viewBoxRect
         val heightPx = (widthPx * (vb[3] / vb[2]) * 1.18).toInt()

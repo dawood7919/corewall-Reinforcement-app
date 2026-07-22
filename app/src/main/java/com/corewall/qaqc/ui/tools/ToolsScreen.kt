@@ -26,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.corewall.qaqc.AppTab
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.model.InspectionStatus
 import com.corewall.qaqc.domain.SteelCalculator
@@ -75,7 +74,7 @@ private fun SearchSection(vm: MainViewModel) {
                 onClick = {
                     if (element != null) {
                         vm.selectElement(element.id)
-                        vm.setTab(AppTab.PLAN)
+                        vm.setTabIndex(0)
                     }
                 },
                 color = MaterialTheme.colorScheme.surface,
