@@ -2,6 +2,7 @@ package com.corewall.qaqc
 
 import android.app.Application
 import com.corewall.qaqc.data.AppRepository
+import com.corewall.qaqc.data.FilesManager
 import com.corewall.qaqc.data.SettingsStore
 
 class CoreWallApp : Application() {
@@ -9,10 +10,13 @@ class CoreWallApp : Application() {
         private set
     lateinit var settingsStore: SettingsStore
         private set
+    lateinit var filesManager: FilesManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
         repository = AppRepository(this)
         settingsStore = SettingsStore(this)
+        filesManager = FilesManager(this)
     }
 }

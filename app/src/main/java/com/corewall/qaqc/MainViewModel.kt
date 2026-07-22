@@ -3,11 +3,18 @@ package com.corewall.qaqc
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
 import com.corewall.qaqc.data.AppRepository
 import com.corewall.qaqc.data.AppSettings
+import com.corewall.qaqc.data.FilesManager
 import com.corewall.qaqc.data.SettingsStore
 import com.corewall.qaqc.data.db.BarCountEntity
 import com.corewall.qaqc.data.db.CommentEntity
+import com.corewall.qaqc.data.db.ElementAttachmentEntity
+import com.corewall.qaqc.data.db.PdfAnnotationEntity
+import com.corewall.qaqc.data.db.TaskEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.corewall.qaqc.data.model.PlanElement
 import com.corewall.qaqc.data.model.ScheduleData
 import com.corewall.qaqc.domain.AttentionDiff
@@ -26,12 +33,14 @@ import kotlinx.coroutines.launch
  */
 enum class AppModule(val title: String) {
     REINFORCEMENT("Corewall Reinforcement"),
-    COUNTING("Corewall Counting")
+    COUNTING("Corewall Counting"),
+    DATA("Data")
 }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val repo: AppRepository = (app as CoreWallApp).repository
+    val files: FilesManager = (app as CoreWallApp).filesManager
     private val settingsStore: SettingsStore = (app as CoreWallApp).settingsStore
 
     val planData = repo.planData
@@ -164,6 +173,102 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             repo.replaceBarCounts(elementId, entries)
             _selectedElementId.value = null
         }
+    }
+
+    // ---------- أداة Data: بلان فيل + الملفات + المهام + عارض PDF ----------
+
+    val attachments: StateFlow<List<ElementAttachmentEntity>> = repo.attachments
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addDataComment(elementId: String, text: String) {
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            repo.addAttachment(
+                ElementAttachmentEntity(
+                    elementId = elementId,
+                    level = _currentLevel.value,
+                    type = ElementAttachmentEntity.TYPE_COMMENT,
+                    text = text.trim(),
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    /** نسخ ملفات مختارة كمرفقات لعنصر في الدور الحالي. */
+    fun addDataFiles(elementId: String, uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val level = _currentLevel.value
+        viewModelScope.launch {
+            val copied = withContext(Dispatchers.IO) {
+                files.importUris(uris, files.attachmentsDir(level, elementId))
+            }
+            copied.forEach { file ->
+                repo.addAttachment(
+                    ElementAttachmentEntity(
+                        elementId = elementId,
+                        level = level,
+                        type = ElementAttachmentEntity.TYPE_FILE,
+                        text = file.name,
+                        filePath = file.absolutePath,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+            }
+        }
+    }
+
+    fun deleteAttachment(entity: ElementAttachmentEntity) {
+        viewModelScope.launch { repo.deleteAttachment(entity) }
+    }
+
+    val tasks: StateFlow<List<TaskEntity>> = repo.tasks
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun upsertTask(task: TaskEntity) {
+        viewModelScope.launch { repo.upsertTask(task) }
+    }
+
+    fun toggleTaskDone(task: TaskEntity) {
+        viewModelScope.launch {
+            repo.upsertTask(
+                task.copy(
+                    done = !task.done,
+                    completedAt = if (!task.done) System.currentTimeMillis() else null
+                )
+            )
+        }
+    }
+
+    fun deleteTask(id: Long) {
+        viewModelScope.launch { repo.deleteTask(id) }
+    }
+
+    fun deleteCompletedTasks() {
+        viewModelScope.launch { repo.deleteCompletedTasks() }
+    }
+
+    // -------- عارض PDF الداخلي --------
+
+    private val _openPdfPath = MutableStateFlow<String?>(null)
+    val openPdfPath: StateFlow<String?> = _openPdfPath
+
+    fun openPdf(path: String) { _openPdfPath.value = path }
+    fun closePdf() { _openPdfPath.value = null }
+
+    val pdfAnnotations: StateFlow<List<PdfAnnotationEntity>> = repo.pdfAnnotations
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addPdfAnnotation(entity: PdfAnnotationEntity) {
+        viewModelScope.launch { repo.addPdfAnnotation(entity) }
+    }
+
+    fun undoLastPdfAnnotation(filePath: String, page: Int) {
+        viewModelScope.launch { repo.undoLastPdfAnnotation(filePath, page) }
+    }
+
+    fun clearPdfPage(filePath: String, page: Int) {
+        viewModelScope.launch { repo.clearPdfPage(filePath, page) }
     }
 
     // ---------- Derived ----------

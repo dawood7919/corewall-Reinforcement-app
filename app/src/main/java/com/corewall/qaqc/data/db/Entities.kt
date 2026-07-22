@@ -52,6 +52,67 @@ data class BarCountEntity(
 }
 
 /**
+ * مرفق/كومنت على عنصر في دور معيّن (أداة Data — قسم بلان فيل).
+ * type = COMMENT: كومنت نصي في text.
+ * type = FILE: ملف متخزن على القرص في filePath واسمه المعروض في text.
+ */
+@Serializable
+@Entity(tableName = "element_attachments")
+data class ElementAttachmentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val elementId: String,
+    val level: String,
+    val type: String,
+    val text: String,
+    val filePath: String? = null,
+    val timestamp: Long
+) {
+    companion object {
+        const val TYPE_COMMENT = "COMMENT"
+        const val TYPE_FILE = "FILE"
+    }
+}
+
+/** مهمة في الـTo-Do (أداة Data — تبويب المهام). priority: 0 عادي / 1 مهم / 2 عاجل. */
+@Serializable
+@Entity(tableName = "tasks")
+data class TaskEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val notes: String = "",
+    val done: Boolean = false,
+    val priority: Int = 0,
+    val dueDate: Long? = null,
+    val level: String? = null,
+    val createdAt: Long,
+    val completedAt: Long? = null
+)
+
+/**
+ * تعليق مرسوم على صفحة PDF (هايلايت/سهم/مستطيل/دايرة/رسم حر).
+ * النقط متخزنة منسّبة (0..1) لأبعاد الصفحة عشان تثبت مع أي زوم أو تصدير.
+ */
+@Serializable
+@Entity(tableName = "pdf_annotations")
+data class PdfAnnotationEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val filePath: String,
+    val page: Int,
+    val tool: String,
+    val color: Long,
+    val pointsJson: String,
+    val createdAt: Long
+) {
+    companion object {
+        const val TOOL_HIGHLIGHT = "HIGHLIGHT"
+        const val TOOL_RECT = "RECT"
+        const val TOOL_CIRCLE = "CIRCLE"
+        const val TOOL_ARROW = "ARROW"
+        const val TOOL_FREEHAND = "FREEHAND"
+    }
+}
+
+/**
  * تعديل يدوي على صف من جدول التسليح المرجعي.
  * patchJson: خريطة {اسم الحقل -> القيمة الجديدة} بصيغة JSON،
  * بتتطبق فوق بيانات الأصول (read-only) وقت العرض.

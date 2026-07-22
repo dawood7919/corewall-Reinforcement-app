@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -49,6 +51,11 @@ import com.corewall.qaqc.ui.attention.AttentionScreen
 import com.corewall.qaqc.ui.counting.CountingPlanScreen
 import com.corewall.qaqc.ui.counting.CountingReportScreen
 import com.corewall.qaqc.ui.counting.CountingSheet
+import com.corewall.qaqc.ui.dataroom.DataSheet
+import com.corewall.qaqc.ui.dataroom.FilesScreen
+import com.corewall.qaqc.ui.dataroom.PlanFilesScreen
+import com.corewall.qaqc.ui.dataroom.TasksScreen
+import com.corewall.qaqc.ui.pdf.PdfViewerScreen
 import com.corewall.qaqc.ui.plan.ElementSheet
 import com.corewall.qaqc.ui.plan.PlanScreen
 import com.corewall.qaqc.ui.settings.SettingsScreen
@@ -88,11 +95,18 @@ private fun tabsFor(module: AppModule): List<TabSpec> = when (module) {
         TabSpec("الريبورت", Icons.Filled.Summarize),
         TabSpec("الإعدادات", Icons.Filled.Settings)
     )
+    AppModule.DATA -> listOf(
+        TabSpec("بلان فيل", Icons.Filled.Map),
+        TabSpec("الملفات", Icons.Filled.Folder),
+        TabSpec("المهام", Icons.Filled.Checklist),
+        TabSpec("الإعدادات", Icons.Filled.Settings)
+    )
 }
 
 private fun moduleIcon(module: AppModule): ImageVector = when (module) {
     AppModule.REINFORCEMENT -> Icons.Filled.ViewInAr
     AppModule.COUNTING -> Icons.Filled.Calculate
+    AppModule.DATA -> Icons.Filled.Folder
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -183,8 +197,16 @@ fun MainScreen(vm: MainViewModel) {
                     ElementSheet(vm = vm, element = element, onDismiss = { vm.selectElement(null) })
                 AppModule.COUNTING ->
                     CountingSheet(vm = vm, element = element, onDismiss = { vm.selectElement(null) })
+                AppModule.DATA ->
+                    DataSheet(vm = vm, element = element, onDismiss = { vm.selectElement(null) })
             }
         }
+    }
+
+    // عارض الـPDF الداخلي — بيغطي الشاشة كلها فوق أي حاجة
+    val openPdfPath by vm.openPdfPath.collectAsStateWithLifecycle()
+    openPdfPath?.let { path ->
+        PdfViewerScreen(vm = vm, path = path, onClose = { vm.closePdf() })
     }
 }
 
@@ -200,6 +222,12 @@ private fun ModuleContent(vm: MainViewModel, module: AppModule, tabIndex: Int, m
         AppModule.COUNTING -> when (tabIndex) {
             0 -> CountingPlanScreen(vm, modifier)
             1 -> CountingReportScreen(vm, modifier)
+            else -> SettingsScreen(vm, modifier)
+        }
+        AppModule.DATA -> when (tabIndex) {
+            0 -> PlanFilesScreen(vm, modifier)
+            1 -> FilesScreen(vm, modifier)
+            2 -> TasksScreen(vm, modifier)
             else -> SettingsScreen(vm, modifier)
         }
     }

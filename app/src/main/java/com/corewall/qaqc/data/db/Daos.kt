@@ -76,6 +76,69 @@ interface BarCountDao {
 }
 
 @Dao
+interface ElementAttachmentDao {
+    @Query("SELECT * FROM element_attachments ORDER BY timestamp DESC")
+    fun observeAll(): Flow<List<ElementAttachmentEntity>>
+
+    @Query("SELECT * FROM element_attachments")
+    suspend fun getAll(): List<ElementAttachmentEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: ElementAttachmentEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<ElementAttachmentEntity>)
+
+    @Query("DELETE FROM element_attachments WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface TaskDao {
+    @Query("SELECT * FROM tasks ORDER BY done ASC, priority DESC, createdAt DESC")
+    fun observeAll(): Flow<List<TaskEntity>>
+
+    @Query("SELECT * FROM tasks")
+    suspend fun getAll(): List<TaskEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: TaskEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<TaskEntity>)
+
+    @Query("DELETE FROM tasks WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM tasks WHERE done = 1")
+    suspend fun deleteCompleted()
+}
+
+@Dao
+interface PdfAnnotationDao {
+    @Query("SELECT * FROM pdf_annotations")
+    fun observeAll(): Flow<List<PdfAnnotationEntity>>
+
+    @Query("SELECT * FROM pdf_annotations")
+    suspend fun getAll(): List<PdfAnnotationEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: PdfAnnotationEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<PdfAnnotationEntity>)
+
+    @Query("DELETE FROM pdf_annotations WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM pdf_annotations WHERE filePath = :filePath AND page = :page")
+    suspend fun clearPage(filePath: String, page: Int)
+
+    @Query("DELETE FROM pdf_annotations WHERE id = (SELECT MAX(id) FROM pdf_annotations WHERE filePath = :filePath AND page = :page)")
+    suspend fun deleteLast(filePath: String, page: Int)
+}
+
+@Dao
 interface RangeEditDao {
     @Query("SELECT * FROM range_edits")
     fun observeAll(): Flow<List<RangeEditEntity>>

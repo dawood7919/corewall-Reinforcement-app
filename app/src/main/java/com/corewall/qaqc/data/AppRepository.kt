@@ -4,9 +4,12 @@ import android.content.Context
 import com.corewall.qaqc.data.db.AppDatabase
 import com.corewall.qaqc.data.db.BarCountEntity
 import com.corewall.qaqc.data.db.CommentEntity
+import com.corewall.qaqc.data.db.ElementAttachmentEntity
 import com.corewall.qaqc.data.db.ElementNameEntity
 import com.corewall.qaqc.data.db.InspectionEntity
+import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.RangeEditEntity
+import com.corewall.qaqc.data.db.TaskEntity
 import com.corewall.qaqc.data.model.BeamRange
 import com.corewall.qaqc.data.model.PlanData
 import com.corewall.qaqc.data.model.ScheduleData
@@ -130,6 +133,32 @@ class AppRepository(context: Context) {
         )
     }
 
+    // ---------- أداة Data: مرفقات العناصر + المهام + تعليقات PDF ----------
+
+    val attachments: Flow<List<ElementAttachmentEntity>> = db.elementAttachmentDao().observeAll()
+
+    suspend fun addAttachment(entity: ElementAttachmentEntity) =
+        db.elementAttachmentDao().upsert(entity)
+
+    suspend fun deleteAttachment(entity: ElementAttachmentEntity) {
+        db.elementAttachmentDao().delete(entity.id)
+        entity.filePath?.let { runCatching { java.io.File(it).delete() } }
+    }
+
+    val tasks: Flow<List<TaskEntity>> = db.taskDao().observeAll()
+
+    suspend fun upsertTask(task: TaskEntity) = db.taskDao().upsert(task)
+    suspend fun deleteTask(id: Long) = db.taskDao().delete(id)
+    suspend fun deleteCompletedTasks() = db.taskDao().deleteCompleted()
+
+    val pdfAnnotations: Flow<List<PdfAnnotationEntity>> = db.pdfAnnotationDao().observeAll()
+
+    suspend fun addPdfAnnotation(entity: PdfAnnotationEntity) = db.pdfAnnotationDao().upsert(entity)
+    suspend fun undoLastPdfAnnotation(filePath: String, page: Int) =
+        db.pdfAnnotationDao().deleteLast(filePath, page)
+    suspend fun clearPdfPage(filePath: String, page: Int) =
+        db.pdfAnnotationDao().clearPage(filePath, page)
+
     // ---------- نسخة احتياطية ----------
 
     @Serializable
@@ -140,7 +169,10 @@ class AppRepository(context: Context) {
         val inspections: List<InspectionEntity>,
         val comments: List<CommentEntity>,
         val rangeEdits: List<RangeEditEntity>,
-        val barCounts: List<BarCountEntity> = emptyList()
+        val barCounts: List<BarCountEntity> = emptyList(),
+        val tasks: List<TaskEntity> = emptyList(),
+        val attachments: List<ElementAttachmentEntity> = emptyList(),
+        val pdfAnnotations: List<PdfAnnotationEntity> = emptyList()
     )
 
     suspend fun exportBackupJson(): String = json.encodeToString(
@@ -150,7 +182,10 @@ class AppRepository(context: Context) {
             inspections = db.inspectionDao().getAll(),
             comments = db.commentDao().getAll(),
             rangeEdits = db.rangeEditDao().getAll(),
-            barCounts = db.barCountDao().getAll()
+            barCounts = db.barCountDao().getAll(),
+            tasks = db.taskDao().getAll(),
+            attachments = db.elementAttachmentDao().getAll(),
+            pdfAnnotations = db.pdfAnnotationDao().getAll()
         )
     )
 
@@ -162,7 +197,10 @@ class AppRepository(context: Context) {
         db.commentDao().upsertAll(backup.comments)
         db.rangeEditDao().upsertAll(backup.rangeEdits)
         db.barCountDao().upsertAll(backup.barCounts.map { it.copy(id = 0) })
+        db.taskDao().upsertAll(backup.tasks.map { it.copy(id = 0) })
+        db.elementAttachmentDao().upsertAll(backup.attachments.map { it.copy(id = 0) })
+        db.pdfAnnotationDao().upsertAll(backup.pdfAnnotations.map { it.copy(id = 0) })
         "تم استيراد ${backup.names.size} اسم و${backup.inspections.size} حالة فحص " +
-            "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ"
+            "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ و${backup.tasks.size} مهمة"
     }
 }
