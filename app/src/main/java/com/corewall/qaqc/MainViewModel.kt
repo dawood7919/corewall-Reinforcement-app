@@ -28,13 +28,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * أدوات التطبيق — كل أداة ليها تبويباتها السفلية الخاصة.
- * إضافة أداة جديدة = قيمة جديدة هنا + شاشاتها في MainActivity، والباقي ثابت.
+ * العدسات (Lenses) — بدل الأدوات المنفصلة: نفس المسقط بيتعاد تلوينه
+ * وتفاصيله حسب العدسة، من غير ما تفقد سياقك (دور/عنصر/زوم).
  */
-enum class AppModule(val title: String) {
-    REINFORCEMENT("Corewall Reinforcement"),
-    COUNTING("Corewall Counting"),
-    DATA("Data")
+enum class Lens(val label: String) {
+    REINF("التسليح"),
+    COUNT("العدّ"),
+    DATA("الداتا")
 }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -54,10 +54,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val settings: StateFlow<AppSettings> = settingsStore.settings
 
-    private val _module = MutableStateFlow(AppModule.REINFORCEMENT)
-    val module: StateFlow<AppModule> = _module
+    private val _lens = MutableStateFlow(Lens.REINF)
+    val lens: StateFlow<Lens> = _lens
 
-    /** رقم التبويب السفلي جوّه الأداة الحالية (بيترجّع للأول مع تغيير الأداة). */
     private val _tabIndex = MutableStateFlow(0)
     val tabIndex: StateFlow<Int> = _tabIndex
 
@@ -90,12 +89,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Actions ----------
 
-    fun setModule(module: AppModule) {
-        if (_module.value == module) return
-        _module.value = module
-        _tabIndex.value = 0
-        _selectedElementId.value = null
-        _namingMode.value = false
+    /** تبديل العدسة بيحافظ على السياق: نفس الدور ونفس العنصر المختار. */
+    fun setLens(lens: Lens) {
+        _lens.value = lens
+        if (lens != Lens.REINF) _namingMode.value = false
     }
 
     fun setTabIndex(index: Int) { _tabIndex.value = index }
@@ -167,10 +164,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val barCounts: StateFlow<List<BarCountEntity>> = repo.barCounts
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** حفظ صفوف العدّ لعنصر — بيقفل الـSheet بعد الحفظ. */
+    /** حفظ صفوف العدّ لعنصر في الدور الحالي — بيقفل الـSheet بعد الحفظ. */
     fun saveBarCounts(elementId: String, entries: List<BarCountEntity>) {
         viewModelScope.launch {
-            repo.replaceBarCounts(elementId, entries)
+            repo.replaceBarCounts(elementId, _currentLevel.value, entries)
             _selectedElementId.value = null
         }
     }

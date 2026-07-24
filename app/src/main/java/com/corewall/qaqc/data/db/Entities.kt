@@ -1,5 +1,6 @@
 package com.corewall.qaqc.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
@@ -33,14 +34,16 @@ data class CommentEntity(
 )
 
 /**
- * عدّاد أسياخ (أداة Corewall Counting): صف واحد = عدد + قطر
- * لعنصر معيّن، من مصدر "SITE" (الموقع) أو "DRAWING" (الشوب دروينج).
+ * عدّاد أسياخ (عدسة العدّ): صف واحد = عدد + قطر لعنصر معيّن **في دور معيّن**
+ * من مصدر "SITE" (الموقع) أو "DRAWING" (الشوب دروينج).
+ * كل دور معزول تماماً عن غيره.
  */
 @Serializable
 @Entity(tableName = "bar_counts")
 data class BarCountEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val elementId: String,
+    @ColumnInfo(defaultValue = "GROUND") val level: String = "GROUND",
     val source: String,
     val diameter: Int,
     val count: Int

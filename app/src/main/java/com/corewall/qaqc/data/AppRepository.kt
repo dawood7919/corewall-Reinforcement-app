@@ -77,12 +77,12 @@ class AppRepository(context: Context) {
 
     val barCounts: Flow<List<BarCountEntity>> = db.barCountDao().observeAll()
 
-    /** استبدال كل صفوف العدّ لعنصر معيّن (بيتنادى من زرار الحفظ في الـSheet). */
-    suspend fun replaceBarCounts(elementId: String, entries: List<BarCountEntity>) {
-        db.barCountDao().deleteForElement(elementId)
+    /** استبدال صفوف العدّ لعنصر في دور معيّن — أدوار تانية مش بتتأثر. */
+    suspend fun replaceBarCounts(elementId: String, level: String, entries: List<BarCountEntity>) {
+        db.barCountDao().deleteForElement(elementId, level)
         val cleaned = entries
             .filter { it.count > 0 && it.diameter > 0 }
-            .map { it.copy(id = 0, elementId = elementId) }
+            .map { it.copy(id = 0, elementId = elementId, level = level) }
         if (cleaned.isNotEmpty()) db.barCountDao().upsertAll(cleaned)
     }
 

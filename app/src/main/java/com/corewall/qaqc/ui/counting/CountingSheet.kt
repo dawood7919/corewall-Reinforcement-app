@@ -49,23 +49,24 @@ import com.corewall.qaqc.data.model.PlanElement
 private data class EntryDraft(var countText: String, var diameter: Int)
 
 /**
- * قائمة تسجيل أعداد الأسياخ الرأسية لجدار: قسم للموقع وقسم للدروينج،
- * كل صف = عدد + مؤشر اختيار القطر. الحفظ بيقفل الـSheet.
+ * محتوى عدسة العدّ جوّه الـSheet الموحّد: قسم للموقع وقسم للدروينج،
+ * كل صف = عدد + مؤشر اختيار القطر. **معزول لكل دور** — الحفظ بيقفل الـSheet.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CountingSheet(vm: MainViewModel, element: PlanElement, onDismiss: () -> Unit) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+fun CountingSheetContent(vm: MainViewModel, element: PlanElement) {
     val barCounts by vm.barCounts.collectAsStateWithLifecycle()
     val names by vm.names.collectAsStateWithLifecycle()
+    val level by vm.currentLevel.collectAsStateWithLifecycle()
 
-    val existing = remember(element.id) { barCounts.filter { it.elementId == element.id } }
-    val siteDrafts = remember(element.id) {
+    val existing = remember(element.id, level) {
+        barCounts.filter { it.elementId == element.id && it.level == level }
+    }
+    val siteDrafts = remember(element.id, level) {
         siteOf(existing).map { EntryDraft(it.count.toString(), it.diameter) }
             .ifEmpty { listOf(EntryDraft("", 12)) }
             .toMutableStateList()
     }
-    val drawingDrafts = remember(element.id) {
+    val drawingDrafts = remember(element.id, level) {
         drawingOf(existing).map { EntryDraft(it.count.toString(), it.diameter) }
             .ifEmpty { listOf(EntryDraft("", 12)) }
             .toMutableStateList()
@@ -75,47 +76,49 @@ fun CountingSheet(vm: MainViewModel, element: PlanElement, onDismiss: () -> Unit
         fun convert(drafts: List<EntryDraft>, source: String) = drafts.mapNotNull { d ->
             val count = d.countText.trim().toIntOrNull() ?: return@mapNotNull null
             if (count <= 0) null
-            else BarCountEntity(elementId = element.id, source = source, diameter = d.diameter, count = count)
+            else BarCountEntity(
+                elementId = element.id,
+                level = level,
+                source = source,
+                diameter = d.diameter,
+                count = count
+            )
         }
         return convert(siteDrafts, BarCountEntity.SOURCE_SITE) +
             convert(drawingDrafts, BarCountEntity.SOURCE_DRAWING)
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            val mark = names[element.id]
-            Text(
-                "عدّ الأسياخ الرأسية — ${mark ?: element.id}",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(12.dp))
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+    ) {
+        val mark = names[element.id]
+        Text(
+            "عدّ الأسياخ — ${mark ?: element.id} · دور $level",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(12.dp))
 
-            EntrySection(
-                title = "الموجود في الموقع",
-                drafts = siteDrafts
-            )
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(8.dp))
-            EntrySection(
-                title = "كما في الدروينج",
-                drafts = drawingDrafts
-            )
+        EntrySection(
+            title = "الموجود في الموقع",
+            drafts = siteDrafts
+        )
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(8.dp))
+        EntrySection(
+            title = "كما في الدروينج",
+            drafts = drawingDrafts
+        )
 
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { vm.saveBarCounts(element.id, toEntities()) }) {
-                    Text("حفظ وإغلاق")
-                }
-                TextButton(onClick = onDismiss) { Text("إلغاء") }
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { vm.saveBarCounts(element.id, toEntities()) }) {
+                Text("حفظ وإغلاق")
             }
+            TextButton(onClick = { vm.selectElement(null) }) { Text("إلغاء") }
         }
     }
 }

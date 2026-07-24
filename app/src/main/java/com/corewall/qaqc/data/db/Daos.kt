@@ -71,8 +71,8 @@ interface BarCountDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<BarCountEntity>)
 
-    @Query("DELETE FROM bar_counts WHERE elementId = :elementId")
-    suspend fun deleteForElement(elementId: String)
+    @Query("DELETE FROM bar_counts WHERE elementId = :elementId AND level = :level")
+    suspend fun deleteForElement(elementId: String, level: String)
 }
 
 @Dao

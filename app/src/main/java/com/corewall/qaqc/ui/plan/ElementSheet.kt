@@ -62,24 +62,15 @@ import java.util.Locale
 
 private val timeFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ENGLISH)
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** محتوى عدسة التسليح جوّه الـSheet الموحّد (وضع التسمية أو التفاصيل). */
 @Composable
-fun ElementSheet(vm: MainViewModel, element: PlanElement, onDismiss: () -> Unit) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+fun ReinforcementSheetContent(vm: MainViewModel, element: PlanElement) {
     val namingMode by vm.namingMode.collectAsStateWithLifecycle()
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
-        ) {
-            if (namingMode) {
-                NamingContent(vm, element)
-            } else {
-                DetailsContent(vm, element)
-            }
+    Column(Modifier.fillMaxWidth()) {
+        if (namingMode) {
+            NamingContent(vm, element)
+        } else {
+            DetailsContent(vm, element)
         }
     }
 }
@@ -262,11 +253,11 @@ private fun DetailsContent(vm: MainViewModel, element: PlanElement) {
             )
         }
 
-        // -------- الكومنتات --------
+        // -------- الكومنتات (معزولة لكل دور) --------
         Spacer(Modifier.height(14.dp))
-        Text("الكومنتات", style = MaterialTheme.typography.titleSmall)
+        Text("الكومنتات — دور $level", style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.height(6.dp))
-        val comments = allComments.filter { it.elementId == element.id }
+        val comments = allComments.filter { it.elementId == element.id && it.level == level }
         comments.forEach { c ->
             Row(
                 Modifier
@@ -413,7 +404,14 @@ private fun SpecLine(label: String, value: String) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+        // الكولاوتات بخط مونوسبيس (هوية Reimagined)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = com.corewall.qaqc.ui.theme.PlexMono
+            ),
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 

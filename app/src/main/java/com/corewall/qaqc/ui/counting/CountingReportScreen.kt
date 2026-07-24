@@ -27,14 +27,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 
 /**
- * ريبورت العدّ: إجمالي أعداد الأسياخ من كل قطر — في الموقع وفي
- * الشوب دروينج — مع الفرق، وتفصيلة لكل جدار متسجّل.
+ * ريبورت العدّ **للدور الحالي بس** (كل دور معزول): إجمالي أعداد الأسياخ
+ * من كل قطر — الموقع والشوب دروينج والفرق — وتفصيلة لكل جدار متسجّل.
  */
 @Composable
 fun CountingReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
-    val barCounts by vm.barCounts.collectAsStateWithLifecycle()
+    val allCounts by vm.barCounts.collectAsStateWithLifecycle()
     val names by vm.names.collectAsStateWithLifecycle()
+    val level by vm.currentLevel.collectAsStateWithLifecycle()
 
+    val barCounts = remember(allCounts, level) { allCounts.filter { it.level == level } }
     val siteTotals = remember(barCounts) { totalsByDiameter(siteOf(barCounts)) }
     val drawingTotals = remember(barCounts) { totalsByDiameter(drawingOf(barCounts)) }
     val allDiameters = remember(barCounts) { (siteTotals.keys + drawingTotals.keys).toSortedSet().toList() }
@@ -47,11 +49,17 @@ fun CountingReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
     ) {
         item {
-            Text("إجمالي الأعداد لكل قطر", style = MaterialTheme.typography.titleMedium)
+            com.corewall.qaqc.ui.LevelSelector(
+                levels = vm.levels,
+                current = level,
+                onPick = vm::setLevel,
+                onStep = vm::stepLevel
+            )
+            Text("إجمالي الأعداد — دور $level", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             if (allDiameters.isEmpty()) {
                 Text(
-                    "لسه مفيش أعداد متسجّلة — افتح البلان ودوس على أي جدار.",
+                    "لسه مفيش أعداد متسجّلة في دور $level — افتح البلان (عدسة العدّ) ودوس على أي جدار.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {

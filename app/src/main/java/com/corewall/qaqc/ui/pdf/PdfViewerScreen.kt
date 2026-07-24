@@ -19,8 +19,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -177,10 +179,11 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize()) {
-            // الشريط العلوي
+            // الشريط العلوي (مظبوط تحت الـstatus bar)
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -236,41 +239,68 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 }
             }
 
-            // شريط الأدوات
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                ToolButton(Icons.Filled.PanTool, "تحريك وزوم", tool == PdfTool.PAN) { tool = PdfTool.PAN }
-                ToolButton(Icons.Filled.Highlight, "هايلايت", tool == PdfTool.HIGHLIGHT) { tool = PdfTool.HIGHLIGHT }
-                ToolButton(Icons.Filled.CropSquare, "مستطيل", tool == PdfTool.RECT) { tool = PdfTool.RECT }
-                ToolButton(Icons.Filled.RadioButtonUnchecked, "دايرة", tool == PdfTool.CIRCLE) { tool = PdfTool.CIRCLE }
-                ToolButton(Icons.AutoMirrored.Filled.CallMade, "سهم", tool == PdfTool.ARROW) { tool = PdfTool.ARROW }
-                ToolButton(Icons.Filled.Draw, "رسم حر", tool == PdfTool.FREEHAND) { tool = PdfTool.FREEHAND }
-                Spacer(Modifier.width(8.dp))
-                PALETTE.forEachIndexed { i, c ->
-                    Box(
-                        Modifier
-                            .padding(3.dp)
-                            .size(if (i == colorIdx) 30.dp else 24.dp)
-                            .background(Color(c), CircleShape)
-                            .pointerInput(i) { detectTapGestures { colorIdx = i } }
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { if (pageIndex > 0) pageIndex-- }, enabled = pageIndex > 0) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "السابقة")
-                }
-                Text("${pageIndex + 1} / $pageCount", style = MaterialTheme.typography.labelMedium)
-                IconButton(
-                    onClick = { if (pageIndex < pageCount - 1) pageIndex++ },
-                    enabled = pageIndex < pageCount - 1
+            // شريط الأدوات (سطرين مظبوطين فوق الـnavigation bar)
+            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "التالية")
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        ToolButton(Icons.Filled.PanTool, "تحريك وزوم", tool == PdfTool.PAN) { tool = PdfTool.PAN }
+                        ToolButton(Icons.Filled.Highlight, "هايلايت", tool == PdfTool.HIGHLIGHT) { tool = PdfTool.HIGHLIGHT }
+                        ToolButton(Icons.Filled.CropSquare, "مستطيل", tool == PdfTool.RECT) { tool = PdfTool.RECT }
+                        ToolButton(Icons.Filled.RadioButtonUnchecked, "دايرة", tool == PdfTool.CIRCLE) { tool = PdfTool.CIRCLE }
+                        ToolButton(Icons.AutoMirrored.Filled.CallMade, "سهم", tool == PdfTool.ARROW) { tool = PdfTool.ARROW }
+                        ToolButton(Icons.Filled.Draw, "رسم حر", tool == PdfTool.FREEHAND) { tool = PdfTool.FREEHAND }
+                        Spacer(Modifier.width(6.dp))
+                        PALETTE.forEachIndexed { i, c ->
+                            Box(
+                                Modifier
+                                    .padding(3.dp)
+                                    .size(if (i == colorIdx) 30.dp else 24.dp)
+                                    .background(Color(c), CircleShape)
+                                    .pointerInput(i) { detectTapGestures { colorIdx = i } }
+                            )
+                        }
+                    }
+                    if (pageCount > 1) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = { if (pageIndex > 0) pageIndex-- }, enabled = pageIndex > 0) {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "السابقة")
+                            }
+                            androidx.compose.material3.Slider(
+                                value = pageIndex.toFloat(),
+                                onValueChange = { pageIndex = it.toInt().coerceIn(0, pageCount - 1) },
+                                valueRange = 0f..(pageCount - 1).toFloat(),
+                                steps = (pageCount - 2).coerceAtLeast(0),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                "${pageIndex + 1}/$pageCount",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 6.dp)
+                            )
+                            IconButton(
+                                onClick = { if (pageIndex < pageCount - 1) pageIndex++ },
+                                enabled = pageIndex < pageCount - 1
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "التالية")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -311,11 +341,13 @@ private fun PdfPageCanvas(
     val bw = bitmap.width.toFloat()
     val bh = bitmap.height.toFloat()
 
+    // العرض الافتراضي: الصفحة بعرض الشاشة كامل (fit-width) ومبدأها من فوق —
+    // ولو الصفحة أقصر من الشاشة بتتوسّط رأسياً.
     fun baseTransform(size: IntSize): Pair<Float, Offset> {
         if (size.width == 0 || size.height == 0) return 1f to Offset.Zero
-        val base = min(size.width / bw, size.height / bh)
-        val off = Offset((size.width - bw * base) / 2, (size.height - bh * base) / 2)
-        return base to off
+        val base = size.width / bw
+        val yOff = ((size.height - bh * base) / 2).coerceAtLeast(0f)
+        return base to Offset(0f, yOff)
     }
 
     /** مستطيل عرض الصفحة على الشاشة بعد الزوم. */
@@ -440,7 +472,7 @@ private fun DrawScope.drawShape(toolName: String, color: Color, points: List<Off
 
 // ---------------------------------------------------------------- Rendering
 
-private fun renderPage(renderer: PdfRenderer, lock: Any, index: Int, targetWidth: Int = 1600): Bitmap {
+private fun renderPage(renderer: PdfRenderer, lock: Any, index: Int, targetWidth: Int = 2048): Bitmap {
     synchronized(lock) {
         val page = renderer.openPage(index)
         try {

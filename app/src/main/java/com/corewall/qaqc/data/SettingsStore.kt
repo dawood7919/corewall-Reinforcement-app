@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 enum class AppTheme(val label: String) {
-    IOS_LIGHT("فاتح (iOS)"),
+    IOS_LIGHT("فاتح"),
     DARK_OLED("دارك OLED"),
     BLUEPRINT("Blueprint هندسي")
 }
