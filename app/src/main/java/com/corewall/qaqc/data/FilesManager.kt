@@ -72,6 +72,18 @@ class FilesManager(private val context: Context) {
         }
     }
 
+    /** ملف صورة جديد فاضي لالتقاط صورة بالكاميرا (جوّه مجلد صور الملاحظات). */
+    fun newImageFile(level: String, elementId: String): File {
+        val dir = File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").apply { mkdirs() }
+        return File(dir, "IMG_${System.currentTimeMillis()}.jpg")
+    }
+
+    /** نسخ صور مختارة من المعرض لمجلد صور الملاحظات — بترجع مساراتها. */
+    fun importNoteImages(uris: List<Uri>, level: String, elementId: String): List<File> {
+        val dir = File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").apply { mkdirs() }
+        return importUris(uris, dir)
+    }
+
     fun mimeOf(file: File): String {
         val ext = file.extension.lowercase()
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"

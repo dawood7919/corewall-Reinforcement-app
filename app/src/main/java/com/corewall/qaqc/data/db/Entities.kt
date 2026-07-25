@@ -77,6 +77,23 @@ data class ElementAttachmentEntity(
 }
 
 /**
+ * ملاحظة غنية على عنصر في دور معيّن (عزل كامل لكل دور):
+ * نص قابل للتنسيق (Markdown) + صور مرفقة (مسارات ملفات) + عنوان.
+ */
+@Serializable
+@Entity(tableName = "notes")
+data class NoteEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val elementId: String,
+    val level: String,
+    val title: String = "",
+    val body: String = "",
+    val imagePathsJson: String = "[]",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
  * مهمة في الـTo-Do — **مربوطة بدور واحد** (عزل كامل: مهام الدور بتظهر
  * لما تكون شغّال عليه بس). priority: 0 عادي / 1 مهم / 2 عاجل.
  */

@@ -9,24 +9,25 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -60,17 +61,21 @@ internal fun attachmentIconFor(name: String): ImageVector {
 }
 
 /**
- * محتوى عدسة الداتا جوّه الـSheet الموحّد: كومنتات ومرفقات العنصر
- * في الدور الحالي **بس** (كل دور معزول) — فتح/مشاركة/حذف وإضافة.
+ * محتوى عدسة الداتا جوّه الـSheet الموحّد: ملاحظات غنية (كروت) + مرفقات
+ * العنصر في الدور الحالي **بس** (كل دور معزول).
  */
 @Composable
 fun DataSheetContent(vm: MainViewModel, element: PlanElement) {
     val context = LocalContext.current
     val level by vm.currentLevel.collectAsStateWithLifecycle()
     val attachments by vm.attachments.collectAsStateWithLifecycle()
+    val notes by vm.notes.collectAsStateWithLifecycle()
     val names by vm.names.collectAsStateWithLifecycle()
 
-    val items = attachments.filter { it.elementId == element.id && it.level == level }
+    val files = attachments.filter {
+        it.elementId == element.id && it.level == level && it.type == ElementAttachmentEntity.TYPE_FILE
+    }
+    val elementNotes = notes.filter { it.elementId == element.id && it.level == level }
 
     val pickFiles = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -91,42 +96,86 @@ fun DataSheetContent(vm: MainViewModel, element: PlanElement) {
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
 
-        if (items.isEmpty()) {
-            Text(
-                "مفيش كومنتات أو مرفقات للعنصر ده في الدور ده لسه.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(8.dp))
-        }
-
-        items.forEach { item ->
-            AttachmentRow(vm, item)
-            HorizontalDivider()
-        }
-
-        Spacer(Modifier.height(12.dp))
-        var newComment by remember { mutableStateOf("") }
+        // -------- الملاحظات (كروت) --------
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = newComment,
-                onValueChange = { newComment = it },
-                label = { Text("اكتب كومنت…") },
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(
-                onClick = { vm.addDataComment(element.id, newComment); newComment = "" },
-                enabled = newComment.isNotBlank()
-            ) {
-                Icon(Icons.Filled.Send, contentDescription = "إضافة")
+            Text("الملاحظات", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Button(onClick = { vm.openNoteEditor(element.id) }) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("ملاحظة جديدة")
             }
         }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { pickFiles.launch(arrayOf("*/*")) }) {
+        if (elementNotes.isEmpty()) {
+            Text(
+                "مفيش ملاحظات لسه — أضف ملاحظة فيها نص منسّق وصور.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        elementNotes.forEach { note ->
+            NoteCard(note = note, onClick = { vm.openNoteEditor(element.id, note) })
+        }
+
+        // -------- المرفقات (ملفات) --------
+        Spacer(Modifier.height(16.dp))
+        Text("المرفقات", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(6.dp))
+        files.forEach { item ->
+            AttachmentRow(vm, item)
+            HorizontalDivider()
+        }
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(onClick = { pickFiles.launch(arrayOf("*/*")) }) {
             Icon(Icons.Filled.AttachFile, contentDescription = null)
             Spacer(Modifier.width(6.dp))
-            Text("أرفق صور / ملفات")
+            Text("أرفق ملفات (PDF، أوتوكاد…)")
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun NoteCard(note: com.corewall.qaqc.data.db.NoteEntity, onClick: () -> Unit) {
+    val images = com.corewall.qaqc.ui.notes.parseImagePaths(note.imagePathsJson)
+    androidx.compose.material3.Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            if (note.title.isNotBlank()) {
+                Text(note.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+            }
+            if (note.body.isNotBlank()) {
+                com.corewall.qaqc.ui.notes.MarkdownText(note.body, maxLines = 4)
+            }
+            if (images.isNotEmpty() || note.body.isBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (images.isNotEmpty()) {
+                        Icon(
+                            Icons.Filled.Image,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "${images.size} صورة",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
         }
     }
 }

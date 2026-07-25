@@ -11,6 +11,7 @@ import com.corewall.qaqc.data.SettingsStore
 import com.corewall.qaqc.data.db.BarCountEntity
 import com.corewall.qaqc.data.db.CommentEntity
 import com.corewall.qaqc.data.db.ElementAttachmentEntity
+import com.corewall.qaqc.data.db.NoteEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.TaskEntity
 import kotlinx.coroutines.Dispatchers
@@ -268,6 +269,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteCompletedTasks() {
         viewModelScope.launch { repo.deleteCompletedTasks() }
+    }
+
+    // -------- الملاحظات الغنية (صور + تنسيق) --------
+
+    val notes: StateFlow<List<NoteEntity>> = repo.notes
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** الملاحظة اللي بتتعدّل دلوقتي في المحرّر (null = المحرّر مقفول). */
+    private val _editingNote = MutableStateFlow<NoteEntity?>(null)
+    val editingNote: StateFlow<NoteEntity?> = _editingNote
+
+    /** فتح محرّر ملاحظة: موجودة للتعديل، أو جديدة فاضية للعنصر في الدور الحالي. */
+    fun openNoteEditor(elementId: String, existing: NoteEntity? = null) {
+        val now = System.currentTimeMillis()
+        _editingNote.value = existing ?: NoteEntity(
+            elementId = elementId,
+            level = _currentLevel.value,
+            createdAt = now,
+            updatedAt = now
+        )
+    }
+
+    fun closeNoteEditor() { _editingNote.value = null }
+
+    fun saveNote(note: NoteEntity) {
+        viewModelScope.launch {
+            val id = repo.saveNote(note.copy(updatedAt = System.currentTimeMillis()))
+            _editingNote.value = if (note.id == 0L) note.copy(id = id) else note
+        }
+    }
+
+    fun deleteNote(note: NoteEntity) {
+        viewModelScope.launch {
+            repo.deleteNote(note)
+            _editingNote.value = null
+        }
     }
 
     // -------- عارض PDF الداخلي --------

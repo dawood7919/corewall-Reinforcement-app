@@ -16,9 +16,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BarCountEntity::class,
         ElementAttachmentEntity::class,
         TaskEntity::class,
-        PdfAnnotationEntity::class
+        PdfAnnotationEntity::class,
+        NoteEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +31,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun elementAttachmentDao(): ElementAttachmentDao
     abstract fun taskDao(): TaskDao
     abstract fun pdfAnnotationDao(): PdfAnnotationDao
+    abstract fun noteDao(): NoteDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -113,6 +115,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `notes` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`elementId` TEXT NOT NULL, " +
+                        "`level` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL DEFAULT '', " +
+                        "`body` TEXT NOT NULL DEFAULT '', " +
+                        "`imagePathsJson` TEXT NOT NULL DEFAULT '[]', " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL)"
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -122,7 +140,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "corewall.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build().also { instance = it }
             }
     }

@@ -7,6 +7,7 @@ import com.corewall.qaqc.data.db.CommentEntity
 import com.corewall.qaqc.data.db.ElementAttachmentEntity
 import com.corewall.qaqc.data.db.ElementNameEntity
 import com.corewall.qaqc.data.db.InspectionEntity
+import com.corewall.qaqc.data.db.NoteEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.RangeEditEntity
 import com.corewall.qaqc.data.db.TaskEntity
@@ -151,6 +152,17 @@ class AppRepository(context: Context) {
     suspend fun deleteTask(id: Long) = db.taskDao().delete(id)
     suspend fun deleteCompletedTasks() = db.taskDao().deleteCompleted()
 
+    val notes: Flow<List<NoteEntity>> = db.noteDao().observeAll()
+
+    suspend fun saveNote(note: NoteEntity): Long = db.noteDao().upsert(note)
+    suspend fun deleteNote(note: NoteEntity) {
+        db.noteDao().delete(note.id)
+        // نمسح صور الملاحظة من القرص كمان
+        runCatching {
+            json.decodeFromString<List<String>>(note.imagePathsJson).forEach { java.io.File(it).delete() }
+        }
+    }
+
     val pdfAnnotations: Flow<List<PdfAnnotationEntity>> = db.pdfAnnotationDao().observeAll()
 
     suspend fun addPdfAnnotation(entity: PdfAnnotationEntity) = db.pdfAnnotationDao().upsert(entity)
@@ -172,7 +184,8 @@ class AppRepository(context: Context) {
         val barCounts: List<BarCountEntity> = emptyList(),
         val tasks: List<TaskEntity> = emptyList(),
         val attachments: List<ElementAttachmentEntity> = emptyList(),
-        val pdfAnnotations: List<PdfAnnotationEntity> = emptyList()
+        val pdfAnnotations: List<PdfAnnotationEntity> = emptyList(),
+        val notes: List<NoteEntity> = emptyList()
     )
 
     suspend fun exportBackupJson(): String = json.encodeToString(
@@ -185,7 +198,8 @@ class AppRepository(context: Context) {
             barCounts = db.barCountDao().getAll(),
             tasks = db.taskDao().getAll(),
             attachments = db.elementAttachmentDao().getAll(),
-            pdfAnnotations = db.pdfAnnotationDao().getAll()
+            pdfAnnotations = db.pdfAnnotationDao().getAll(),
+            notes = db.noteDao().getAll()
         )
     )
 
