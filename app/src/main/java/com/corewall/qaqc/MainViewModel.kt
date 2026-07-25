@@ -61,6 +61,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _tabIndex = MutableStateFlow(0)
     val tabIndex: StateFlow<Int> = _tabIndex
 
+    // تاريخ التبويبات — عشان زرار الرجوع في الموبايل يرجّع خطوة ورا مش يقفل التطبيق
+    private val tabHistory = ArrayDeque<Int>()
+    private val _canGoBack = MutableStateFlow(false)
+    val canGoBack: StateFlow<Boolean> = _canGoBack
+
     private val _currentLevel = MutableStateFlow("GROUND")
     val currentLevel: StateFlow<String> = _currentLevel
 
@@ -96,7 +101,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (lens != Lens.REINF) _namingMode.value = false
     }
 
-    fun setTabIndex(index: Int) { _tabIndex.value = index }
+    fun setTabIndex(index: Int) {
+        if (index == _tabIndex.value) return
+        tabHistory.addLast(_tabIndex.value)
+        if (tabHistory.size > 24) tabHistory.removeFirst()
+        _tabIndex.value = index
+        _canGoBack.value = true
+    }
+
+    /** رجوع خطوة في التبويبات — بيرجّع true لو فيه خطوة اترجعت. */
+    fun popTab(): Boolean {
+        val prev = tabHistory.removeLastOrNull() ?: return false
+        _tabIndex.value = prev
+        _canGoBack.value = tabHistory.isNotEmpty()
+        return true
+    }
 
     fun setLevel(level: String) {
         if (level in levels) _currentLevel.value = level

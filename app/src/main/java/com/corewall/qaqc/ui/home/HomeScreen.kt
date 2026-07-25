@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -197,49 +198,35 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             modifier = Modifier.fillMaxSize()
         )
 
-        // ---------- الطبقة العلوية: Command bar + العدسات ----------
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp)
-                .padding(top = 8.dp)
+        // ---------- شريط التحكم العلوي: بحث + عدسات (سطح مصمت منظّم) ----------
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            shadowElevation = 3.dp,
+            shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            CommandBar(vm)
-            Spacer(Modifier.height(8.dp))
-            // العدسات — بتبدّل شكل نفس المسقط، والدور ثابت من الهيدر فوق
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Column(
+                Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
-                Lens.entries.forEach { l ->
-                    FilterChip(
-                        selected = lens == l,
-                        onClick = { vm.setLens(l) },
-                        label = { Text(l.label) }
+                CommandBar(vm)
+                Spacer(Modifier.height(8.dp))
+                LensSelector(lens = lens, onSelect = { vm.setLens(it) })
+                if (lens == Lens.REINF && namingMode) {
+                    Spacer(Modifier.height(8.dp))
+                    val total = vm.planData.elements.size
+                    val named = names.size
+                    Text(
+                        "وضع التسمية: $named / $total عنصر",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = accent
                     )
-                }
-            }
-            if (lens == Lens.REINF && namingMode) {
-                Spacer(Modifier.height(6.dp))
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-                ) {
-                    Column(Modifier.padding(10.dp)) {
-                        val total = vm.planData.elements.size
-                        val named = names.size
-                        Text(
-                            "وضع التسمية: $named / $total",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = accent
-                        )
-                        LinearProgressIndicator(
-                            progress = { if (total == 0) 0f else named.toFloat() / total },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp)
-                        )
-                    }
+                    LinearProgressIndicator(
+                        progress = { if (total == 0) 0f else named.toFloat() / total },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    )
                 }
             }
         }
@@ -319,6 +306,24 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     if (showReinfExport) ExportDialog(vm = vm, onDismiss = { showReinfExport = false })
     if (showCountExport) CountingExportDialog(vm = vm, onDismiss = { showCountExport = false })
+}
+
+/** مبدّل العدسات — Segmented control مصمت ومنظّم بدل الشيبس الطايرة. */
+@androidx.compose.runtime.Composable
+private fun LensSelector(lens: Lens, onSelect: (Lens) -> Unit) {
+    androidx.compose.material3.SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        val lenses = Lens.entries
+        lenses.forEachIndexed { i, l ->
+            androidx.compose.material3.SegmentedButton(
+                selected = lens == l,
+                onClick = { onSelect(l) },
+                shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index = i, count = lenses.size),
+                icon = {}
+            ) {
+                Text(l.label, fontWeight = if (lens == l) FontWeight.Bold else FontWeight.Normal)
+            }
+        }
+    }
 }
 
 @Composable

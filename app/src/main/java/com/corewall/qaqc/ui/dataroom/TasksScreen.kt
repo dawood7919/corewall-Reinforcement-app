@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
@@ -132,11 +133,11 @@ fun TasksScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
 
         if (filtered.isEmpty()) {
-            Text(
-                if (filter == TaskFilter.DONE) "مفيش مهام منجزة في دور $level"
-                else "مفيش مهام في دور $level ✓",
-                Modifier.padding(24.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            com.corewall.qaqc.ui.EmptyState(
+                icon = Icons.Filled.Checklist,
+                title = if (filter == TaskFilter.DONE) "مفيش مهام منجزة" else "مفيش مهام في دور $level",
+                subtitle = if (filter == TaskFilter.DONE) "المهام اللي هتخلّصها هتظهر هنا."
+                else "ابدأ بإضافة مهمة تخص الدور ده — بتتحفظ معاه لوحده."
             )
         }
 

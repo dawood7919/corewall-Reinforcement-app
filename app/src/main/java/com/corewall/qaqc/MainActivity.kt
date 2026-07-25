@@ -2,6 +2,7 @@ package com.corewall.qaqc
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.padding
@@ -60,16 +61,25 @@ private val TABS = listOf(
 fun MainScreen(vm: MainViewModel) {
     val tabIndex by vm.tabIndex.collectAsStateWithLifecycle()
     val selectedElementId by vm.selectedElementId.collectAsStateWithLifecycle()
-    val level by vm.currentLevel.collectAsStateWithLifecycle()
+    val namingMode by vm.namingMode.collectAsStateWithLifecycle()
+    val canGoBack by vm.canGoBack.collectAsStateWithLifecycle()
+    val openPdfPath by vm.openPdfPath.collectAsStateWithLifecycle()
+
+    // زرار الرجوع بتاع الموبايل: يقفل الـPDF ← يقفل الشيت ← يطفي وضع التسمية ←
+    // يرجّع خطوة في التبويبات ← وأخيراً بس يطلع من التطبيق.
+    BackHandler(
+        enabled = openPdfPath != null || selectedElementId != null || namingMode || canGoBack
+    ) {
+        when {
+            openPdfPath != null -> vm.closePdf()
+            selectedElementId != null -> vm.selectElement(null)
+            namingMode -> vm.setNamingMode(false)
+            else -> vm.popTab()
+        }
+    }
 
     Scaffold(
-        topBar = {
-            ActiveLevelHeader(
-                levels = vm.levels,
-                current = level,
-                onPick = vm::setLevel
-            )
-        },
+        topBar = { ActiveLevelHeader(vm) },
         bottomBar = {
             NavigationBar {
                 TABS.forEachIndexed { index, tab ->
@@ -101,7 +111,6 @@ fun MainScreen(vm: MainViewModel) {
     }
 
     // عارض الـPDF الداخلي — بيغطي الشاشة كلها فوق أي حاجة
-    val openPdfPath by vm.openPdfPath.collectAsStateWithLifecycle()
     openPdfPath?.let { path ->
         PdfViewerScreen(vm = vm, path = path, onClose = { vm.closePdf() })
     }

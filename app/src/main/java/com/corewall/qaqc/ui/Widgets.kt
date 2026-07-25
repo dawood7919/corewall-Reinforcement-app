@@ -44,6 +44,56 @@ fun ColorDot(color: Color, size: Int = 10) {
     )
 }
 
+/** حالة فاضية موحّدة: أيقونة كبيرة باهتة + عنوان + وصف + إجراء اختياري. */
+@Composable
+fun EmptyState(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    action: (@Composable () -> Unit)? = null
+) {
+    androidx.compose.foundation.layout.Column(
+        modifier
+            .fillMaxWidth()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        androidx.compose.material3.Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.size(72.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                androidx.compose.material3.Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(34.dp)
+                )
+            }
+        }
+        androidx.compose.foundation.layout.Spacer(Modifier.size(14.dp))
+        androidx.compose.material3.Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        androidx.compose.foundation.layout.Spacer(Modifier.size(4.dp))
+        androidx.compose.material3.Text(
+            subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        if (action != null) {
+            androidx.compose.foundation.layout.Spacer(Modifier.size(16.dp))
+            action()
+        }
+    }
+}
+
 /**
  * اختيار الدور: أسهم سابق/تالي + زرار بيفتح شبكة بكل الأدوار الـ48.
  */
