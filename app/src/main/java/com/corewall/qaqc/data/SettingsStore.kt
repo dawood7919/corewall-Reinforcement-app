@@ -5,13 +5,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 enum class AppTheme(val label: String) {
-    IOS_LIGHT("فاتح"),
-    DARK_OLED("دارك OLED"),
+    IOS_LIGHT("Aurora فاتح"),
+    DARK_OLED("Aurora دارك"),
     BLUEPRINT("Blueprint هندسي")
 }
 
 data class AppSettings(
-    val theme: AppTheme = AppTheme.DARK_OLED,
+    val theme: AppTheme = AppTheme.IOS_LIGHT,
     val showNames: Boolean = true,
     val showStatuses: Boolean = true
 )
@@ -21,8 +21,8 @@ class SettingsStore(context: Context) {
 
     private val _settings = MutableStateFlow(
         AppSettings(
-            theme = runCatching { AppTheme.valueOf(prefs.getString("theme", AppTheme.DARK_OLED.name)!!) }
-                .getOrDefault(AppTheme.DARK_OLED),
+            theme = runCatching { AppTheme.valueOf(prefs.getString("theme", AppTheme.IOS_LIGHT.name)!!) }
+                .getOrDefault(AppTheme.IOS_LIGHT),
             showNames = prefs.getBoolean("showNames", true),
             showStatuses = prefs.getBoolean("showStatuses", true)
         )

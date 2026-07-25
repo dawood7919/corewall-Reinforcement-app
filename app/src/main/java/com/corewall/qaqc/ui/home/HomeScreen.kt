@@ -202,16 +202,19 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             modifier = Modifier.fillMaxSize()
         )
 
-        // ---------- شريط التحكم العلوي: بحث + عدسات (سطح مصمت منظّم) ----------
+        // ---------- شريط تحكم عائم (بحث + عدسات) — كارت انسيابي فوق المسقط ----------
         Surface(
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 2.dp,
-            shadowElevation = 3.dp,
-            shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp),
-            modifier = Modifier.fillMaxWidth()
+            shadowElevation = 6.dp,
+            shape = RoundedCornerShape(22.dp),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, top = 10.dp)
         ) {
             Column(
-                Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
             ) {
                 CommandBar(vm)
                 Spacer(Modifier.height(8.dp))

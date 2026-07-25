@@ -99,7 +99,25 @@ private val BlueprintCategoryColors = CategoryColors(
     other = Color(0xFFA15C38)
 )
 
-val LocalCategoryColors = staticCompositionLocalOf { DarkCategoryColors }
+val LocalCategoryColors = staticCompositionLocalOf { LightCategoryColors }
+
+/** تدرّجات لونية (ستايل Aurora) — للهيدر والأسطح المميزة. */
+data class AppGradients(val header: List<Color>, val fab: List<Color>)
+
+private val AuroraLightGradients = AppGradients(
+    header = listOf(Color(0xFF7C86EC), Color(0xFF5B66D6)),
+    fab = listOf(Color(0xFF7C86EC), Color(0xFF5B66D6))
+)
+private val AuroraDarkGradients = AppGradients(
+    header = listOf(Color(0xFF3A3F7A), Color(0xFF23264A)),
+    fab = listOf(Color(0xFF6E79E0), Color(0xFF4B57C4))
+)
+private val BlueprintGradients = AppGradients(
+    header = listOf(Color(0xFF14486E), Color(0xFF0E2A48)),
+    fab = listOf(Color(0xFF2E86C1), Color(0xFF14486E))
+)
+
+val LocalAppGradients = staticCompositionLocalOf { AuroraLightGradients }
 
 object StatusColors {
     fun of(status: InspectionStatus): Color = when (status) {
@@ -113,48 +131,54 @@ object StatusColors {
 
 // ---------------------------------------------------------------- الثيمات
 
-// فاتح: خلفية عشبية فاتحة + أكسنت ليموني غامق الحبر
+// Aurora فاتح: خلفية لافندر + نيلي متدرّج + كروت بيضا ناعمة (ستايل Finance app)
 private val ReimaginedLight = lightColorScheme(
-    primary = Color(0xFF6DA018),          // ليموني معتّم للقراءة على الفاتح
+    primary = Color(0xFF5B66D6),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFE4F6BC),
-    onPrimaryContainer = Color(0xFF2A3C0C),
-    secondary = Color(0xFF3C7A20),
-    secondaryContainer = Color(0xFFD9EFC7),
-    onSecondaryContainer = Color(0xFF1E3A0F),
-    tertiary = Color(0xFF4C8F27),
-    background = Color(0xFFF3F5F0),
-    onBackground = Color(0xFF12160E),
+    primaryContainer = Color(0xFFE6E8FB),
+    onPrimaryContainer = Color(0xFF2C336E),
+    secondary = Color(0xFF7C86EC),
+    secondaryContainer = Color(0xFFEDEFFC),
+    onSecondaryContainer = Color(0xFF2C336E),
+    tertiary = Color(0xFF37B98A),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFD6F5E8),
+    onTertiaryContainer = Color(0xFF0E4632),
+    background = Color(0xFFEFF1FB),
+    onBackground = Color(0xFF1E2038),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF12160E),
-    surfaceVariant = Color(0xFFECEFE6),
-    onSurfaceVariant = Color(0xFF5B6555),
-    outline = Color(0xFFC9CFC0),
-    error = Color(0xFFDC3D2F),
-    errorContainer = Color(0xFFFFE1DC),
-    onErrorContainer = Color(0xFF5C120A)
+    onSurface = Color(0xFF1E2038),
+    surfaceVariant = Color(0xFFEEF0FA),
+    onSurfaceVariant = Color(0xFF7E82A0),
+    outline = Color(0xFFE0E3F1),
+    error = Color(0xFFF25C6E),
+    errorContainer = Color(0xFFFFE1E5),
+    onErrorContainer = Color(0xFF6B121F)
 )
 
-// دارك OLED: أسود نقي + ليموني C6F24E
+// Aurora دارك: نيلي غامق مخملي + نفس الأكسنت
 private val ReimaginedDark = darkColorScheme(
-    primary = Color(0xFFC6F24E),
-    onPrimary = Color(0xFF12160E),
-    primaryContainer = Color(0xFF33420F),
-    onPrimaryContainer = Color(0xFFE3FA9E),
-    secondary = Color(0xFFB4E82E),
-    secondaryContainer = Color(0xFF2A350D),
-    onSecondaryContainer = Color(0xFFDCF79A),
-    tertiary = Color(0xFF93DB4E),
-    background = Color(0xFF000000),
-    onBackground = Color(0xFFF1F3EE),
-    surface = Color(0xFF161719),
-    onSurface = Color(0xFFF1F3EE),
-    surfaceVariant = Color(0xFF202124),
-    onSurfaceVariant = Color(0xFF9AA096),
-    outline = Color(0xFF3A3C36),
-    error = Color(0xFFFF6B5E),
-    errorContainer = Color(0xFF4A130C),
-    onErrorContainer = Color(0xFFFFD9D3)
+    primary = Color(0xFF8B95F0),
+    onPrimary = Color(0xFF1A1E3A),
+    primaryContainer = Color(0xFF2E3466),
+    onPrimaryContainer = Color(0xFFD9DCFB),
+    secondary = Color(0xFF9AA2F2),
+    secondaryContainer = Color(0xFF262B52),
+    onSecondaryContainer = Color(0xFFD9DCFB),
+    tertiary = Color(0xFF4FD3A0),
+    onTertiary = Color(0xFF06281C),
+    tertiaryContainer = Color(0xFF10452F),
+    onTertiaryContainer = Color(0xFFCFF6E5),
+    background = Color(0xFF0F1024),
+    onBackground = Color(0xFFE7E8F6),
+    surface = Color(0xFF191B36),
+    onSurface = Color(0xFFE7E8F6),
+    surfaceVariant = Color(0xFF232645),
+    onSurfaceVariant = Color(0xFF9DA1C4),
+    outline = Color(0xFF33375C),
+    error = Color(0xFFFF7A88),
+    errorContainer = Color(0xFF4A1620),
+    onErrorContainer = Color(0xFFFFD9DD)
 )
 
 // Blueprint: أزرق لوحة هندسية + سماوي 7FD1F7 وحواف حادة
@@ -198,12 +222,25 @@ private val SharpShapes = Shapes(
 
 @Composable
 fun CoreWallTheme(theme: AppTheme, content: @Composable () -> Unit) {
-    val (scheme, shapes, categories) = when (theme) {
-        AppTheme.IOS_LIGHT -> Triple(ReimaginedLight, SoftShapes, LightCategoryColors)
-        AppTheme.DARK_OLED -> Triple(ReimaginedDark, SoftShapes, DarkCategoryColors)
-        AppTheme.BLUEPRINT -> Triple(ReimaginedBlueprint, SharpShapes, BlueprintCategoryColors)
+    val (scheme, shapes) = when (theme) {
+        AppTheme.IOS_LIGHT -> ReimaginedLight to SoftShapes
+        AppTheme.DARK_OLED -> ReimaginedDark to SoftShapes
+        AppTheme.BLUEPRINT -> ReimaginedBlueprint to SharpShapes
     }
-    CompositionLocalProvider(LocalCategoryColors provides categories) {
+    val categories = when (theme) {
+        AppTheme.IOS_LIGHT -> LightCategoryColors
+        AppTheme.DARK_OLED -> DarkCategoryColors
+        AppTheme.BLUEPRINT -> BlueprintCategoryColors
+    }
+    val gradients = when (theme) {
+        AppTheme.IOS_LIGHT -> AuroraLightGradients
+        AppTheme.DARK_OLED -> AuroraDarkGradients
+        AppTheme.BLUEPRINT -> BlueprintGradients
+    }
+    CompositionLocalProvider(
+        LocalCategoryColors provides categories,
+        LocalAppGradients provides gradients
+    ) {
         MaterialTheme(
             colorScheme = scheme,
             shapes = shapes,
