@@ -19,6 +19,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -309,15 +313,16 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 }
 
 /** مبدّل العدسات — Segmented control مصمت ومنظّم بدل الشيبس الطايرة. */
-@androidx.compose.runtime.Composable
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun LensSelector(lens: Lens, onSelect: (Lens) -> Unit) {
-    androidx.compose.material3.SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         val lenses = Lens.entries
         lenses.forEachIndexed { i, l ->
-            androidx.compose.material3.SegmentedButton(
+            SegmentedButton(
                 selected = lens == l,
                 onClick = { onSelect(l) },
-                shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index = i, count = lenses.size),
+                shape = SegmentedButtonDefaults.itemShape(index = i, count = lenses.size),
                 icon = {}
             ) {
                 Text(l.label, fontWeight = if (lens == l) FontWeight.Bold else FontWeight.Normal)
