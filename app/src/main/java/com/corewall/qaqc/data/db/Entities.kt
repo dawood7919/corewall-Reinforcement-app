@@ -76,7 +76,10 @@ data class ElementAttachmentEntity(
     }
 }
 
-/** مهمة في الـTo-Do (أداة Data — تبويب المهام). priority: 0 عادي / 1 مهم / 2 عاجل. */
+/**
+ * مهمة في الـTo-Do — **مربوطة بدور واحد** (عزل كامل: مهام الدور بتظهر
+ * لما تكون شغّال عليه بس). priority: 0 عادي / 1 مهم / 2 عاجل.
+ */
 @Serializable
 @Entity(tableName = "tasks")
 data class TaskEntity(
@@ -86,7 +89,7 @@ data class TaskEntity(
     val done: Boolean = false,
     val priority: Int = 0,
     val dueDate: Long? = null,
-    val level: String? = null,
+    @ColumnInfo(defaultValue = "GROUND") val level: String = "GROUND",
     val createdAt: Long,
     val completedAt: Long? = null
 )

@@ -103,9 +103,8 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     var showReinfExport by remember { mutableStateOf(false) }
     var showCountExport by remember { mutableStateOf(false) }
-    var showLevelPicker by remember { mutableStateOf(false) }
 
-    // بيانات العدسات — كلها معزولة بالدور الحالي
+    // بيانات العدسات — كلها معزولة بالدور الشغّال بس
     val activeByElement = remember(schedule, level, names) {
         vm.planData.elements.associate { el ->
             el.id to (names[el.id]?.let { vm.logic.activeRange(schedule, it, level) })
@@ -116,50 +115,6 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     }
     val attByElement = remember(attachments, level) {
         attachments.filter { it.level == level }.groupBy { it.elementId }
-    }
-
-    // ألوان نقط البرج (ملخّص كل دور حسب العدسة)
-    val pipColors: Map<String, Color> = remember(lens, schedule, inspections, barCounts, attachments) {
-        when (lens) {
-            Lens.REINF -> vm.levels.associateWith { lvl ->
-                val idx = vm.logic.idx(lvl) ?: return@associateWith Color.Transparent
-                val hasGap = schedule.walls.values.any { vm.logic.wallGapAt(it, idx) } ||
-                    schedule.beams.values.any { vm.logic.beamGapAt(it, idx) }
-                if (hasGap) gapColor
-                else {
-                    val statuses = inspections.filterKeys { it.second == lvl }.values
-                        .map { InspectionStatus.from(it) }
-                    when {
-                        InspectionStatus.REJECTED in statuses -> StatusColors.of(InspectionStatus.REJECTED)
-                        InspectionStatus.WIR_SUBMITTED in statuses -> StatusColors.of(InspectionStatus.WIR_SUBMITTED)
-                        InspectionStatus.APPROVED in statuses -> StatusColors.of(InspectionStatus.APPROVED)
-                        InspectionStatus.CAST in statuses -> StatusColors.of(InspectionStatus.CAST)
-                        else -> Color.Transparent
-                    }
-                }
-            }
-            Lens.COUNT -> vm.levels.associateWith { lvl ->
-                val entries = barCounts.filter { it.level == lvl }
-                if (entries.isEmpty()) Color.Transparent
-                else {
-                    val mismatch = entries.groupBy { it.elementId }.any { (_, e) ->
-                        val site = siteOf(e)
-                        val drawing = drawingOf(e)
-                        site.isNotEmpty() && drawing.isNotEmpty() &&
-                            totalsByDiameter(site) != totalsByDiameter(drawing)
-                    }
-                    val anySite = entries.any { it.source == "SITE" }
-                    when {
-                        mismatch -> mismatchColor
-                        anySite -> matchColor
-                        else -> Color(0xFF8A8A8E)
-                    }
-                }
-            }
-            Lens.DATA -> vm.levels.associateWith { lvl ->
-                if (attachments.any { it.level == lvl }) accent else Color.Transparent
-            }
-        }
     }
 
     Box(modifier.fillMaxSize()) {
@@ -251,26 +206,16 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         ) {
             CommandBar(vm)
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // العدسات — بتبدّل شكل نفس المسقط، والدور ثابت من الهيدر فوق
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Lens.entries.forEach { l ->
                     FilterChip(
                         selected = lens == l,
                         onClick = { vm.setLens(l) },
                         label = { Text(l.label) }
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Surface(
-                    onClick = { showLevelPicker = true },
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ) {
-                    Text(
-                        "دور $level",
-                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -298,18 +243,6 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
             }
         }
-
-        // ---------- البرج الحي (Level Selector) ----------
-        TowerSpine(
-            levels = vm.levels,
-            current = level,
-            pipColors = pipColors,
-            onPick = vm::setLevel,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight(0.62f)
-                .width(56.dp)
-        )
 
         // ---------- FAB ذكي + Legend ----------
         Column(
@@ -386,14 +319,6 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     if (showReinfExport) ExportDialog(vm = vm, onDismiss = { showReinfExport = false })
     if (showCountExport) CountingExportDialog(vm = vm, onDismiss = { showCountExport = false })
-    if (showLevelPicker) {
-        LevelPickerDialog(
-            levels = vm.levels,
-            current = level,
-            onPick = { vm.setLevel(it); showLevelPicker = false },
-            onDismiss = { showLevelPicker = false }
-        )
-    }
 }
 
 @Composable
@@ -523,92 +448,3 @@ private fun CommandBar(vm: MainViewModel) {
     }
 }
 
-// ---------------------------------------------------------------- Tower Spine
-
-/**
- * البرج الحي: كل دور = شريحة، اسحب أو المس أي دور للانتقال فوراً.
- * النقطة الملونة جنب كل دور بتلخّص حالته حسب العدسة الحالية.
- */
-@Composable
-fun TowerSpine(
-    levels: List<String>,
-    current: String,
-    pipColors: Map<String, Color>,
-    onPick: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val textMeasurer = rememberTextMeasurer()
-    val barColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-    val accent = MaterialTheme.colorScheme.primary
-    val bubbleColor = MaterialTheme.colorScheme.primary
-    val bubbleText = MaterialTheme.colorScheme.onPrimary
-    val bgColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
-
-    val currentIdx = levels.indexOf(current).coerceAtLeast(0)
-
-    fun indexForY(y: Float, height: Float): Int {
-        val slot = height / levels.size
-        val fromTop = (y / slot).toInt().coerceIn(0, levels.size - 1)
-        return levels.size - 1 - fromTop
-    }
-
-    Canvas(
-        modifier = modifier
-            .pointerInput(levels) {
-                detectVerticalDragGestures { change, _ ->
-                    onPick(levels[indexForY(change.position.y, size.height.toFloat())])
-                }
-            }
-            .pointerInput(levels) {
-                detectTapGestures { pos ->
-                    onPick(levels[indexForY(pos.y, size.height.toFloat())])
-                }
-            }
-    ) {
-        val slot = size.height / levels.size
-        // خلفية زجاجية خفيفة
-        drawRoundRect(
-            color = bgColor,
-            topLeft = Offset(4.dp.toPx(), 0f),
-            size = Size(30.dp.toPx(), size.height),
-            cornerRadius = CornerRadius(12.dp.toPx())
-        )
-        for (i in levels.indices) {
-            val yCenter = size.height - (i + 0.5f) * slot
-            val isCurrent = i == currentIdx
-            val barW = if (isCurrent) 22.dp.toPx() else 12.dp.toPx()
-            val barH = (slot * 0.5f).coerceAtMost(4.dp.toPx()).coerceAtLeast(1.5f)
-            drawRoundRect(
-                color = if (isCurrent) accent else barColor,
-                topLeft = Offset(8.dp.toPx(), yCenter - barH / 2),
-                size = Size(barW, barH),
-                cornerRadius = CornerRadius(barH / 2)
-            )
-            val pip = pipColors[levels[i]] ?: Color.Transparent
-            if (pip != Color.Transparent) {
-                drawCircle(color = pip, radius = 2.5.dp.toPx(), center = Offset(33.dp.toPx(), yCenter))
-            }
-        }
-        // فقاعة الدور الحالي
-        val label = levels[currentIdx]
-        val layout = textMeasurer.measure(
-            AnnotatedString(label),
-            style = TowerNumberStyle.copy(fontSize = 15.sp, color = bubbleText)
-        )
-        val yCenter = size.height - (currentIdx + 0.5f) * slot
-        val bw = layout.size.width + 16.dp.toPx()
-        val bh = layout.size.height + 8.dp.toPx()
-        val bx = 40.dp.toPx()
-        val by = (yCenter - bh / 2).coerceIn(0f, size.height - bh)
-        drawRoundRect(
-            color = bubbleColor,
-            topLeft = Offset(bx, by),
-            size = Size(bw, bh),
-            cornerRadius = CornerRadius(bh / 2)
-        )
-        drawText(
-            layout,
-            topLeft = Offset(bx + 8.dp.toPx(), by + 4.dp.toPx())
-        )
-    }
-}

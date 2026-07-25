@@ -49,13 +49,7 @@ fun CountingReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
     ) {
         item {
-            com.corewall.qaqc.ui.LevelSelector(
-                levels = vm.levels,
-                current = level,
-                onPick = vm::setLevel,
-                onStep = vm::stepLevel
-            )
-            Text("إجمالي الأعداد — دور $level", style = MaterialTheme.typography.titleMedium)
+            Text("إجمالي أعداد دور $level", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             if (allDiameters.isEmpty()) {
                 Text(

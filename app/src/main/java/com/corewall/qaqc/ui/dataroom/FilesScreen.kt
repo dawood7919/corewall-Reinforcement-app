@@ -95,21 +95,7 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     }
 
     Column(modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LevelSelector(
-                levels = vm.levels,
-                current = level,
-                onPick = vm::setLevel,
-                onStep = vm::stepLevel
-            )
-        }
-
-        // شريط المسار + أزرار الإجراءات
+        // شريط المسار + أزرار الإجراءات (الدور الشغّال من الهيدر فوق)
         Row(
             Modifier
                 .fillMaxWidth()

@@ -59,7 +59,7 @@ import java.util.Locale
 private val dueFormat = SimpleDateFormat("dd/MM/yyyy", Locale.ENGLISH)
 
 private enum class TaskFilter(val label: String) {
-    ALL("الكل"), CURRENT_LEVEL("الدور الحالي"), OVERDUE("متأخر"), DONE("المنجز")
+    ALL("الكل"), OVERDUE("متأخر"), DONE("المنجز")
 }
 
 private fun priorityColor(priority: Int): Color = when (priority) {
@@ -87,7 +87,6 @@ fun TasksScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val now = System.currentTimeMillis()
     val filtered = when (filter) {
         TaskFilter.ALL -> tasks.filter { !it.done }
-        TaskFilter.CURRENT_LEVEL -> tasks.filter { !it.done && it.level == level }
         TaskFilter.OVERDUE -> tasks.filter { !it.done && (it.dueDate ?: Long.MAX_VALUE) < now }
         TaskFilter.DONE -> tasks.filter { it.done }
     }
@@ -97,9 +96,9 @@ fun TasksScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("المهام", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("مهام دور $level", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
-                        "$doneCount / ${tasks.size} منجزة",
+                        "$doneCount / ${tasks.size} منجزة في الدور ده",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -134,8 +133,8 @@ fun TasksScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
         if (filtered.isEmpty()) {
             Text(
-                if (filter == TaskFilter.DONE) "مفيش مهام منجزة لسه"
-                else "مفيش مهام هنا ✓",
+                if (filter == TaskFilter.DONE) "مفيش مهام منجزة في دور $level"
+                else "مفيش مهام في دور $level ✓",
                 Modifier.padding(24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -231,13 +230,6 @@ private fun TaskRow(
                         color = priorityColor(task.priority),
                         fontWeight = FontWeight.Bold
                     )
-                    task.level?.let {
-                        Text(
-                            "دور $it",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
                     task.dueDate?.let {
                         Text(
                             "⏰ ${dueFormat.format(Date(it))}",
@@ -271,12 +263,11 @@ private fun TaskEditDialog(
     var notes by remember { mutableStateOf(task?.notes ?: "") }
     var priority by remember { mutableStateOf(task?.priority ?: 0) }
     var dueDate by remember { mutableStateOf(task?.dueDate) }
-    var linkLevel by remember { mutableStateOf(task?.level != null || task == null) }
     var showDatePicker by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (task == null) "مهمة جديدة" else "تعديل المهمة") },
+        title = { Text(if (task == null) "مهمة جديدة · دور $defaultLevel" else "تعديل المهمة") },
         text = {
             Column {
                 OutlinedTextField(
@@ -317,10 +308,6 @@ private fun TaskEditDialog(
                         TextButton(onClick = { dueDate = null }) { Text("مسح") }
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = linkLevel, onCheckedChange = { linkLevel = it })
-                    Text("مرتبطة بدور $defaultLevel", style = MaterialTheme.typography.bodySmall)
-                }
             }
         },
         confirmButton = {
@@ -335,7 +322,7 @@ private fun TaskEditDialog(
                             done = task?.done ?: false,
                             priority = priority,
                             dueDate = dueDate,
-                            level = if (linkLevel) (task?.level ?: defaultLevel) else null,
+                            level = task?.level ?: defaultLevel,
                             createdAt = task?.createdAt ?: System.currentTimeMillis(),
                             completedAt = task?.completedAt
                         )

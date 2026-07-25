@@ -23,6 +23,7 @@ import com.corewall.qaqc.domain.ScheduleLogic
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -219,11 +220,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.deleteAttachment(entity) }
     }
 
-    val tasks: StateFlow<List<TaskEntity>> = repo.tasks
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    /** مهام الدور الشغّال بس — عزل كامل زي باقي كل حاجة. */
+    val tasks: StateFlow<List<TaskEntity>> =
+        combine(repo.tasks, _currentLevel) { all, level ->
+            all.filter { it.level == level }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** المهمة الجديدة بتتربط تلقائياً بالدور الشغّال. */
     fun upsertTask(task: TaskEntity) {
-        viewModelScope.launch { repo.upsertTask(task) }
+        val bound = if (task.id == 0L) task.copy(level = _currentLevel.value) else task
+        viewModelScope.launch { repo.upsertTask(bound) }
     }
 
     fun toggleTaskDone(task: TaskEntity) {

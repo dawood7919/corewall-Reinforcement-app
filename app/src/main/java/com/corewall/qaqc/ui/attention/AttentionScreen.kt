@@ -43,14 +43,6 @@ fun AttentionScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val items = remember(schedule, level) { vm.attentionFor(level) }
 
     Column(modifier.fillMaxSize()) {
-        Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            LevelSelector(
-                levels = vm.levels,
-                current = level,
-                onPick = vm::setLevel,
-                onStep = vm::stepLevel
-            )
-        }
         Text(
             "${items.size} عنصر محتاج انتباه في دور $level",
             Modifier.padding(horizontal = 16.dp),

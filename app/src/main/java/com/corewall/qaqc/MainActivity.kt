@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.corewall.qaqc.ui.ActiveLevelHeader
 import com.corewall.qaqc.ui.dataroom.FilesScreen
 import com.corewall.qaqc.ui.dataroom.TasksScreen
 import com.corewall.qaqc.ui.home.AnalysisScreen
@@ -59,8 +60,16 @@ private val TABS = listOf(
 fun MainScreen(vm: MainViewModel) {
     val tabIndex by vm.tabIndex.collectAsStateWithLifecycle()
     val selectedElementId by vm.selectedElementId.collectAsStateWithLifecycle()
+    val level by vm.currentLevel.collectAsStateWithLifecycle()
 
     Scaffold(
+        topBar = {
+            ActiveLevelHeader(
+                levels = vm.levels,
+                current = level,
+                onPick = vm::setLevel
+            )
+        },
         bottomBar = {
             NavigationBar {
                 TABS.forEachIndexed { index, tab ->
