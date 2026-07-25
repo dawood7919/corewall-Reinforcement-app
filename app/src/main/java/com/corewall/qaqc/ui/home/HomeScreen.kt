@@ -211,7 +211,7 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, top = 10.dp)
+                .padding(start = 12.dp, end = 12.dp, top = 10.dp)
         ) {
             Column(
                 Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
