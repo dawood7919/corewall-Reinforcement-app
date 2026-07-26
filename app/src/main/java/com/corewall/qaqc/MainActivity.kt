@@ -34,7 +34,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.corewall.qaqc.ui.ActiveLevelHeader
+import com.corewall.qaqc.ui.AppDrawer
 import com.corewall.qaqc.ui.dataroom.FilesScreen
 import com.corewall.qaqc.ui.dataroom.TasksScreen
 import com.corewall.qaqc.ui.home.AnalysisScreen
@@ -105,6 +109,7 @@ fun MainScreen(vm: MainViewModel) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val tabs = tabsFor(section)
+    var showAbout by remember { mutableStateOf(false) }
 
     BackHandler(
         enabled = drawerState.isOpen || openAttendanceFileId != null || viewingImage != null ||
@@ -127,24 +132,10 @@ fun MainScreen(vm: MainViewModel) {
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Core Wall QA/QC", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("اختار القسم", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Spacer(Modifier.height(4.dp))
-                NavigationDrawerItem(
-                    label = { Text("Corewall — التسليح والعدّ والداتا") },
-                    icon = { Icon(Icons.Filled.ViewInAr, contentDescription = null) },
-                    selected = section == Section.COREWALL,
-                    onClick = { vm.setSection(Section.COREWALL); scope.launch { drawerState.close() } },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Manpower — العمالة اليومية") },
-                    icon = { Icon(Icons.Filled.Groups, contentDescription = null) },
-                    selected = section == Section.MANPOWER,
-                    onClick = { vm.setSection(Section.MANPOWER); scope.launch { drawerState.close() } },
-                    modifier = Modifier.padding(horizontal = 12.dp)
+                AppDrawer(
+                    vm = vm,
+                    onNavigate = { scope.launch { drawerState.close() } },
+                    onAbout = { scope.launch { drawerState.close() }; showAbout = true }
                 )
             }
         }
@@ -196,5 +187,19 @@ fun MainScreen(vm: MainViewModel) {
     viewingImage?.let { path -> ImageViewerScreen(files = vm.files, path = path, onClose = { vm.closeImage() }) }
     openAttendanceFileId?.let { id ->
         AttendanceFileDetailScreen(vm = vm, fileId = id, onClose = { vm.closeAttendanceFile() })
+    }
+
+    if (showAbout) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showAbout = false },
+            title = { Text("Core Wall QA/QC") },
+            text = {
+                Text(
+                    "تطبيق أندرويد Native لإدارة جودة الكور وول: التسليح، العدّ، الداتا، " +
+                        "والعمالة (Manpower) — كل حاجة معزولة لكل دور.\n\nنسخة 4.2"
+                )
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { showAbout = false }) { Text("تمام") } }
+        )
     }
 }

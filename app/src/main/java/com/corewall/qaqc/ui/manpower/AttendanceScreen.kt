@@ -1,5 +1,6 @@
 package com.corewall.qaqc.ui.manpower
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +50,7 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val level by vm.currentLevel.collectAsStateWithLifecycle()
     val files by vm.attendanceFiles.collectAsStateWithLifecycle()
     val daily by vm.dailyAttendance.collectAsStateWithLifecycle()
+    val gradient = com.corewall.qaqc.ui.theme.LocalAppGradients.current.header
 
     var showDialog by remember { mutableStateOf(false) }
 
@@ -56,7 +59,7 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val todayRecords = daily.filter { it.fileId in fileIds && dayStart(it.date) == today }
     val workersToday = todayRecords.sumOf { it.workers }
     val foremenToday = todayRecords.sumOf { it.foremen }
-    val companies = files.map { it.company.trim().lowercase() }.filter { it.isNotEmpty() }.distinct().size
+    val engineersToday = todayRecords.sumOf { it.engineers }
 
     Scaffold(
         modifier = modifier,
@@ -73,16 +76,26 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // ملخّص اليوم
-            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(fullDate(System.currentTimeMillis()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("دور $level", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SummaryTile(Icons.Filled.People, "عمال النهاردة", "$workersToday", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                        SummaryTile(Icons.Filled.Badge, "مشرفين", "$foremenToday", Color(0xFFE8890C), Modifier.weight(1f))
-                        SummaryTile(Icons.Filled.Apartment, "شركات", "$companies", Color(0xFF37B98A), Modifier.weight(1f))
+            // كارت ملخّص اليوم (أزرق متدرّج زي الموك أب)
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Color.Transparent,
+                modifier = Modifier.padding(16.dp).fillMaxWidth()
+            ) {
+                Column(
+                    Modifier
+                        .background(Brush.verticalGradient(gradient), RoundedCornerShape(24.dp))
+                        .padding(20.dp)
+                ) {
+                    Text("اليوم · دور $level", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.85f))
+                    Text(fullDate(System.currentTimeMillis()), style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        BigMetric("$workersToday", "إجمالي العمال", Modifier.weight(1f))
+                        DividerV()
+                        BigMetric("$foremenToday", "الفورمان", Modifier.weight(1f))
+                        DividerV()
+                        BigMetric("$engineersToday", "المهندسين", Modifier.weight(1f))
                     }
                 }
             }
@@ -125,19 +138,21 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SummaryTile(icon: ImageVector, label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = modifier
-    ) {
-        Column(Modifier.padding(12.dp)) {
-            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.height(6.dp))
-            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+private fun BigMetric(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.85f))
     }
+}
+
+@Composable
+private fun DividerV() {
+    Box(
+        Modifier
+            .width(1.dp)
+            .height(38.dp)
+            .background(Color.White.copy(alpha = 0.25f))
+    )
 }
 
 @Composable
@@ -182,8 +197,22 @@ private fun AttendanceFileCard(
                         Text("بدأ ${shortDate(file.startDate)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                Text(file.company.ifBlank { "بدون اسم" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(38.dp).background(tag, androidx.compose.foundation.shape.CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            file.company.trim().take(1).uppercase().ifBlank { "?" },
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(file.company.ifBlank { "بدون اسم" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column {

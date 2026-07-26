@@ -121,6 +121,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (lens != Lens.REINF) _namingMode.value = false
     }
 
+    /** من القائمة الجانبية: افتح المسقط بعدسة معيّنة. */
+    fun goToLens(lens: Lens) {
+        setSection(Section.COREWALL)
+        setLens(lens)
+        setTabIndex(0)
+    }
+
+    fun goToManpower() {
+        setSection(Section.MANPOWER)
+        setTabIndex(0)
+    }
+
+    /** من القائمة الجانبية: افتح تبويب معيّن في قسم Corewall (مثلاً الإعدادات). */
+    fun goToCorewallTab(index: Int) {
+        setSection(Section.COREWALL)
+        setTabIndex(index)
+    }
+
     fun setTabIndex(index: Int) {
         if (index == _tabIndex.value) return
         tabHistory.addLast(_tabIndex.value)

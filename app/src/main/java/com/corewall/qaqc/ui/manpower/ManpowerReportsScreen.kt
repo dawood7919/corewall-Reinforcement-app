@@ -113,7 +113,26 @@ fun ManpowerReportsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 StatCard("أقل", "$minW", Color(0xFF8E44AD), Modifier.weight(1f))
             }
         }
-        item { DistributionCard("توزيع التخصصات", byTrade.map { it.first.label to it.second }) }
+        item {
+            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("اتجاه الحضور", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    LineChart(perDay, MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        item {
+            if (byTrade.isNotEmpty()) {
+                Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("توزيع العمالة حسب النوع", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        DonutChart(byTrade.map { it.first.label to it.second })
+                    }
+                }
+            }
+        }
         item { DistributionCard("توزيع الشركات", byCompany.map { it.first to it.second }) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {

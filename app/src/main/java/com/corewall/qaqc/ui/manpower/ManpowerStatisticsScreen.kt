@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,17 +52,33 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         return
     }
 
-    // آخر 14 يوم فيها تسجيل
-    val days = records.map { dayStart(it.date) }.distinct().sorted().takeLast(14)
+    var period by remember { androidx.compose.runtime.mutableIntStateOf(1) } // 0 أسبوع, 1 شهر, 2 ثلاثة شهور
+    val window = when (period) { 0 -> 7; 1 -> 30; else -> 90 }
+    val days = records.map { dayStart(it.date) }.distinct().sorted().takeLast(window)
+    val windowRecords = records.filter { dayStart(it.date) in days.toSet() }
     val dailyWorkers = days.map { d -> d to records.filter { dayStart(it.date) == d }.sumOf { r -> r.workers } }
     val peak = dailyWorkers.maxOfOrNull { it.second } ?: 0
     val avg = if (dailyWorkers.isNotEmpty()) dailyWorkers.map { it.second }.average() else 0.0
 
     val byTrade = files.groupBy { Trade.from(it.trade) }
-        .mapValues { (_, fs) -> records.filter { r -> fs.any { it.id == r.fileId } }.sumOf { it.workers } }
+        .mapValues { (_, fs) -> windowRecords.filter { r -> fs.any { it.id == r.fileId } }.sumOf { it.workers } }
         .filterValues { it > 0 }.toList().sortedByDescending { it.second }
+    val topCompanies = files.groupBy { it.company.trim() }.filterKeys { it.isNotEmpty() }
+        .mapValues { (_, fs) -> windowRecords.filter { r -> fs.any { it.id == r.fileId } }.sumOf { it.workers } }
+        .filterValues { it > 0 }.toList().sortedByDescending { it.second }.take(5)
 
     LazyColumn(modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("أسبوع", "شهر", "3 أشهر").forEachIndexed { i, label ->
+                    androidx.compose.material3.FilterChip(
+                        selected = period == i,
+                        onClick = { period = i },
+                        label = { Text(label) }
+                    )
+                }
+            }
+        }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MiniStat("ذروة العمالة", "$peak", Color(0xFFE53935), Modifier.weight(1f))
@@ -91,6 +108,43 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                             }
                             Spacer(Modifier.width(8.dp))
                             Text("$v", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+        if (topCompanies.isNotEmpty()) {
+            item {
+                ChartCard("أعلى 5 شركات") {
+                    Column {
+                        topCompanies.forEachIndexed { i, (company, workers) ->
+                            Row(
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 5.dp)
+                            ) {
+                                Box(
+                                    Modifier.size(26.dp).background(
+                                        CHART_COLORS[i % CHART_COLORS.size].copy(alpha = 0.15f),
+                                        RoundedCornerShape(8.dp)
+                                    ),
+                                    contentAlignment = androidx.compose.ui.Alignment.Center
+                                ) {
+                                    Text(
+                                        "${i + 1}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = CHART_COLORS[i % CHART_COLORS.size]
+                                    )
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Text(company, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                                Text(
+                                    "$workers عامل",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
                 }
