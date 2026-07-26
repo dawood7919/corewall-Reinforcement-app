@@ -22,7 +22,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -52,7 +54,7 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         return
     }
 
-    var period by remember { androidx.compose.runtime.mutableIntStateOf(1) } // 0 أسبوع, 1 شهر, 2 ثلاثة شهور
+    var period by remember { mutableIntStateOf(1) } // 0 أسبوع, 1 شهر, 2 ثلاثة شهور
     val window = when (period) { 0 -> 7; 1 -> 30; else -> 90 }
     val days = records.map { dayStart(it.date) }.distinct().sorted().takeLast(window)
     val windowRecords = records.filter { dayStart(it.date) in days.toSet() }
