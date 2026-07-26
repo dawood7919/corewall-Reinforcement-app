@@ -3,6 +3,7 @@ package com.corewall.qaqc.ui.dataroom
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,7 +18,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -109,10 +112,10 @@ fun DataSheetContent(vm: MainViewModel, element: PlanElement) {
         }
         Spacer(Modifier.height(8.dp))
         if (elementNotes.isEmpty()) {
-            Text(
-                "مفيش ملاحظات لسه — أضف ملاحظة فيها نص منسّق وصور.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            com.corewall.qaqc.ui.EmptyState(
+                icon = Icons.Filled.Description,
+                title = "مفيش ملاحظات لسه",
+                subtitle = "أنشئ أول ملاحظة هندسية — نص منسّق، تشيك ليست، صور، وملفات."
             )
         }
         elementNotes.forEach { note ->
@@ -139,44 +142,60 @@ fun DataSheetContent(vm: MainViewModel, element: PlanElement) {
 
 @Composable
 private fun NoteCard(note: com.corewall.qaqc.data.db.NoteEntity, onClick: () -> Unit) {
-    val images = com.corewall.qaqc.ui.notes.parseImagePaths(note.imagePathsJson)
-    androidx.compose.material3.Card(
+    val preview = com.corewall.qaqc.ui.notes.notePreview(note.body)
+    val imgs = com.corewall.qaqc.ui.notes.countImages(note.body)
+    val fls = com.corewall.qaqc.ui.notes.countFiles(note.body)
+    val (done, total) = com.corewall.qaqc.ui.notes.checklistProgress(note.body)
+    val dateFmt = remember { java.text.SimpleDateFormat("dd/MM · HH:mm", java.util.Locale.ENGLISH) }
+
+    androidx.compose.material3.Surface(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp
     ) {
         Column(Modifier.padding(14.dp)) {
-            if (note.title.isNotBlank()) {
-                Text(note.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
+            Text(
+                note.title.ifBlank { "ملاحظة بدون عنوان" },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+            if (preview.isNotBlank()) {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    preview,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
             }
-            if (note.body.isNotBlank()) {
-                com.corewall.qaqc.ui.notes.MarkdownText(note.body, maxLines = 4)
-            }
-            if (images.isNotEmpty() || note.body.isBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (images.isNotEmpty()) {
-                        Icon(
-                            Icons.Filled.Image,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            "${images.size} صورة",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (imgs > 0) MetaChip(Icons.Filled.Image, "$imgs")
+                if (fls > 0) MetaChip(Icons.Filled.AttachFile, "$fls")
+                if (total > 0) MetaChip(Icons.Filled.CheckCircle, "$done/$total")
+                Spacer(Modifier.weight(1f))
+                Text(
+                    dateFmt.format(java.util.Date(note.updatedAt)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun MetaChip(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(3.dp))
+        Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
     }
 }
 

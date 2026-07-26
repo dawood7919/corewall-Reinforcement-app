@@ -307,6 +307,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** حفظ صامت (Auto-save) من غير ما يقفل المحرّر. */
+    fun autosaveNote(note: NoteEntity, onSaved: (Long) -> Unit) {
+        viewModelScope.launch {
+            val id = repo.saveNote(note.copy(updatedAt = System.currentTimeMillis()))
+            onSaved(id)
+        }
+    }
+
+    /** عارض الصور بملء الشاشة. */
+    private val _viewingImage = MutableStateFlow<String?>(null)
+    val viewingImage: StateFlow<String?> = _viewingImage
+    fun openImage(path: String) { _viewingImage.value = path }
+    fun closeImage() { _viewingImage.value = null }
+
+    /** أسماء العناصر المتاحة للـmentions (@). */
+    fun allMarks(): List<String> = repo.baseSchedule.allMarks
+
     // -------- عارض PDF الداخلي --------
 
     private val _openPdfPath = MutableStateFlow<String?>(null)

@@ -29,6 +29,7 @@ import com.corewall.qaqc.ui.dataroom.TasksScreen
 import com.corewall.qaqc.ui.home.AnalysisScreen
 import com.corewall.qaqc.ui.home.HomeScreen
 import com.corewall.qaqc.ui.home.UnifiedSheet
+import com.corewall.qaqc.ui.notes.ImageViewerScreen
 import com.corewall.qaqc.ui.notes.NoteEditorScreen
 import com.corewall.qaqc.ui.pdf.PdfViewerScreen
 import com.corewall.qaqc.ui.settings.SettingsScreen
@@ -66,14 +67,16 @@ fun MainScreen(vm: MainViewModel) {
     val canGoBack by vm.canGoBack.collectAsStateWithLifecycle()
     val openPdfPath by vm.openPdfPath.collectAsStateWithLifecycle()
     val editingNote by vm.editingNote.collectAsStateWithLifecycle()
+    val viewingImage by vm.viewingImage.collectAsStateWithLifecycle()
 
-    // زرار الرجوع بتاع الموبايل: يقفل المحرّر/الـPDF ← يقفل الشيت ← يطفي وضع
-    // التسمية ← يرجّع خطوة في التبويبات ← وأخيراً بس يطلع من التطبيق.
+    // زرار الرجوع بتاع الموبايل: يقفل الصورة/المحرّر/الـPDF ← يقفل الشيت ← يطفي
+    // وضع التسمية ← يرجّع خطوة في التبويبات ← وأخيراً بس يطلع من التطبيق.
     BackHandler(
-        enabled = editingNote != null || openPdfPath != null || selectedElementId != null ||
-            namingMode || canGoBack
+        enabled = viewingImage != null || editingNote != null || openPdfPath != null ||
+            selectedElementId != null || namingMode || canGoBack
     ) {
         when {
+            viewingImage != null -> vm.closeImage()
             editingNote != null -> vm.closeNoteEditor()
             openPdfPath != null -> vm.closePdf()
             selectedElementId != null -> vm.selectElement(null)
@@ -122,5 +125,10 @@ fun MainScreen(vm: MainViewModel) {
     // محرّر الملاحظات — كامل الشاشة فوق أي حاجة
     editingNote?.let { note ->
         NoteEditorScreen(vm = vm, note = note, onClose = { vm.closeNoteEditor() })
+    }
+
+    // عارض الصور بملء الشاشة — فوق المحرّر
+    viewingImage?.let { path ->
+        ImageViewerScreen(files = vm.files, path = path, onClose = { vm.closeImage() })
     }
 }
