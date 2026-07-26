@@ -2,8 +2,10 @@ package com.corewall.qaqc.data
 
 import android.content.Context
 import com.corewall.qaqc.data.db.AppDatabase
+import com.corewall.qaqc.data.db.AttendanceFileEntity
 import com.corewall.qaqc.data.db.BarCountEntity
 import com.corewall.qaqc.data.db.CommentEntity
+import com.corewall.qaqc.data.db.DailyAttendanceEntity
 import com.corewall.qaqc.data.db.ElementAttachmentEntity
 import com.corewall.qaqc.data.db.ElementNameEntity
 import com.corewall.qaqc.data.db.InspectionEntity
@@ -163,6 +165,19 @@ class AppRepository(context: Context) {
         }
     }
 
+    // ---------- Manpower (ملفات الحضور + السجلات اليومية) ----------
+
+    val attendanceFiles: Flow<List<AttendanceFileEntity>> = db.attendanceFileDao().observeAll()
+    val dailyAttendance: Flow<List<DailyAttendanceEntity>> = db.dailyAttendanceDao().observeAll()
+
+    suspend fun saveAttendanceFile(file: AttendanceFileEntity): Long = db.attendanceFileDao().upsert(file)
+    suspend fun deleteAttendanceFile(id: Long) {
+        db.dailyAttendanceDao().deleteForFile(id)
+        db.attendanceFileDao().delete(id)
+    }
+    suspend fun saveDaily(day: DailyAttendanceEntity): Long = db.dailyAttendanceDao().upsert(day)
+    suspend fun deleteDaily(id: Long) = db.dailyAttendanceDao().delete(id)
+
     val pdfAnnotations: Flow<List<PdfAnnotationEntity>> = db.pdfAnnotationDao().observeAll()
 
     suspend fun addPdfAnnotation(entity: PdfAnnotationEntity) = db.pdfAnnotationDao().upsert(entity)
@@ -185,7 +200,9 @@ class AppRepository(context: Context) {
         val tasks: List<TaskEntity> = emptyList(),
         val attachments: List<ElementAttachmentEntity> = emptyList(),
         val pdfAnnotations: List<PdfAnnotationEntity> = emptyList(),
-        val notes: List<NoteEntity> = emptyList()
+        val notes: List<NoteEntity> = emptyList(),
+        val attendanceFiles: List<AttendanceFileEntity> = emptyList(),
+        val dailyAttendance: List<DailyAttendanceEntity> = emptyList()
     )
 
     suspend fun exportBackupJson(): String = json.encodeToString(
@@ -199,7 +216,9 @@ class AppRepository(context: Context) {
             tasks = db.taskDao().getAll(),
             attachments = db.elementAttachmentDao().getAll(),
             pdfAnnotations = db.pdfAnnotationDao().getAll(),
-            notes = db.noteDao().getAll()
+            notes = db.noteDao().getAll(),
+            attendanceFiles = db.attendanceFileDao().getAll(),
+            dailyAttendance = db.dailyAttendanceDao().getAll()
         )
     )
 
@@ -214,6 +233,9 @@ class AppRepository(context: Context) {
         db.taskDao().upsertAll(backup.tasks.map { it.copy(id = 0) })
         db.elementAttachmentDao().upsertAll(backup.attachments.map { it.copy(id = 0) })
         db.pdfAnnotationDao().upsertAll(backup.pdfAnnotations.map { it.copy(id = 0) })
+        db.noteDao().upsertAll(backup.notes.map { it.copy(id = 0) })
+        db.attendanceFileDao().upsertAll(backup.attendanceFiles.map { it.copy(id = 0) })
+        db.dailyAttendanceDao().upsertAll(backup.dailyAttendance.map { it.copy(id = 0) })
         "تم استيراد ${backup.names.size} اسم و${backup.inspections.size} حالة فحص " +
             "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ و${backup.tasks.size} مهمة"
     }

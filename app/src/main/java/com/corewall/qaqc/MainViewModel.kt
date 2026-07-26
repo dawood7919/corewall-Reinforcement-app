@@ -8,8 +8,10 @@ import com.corewall.qaqc.data.AppRepository
 import com.corewall.qaqc.data.AppSettings
 import com.corewall.qaqc.data.FilesManager
 import com.corewall.qaqc.data.SettingsStore
+import com.corewall.qaqc.data.db.AttendanceFileEntity
 import com.corewall.qaqc.data.db.BarCountEntity
 import com.corewall.qaqc.data.db.CommentEntity
+import com.corewall.qaqc.data.db.DailyAttendanceEntity
 import com.corewall.qaqc.data.db.ElementAttachmentEntity
 import com.corewall.qaqc.data.db.NoteEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
@@ -39,6 +41,12 @@ enum class Lens(val label: String) {
     DATA("الداتا")
 }
 
+/** أقسام التطبيق الرئيسية — بتتبدّل من القائمة الجانبية. */
+enum class Section(val title: String) {
+    COREWALL("Corewall"),
+    MANPOWER("Manpower")
+}
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val repo: AppRepository = (app as CoreWallApp).repository
@@ -55,6 +63,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val settings: StateFlow<AppSettings> = settingsStore.settings
+
+    private val _section = MutableStateFlow(Section.COREWALL)
+    val section: StateFlow<Section> = _section
+
+    fun setSection(s: Section) {
+        if (_section.value == s) return
+        _section.value = s
+        _tabIndex.value = 0
+        _selectedElementId.value = null
+        _openAttendanceFileId.value = null
+    }
 
     private val _lens = MutableStateFlow(Lens.REINF)
     val lens: StateFlow<Lens> = _lens
@@ -323,6 +342,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** أسماء العناصر المتاحة للـmentions (@). */
     fun allMarks(): List<String> = repo.baseSchedule.allMarks
+
+    // -------- Manpower (معزول لكل دور) --------
+
+    /** ملفات الحضور في الدور الشغّال بس. */
+    val attendanceFiles: StateFlow<List<AttendanceFileEntity>> =
+        combine(repo.attendanceFiles, _currentLevel) { all, level ->
+            all.filter { it.level == level }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val dailyAttendance: StateFlow<List<DailyAttendanceEntity>> = repo.dailyAttendance
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _openAttendanceFileId = MutableStateFlow<Long?>(null)
+    val openAttendanceFileId: StateFlow<Long?> = _openAttendanceFileId
+    fun openAttendanceFile(id: Long) { _openAttendanceFileId.value = id }
+    fun closeAttendanceFile() { _openAttendanceFileId.value = null }
+
+    fun saveAttendanceFile(file: AttendanceFileEntity) {
+        val bound = if (file.id == 0L) file.copy(level = _currentLevel.value) else file
+        viewModelScope.launch { repo.saveAttendanceFile(bound) }
+    }
+
+    fun deleteAttendanceFile(id: Long) {
+        viewModelScope.launch {
+            repo.deleteAttendanceFile(id)
+            if (_openAttendanceFileId.value == id) _openAttendanceFileId.value = null
+        }
+    }
+
+    fun saveDaily(day: DailyAttendanceEntity) {
+        viewModelScope.launch { repo.saveDaily(day.copy(updatedAt = System.currentTimeMillis())) }
+    }
+
+    fun deleteDaily(id: Long) {
+        viewModelScope.launch { repo.deleteDaily(id) }
+    }
 
     // -------- عارض PDF الداخلي --------
 

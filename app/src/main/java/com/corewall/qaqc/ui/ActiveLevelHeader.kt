@@ -1,6 +1,7 @@
 package com.corewall.qaqc.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,14 +41,13 @@ import com.corewall.qaqc.ui.theme.TowerNumberStyle
  * showSwitch: يظهر زرار "بدّل" (بنطفّيه في شاشات معيّنة لو حبينا).
  */
 @Composable
-fun ActiveLevelHeader(vm: MainViewModel, modifier: Modifier = Modifier) {
+fun ActiveLevelHeader(vm: MainViewModel, modifier: Modifier = Modifier, onMenu: (() -> Unit)? = null) {
     var showPicker by remember { mutableStateOf(false) }
     val level by vm.currentLevel.collectAsStateWithLifecycle()
     val idx = vm.levels.indexOf(level)
     val gradient = LocalAppGradients.current.header
 
     Surface(
-        onClick = { showPicker = true },
         color = Color.Transparent,
         modifier = modifier.fillMaxWidth()
     ) {
@@ -54,10 +55,16 @@ fun ActiveLevelHeader(vm: MainViewModel, modifier: Modifier = Modifier) {
             Modifier
                 .background(Brush.verticalGradient(gradient))
                 .statusBarsPadding()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            if (onMenu != null) {
+                androidx.compose.material3.IconButton(onClick = onMenu) {
+                    Icon(Icons.Filled.Menu, contentDescription = "الأقسام", tint = Color.White)
+                }
+                Spacer(Modifier.width(2.dp))
+            }
+            Column(Modifier.clickable { showPicker = true }) {
                 Text(
                     "الدور الشغّال",
                     style = MaterialTheme.typography.labelMedium,

@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "4.0"
+        versionCode = 8
+        versionName = "4.1"
     }
 
     // مفتاح توقيع ثابت متسجّل في الريبو — كل بناء بيتوقّع بنفس المفتاح،

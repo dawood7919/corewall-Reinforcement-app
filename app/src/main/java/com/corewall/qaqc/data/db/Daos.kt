@@ -115,6 +115,45 @@ interface TaskDao {
 }
 
 @Dao
+interface AttendanceFileDao {
+    @Query("SELECT * FROM attendance_files ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<AttendanceFileEntity>>
+
+    @Query("SELECT * FROM attendance_files")
+    suspend fun getAll(): List<AttendanceFileEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: AttendanceFileEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<AttendanceFileEntity>)
+
+    @Query("DELETE FROM attendance_files WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface DailyAttendanceDao {
+    @Query("SELECT * FROM daily_attendance ORDER BY date DESC")
+    fun observeAll(): Flow<List<DailyAttendanceEntity>>
+
+    @Query("SELECT * FROM daily_attendance")
+    suspend fun getAll(): List<DailyAttendanceEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: DailyAttendanceEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<DailyAttendanceEntity>)
+
+    @Query("DELETE FROM daily_attendance WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM daily_attendance WHERE fileId = :fileId")
+    suspend fun deleteForFile(fileId: Long)
+}
+
+@Dao
 interface NoteDao {
     @Query("SELECT * FROM notes ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<NoteEntity>>

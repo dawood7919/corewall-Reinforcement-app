@@ -77,6 +77,41 @@ data class ElementAttachmentEntity(
 }
 
 /**
+ * ملف حضور (مقاول/تخصص) في دور معيّن — أداة Manpower.
+ * المشروع ← الدور ← ملف الحضور ← سجلات الحضور اليومية.
+ */
+@Serializable
+@Entity(tableName = "attendance_files")
+data class AttendanceFileEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val level: String,
+    val company: String,
+    val trade: String,
+    val startDate: Long,
+    val notes: String = "",
+    val colorTag: Long = 0xFF5B66D6,
+    val logoPath: String? = null,
+    val createdAt: Long
+)
+
+/** سجل حضور يومي داخل ملف حضور. */
+@Serializable
+@Entity(tableName = "daily_attendance")
+data class DailyAttendanceEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fileId: Long,
+    val date: Long,
+    val workers: Int = 0,
+    val foremen: Int = 0,
+    val engineers: Int = 0,
+    val supervisors: Int = 0,
+    val overtimeHours: Double = 0.0,
+    val weather: String = "SUNNY",
+    val remarks: String = "",
+    val updatedAt: Long
+)
+
+/**
  * ملاحظة غنية على عنصر في دور معيّن (عزل كامل لكل دور):
  * نص قابل للتنسيق (Markdown) + صور مرفقة (مسارات ملفات) + عنوان.
  */
