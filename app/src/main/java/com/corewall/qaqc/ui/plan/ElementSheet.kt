@@ -1,6 +1,7 @@
 package com.corewall.qaqc.ui.plan
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,7 +10,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -324,53 +329,79 @@ private fun RangeCardScaffold(
     onEdit: () -> Unit,
     content: @Composable () -> Unit
 ) {
-    Card(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant
-        )
+    var expanded by remember { mutableStateOf(isActive) }
+    val rotation by androidx.compose.animation.core.animateFloatAsState(if (expanded) 180f else 0f, label = "chev")
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(
+            if (isActive) 1.5.dp else 1.dp,
+            if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+        ),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
     ) {
-        Column(Modifier.padding(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                if (isActive) {
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "← الشغّال",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelSmall
-                    )
+        Column {
+            // رأس قابل للطي
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 3.dp)) {
+                        if (isActive) StatusBadge("الشغّال الآن", MaterialTheme.colorScheme.primary)
+                        if (rev) { Spacer(Modifier.width(6.dp)); StatusBadge("REV", com.corewall.qaqc.ui.theme.LocalSrtColors.current.purple) }
+                        if (edited) { Spacer(Modifier.width(6.dp)); StatusBadge("معدَّل", com.corewall.qaqc.ui.theme.LocalSrtColors.current.orange) }
+                    }
                 }
-                if (rev) {
-                    Spacer(Modifier.width(6.dp))
-                    Badge("REV", MaterialTheme.colorScheme.secondary)
-                }
-                if (edited) {
-                    Spacer(Modifier.width(6.dp))
-                    Badge("معدَّل", MaterialTheme.colorScheme.tertiary)
-                }
-                Spacer(Modifier.weight(1f))
                 IconButton(onClick = onEdit) {
-                    Icon(
-                        Icons.Filled.Edit,
-                        contentDescription = "تعديل القيم",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Icon(Icons.Filled.Edit, contentDescription = "تعديل القيم", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 }
-            }
-            content()
-            if (note != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "⚠️ $note",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error
+                Icon(
+                    Icons.Filled.ExpandMore, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.rotate(rotation)
                 )
             }
+            androidx.compose.animation.AnimatedVisibility(visible = expanded) {
+                Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
+                    androidx.compose.material3.HorizontalDivider(color = com.corewall.qaqc.ui.theme.LocalSrtColors.current.divider)
+                    Spacer(Modifier.height(10.dp))
+                    content()
+                    if (note != null) {
+                        Spacer(Modifier.height(8.dp))
+                        com.corewall.qaqc.ui.theme.SrtCallout(
+                            title = "ملاحظة على الصف",
+                            body = note,
+                            accent = com.corewall.qaqc.ui.theme.LocalSrtColors.current.orange
+                        )
+                    }
+                }
+            }
         }
+    }
+}
+
+/** مجموعة سبك مع عنوان قسم صغير — بديل الجدول. */
+@Composable
+private fun SpecGroup(title: String, content: @Composable () -> Unit) {
+    Text(
+        title,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+        color = com.corewall.qaqc.ui.theme.LocalSrtColors.current.text3,
+        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+    )
+    content()
+}
+
+@Composable
+private fun StatusBadge(text: String, color: androidx.compose.ui.graphics.Color) {
+    Surface(color = color.copy(alpha = 0.14f), shape = RoundedCornerShape(6.dp)) {
+        Text(text, Modifier.padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -416,10 +447,12 @@ private fun WallRangeCard(row: WallRange, isActive: Boolean, onEdit: () -> Unit)
         title = "من ${row.from} إلى ${row.to ?: "؟"}",
         onEdit = onEdit
     ) {
-        SpecLine("السُمك", "${row.w} mm")
-        SpecLine("رأسي V", row.v)
-        SpecLine("أفقي H", row.h)
-        SpecLine("أطراف T", row.t)
+        SpecGroup("الأبعاد") { SpecLine("السُمك", "${row.w} mm") }
+        SpecGroup("التسليح") {
+            SpecLine("رأسي V", row.v)
+            SpecLine("أفقي H", row.h)
+            SpecLine("أطراف T", row.t)
+        }
     }
 }
 
@@ -433,11 +466,13 @@ private fun BeamRangeCard(row: BeamRange, isActive: Boolean, onEdit: () -> Unit)
         title = if (row.to == null) "دور ${row.from} فقط" else "من ${row.from} إلى ${row.to} (شامل)",
         onEdit = onEdit
     ) {
-        SpecLine("المقاس", "${row.w} × ${row.d} mm")
-        SpecLine("سفلي B", row.bottom.joinToString(" / "))
-        SpecLine("علوي T", row.top.joinToString(" / "))
-        SpecLine("جانبي", row.side)
-        SpecLine("كانات", row.links)
+        SpecGroup("الأبعاد") { SpecLine("المقاس", "${row.w} × ${row.d} mm") }
+        SpecGroup("التسليح") {
+            SpecLine("سفلي B", row.bottom.joinToString(" / "))
+            SpecLine("علوي T", row.top.joinToString(" / "))
+            SpecLine("جانبي", row.side)
+        }
+        SpecGroup("الكانات") { SpecLine("كانات", row.links) }
     }
 }
 
