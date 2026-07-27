@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Engineering
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -60,6 +61,9 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val workersToday = todayRecords.sumOf { it.workers }
     val foremenToday = todayRecords.sumOf { it.foremen }
     val engineersToday = todayRecords.sumOf { it.engineers }
+    val helpersToday = todayRecords.sumOf { it.supervisors }
+    val totalLaborToday = workersToday + foremenToday + engineersToday + helpersToday
+    val companiesActive = todayRecords.map { it.fileId }.distinct().size
 
     Scaffold(
         modifier = modifier,
@@ -114,6 +118,22 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                if (files.isNotEmpty()) {
+                    item(key = "__health__") {
+                        HealthGrid(
+                            listOf(
+                                HealthMetric("العمال", workersToday, Icons.Filled.Groups, Color(0xFF3A6EF0)),
+                                HealthMetric("الفورمان", foremenToday, Icons.Filled.Badge, Color(0xFFFF9500)),
+                                HealthMetric("المهندسين", engineersToday, Icons.Filled.Engineering, Color(0xFF34C759)),
+                                HealthMetric("المساعدين", helpersToday, Icons.Filled.People, Color(0xFFAF52DE)),
+                                HealthMetric("إجمالي العمالة", totalLaborToday, Icons.Filled.Groups, Color(0xFF2980B9)),
+                                HealthMetric("الشركات", companiesActive, Icons.Filled.Apartment, Color(0xFFE53935))
+                            )
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text("ملفات الحضور", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
                 items(files, key = { it.id }) { file ->
                     val fileToday = todayRecords.filter { it.fileId == file.id }
                     val lastUpdate = daily.filter { it.fileId == file.id }.maxByOrNull { it.updatedAt }
@@ -134,6 +154,46 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             onDismiss = { showDialog = false },
             onSave = { file -> vm.saveAttendanceFile(file); showDialog = false }
         )
+    }
+}
+
+private data class HealthMetric(val label: String, val value: Int, val icon: androidx.compose.ui.graphics.vector.ImageVector, val accent: Color)
+
+/** شبكة كروت العمالة بستايل Apple Health — بعدّادات متحركة. */
+@Composable
+private fun HealthGrid(metrics: List<HealthMetric>) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        metrics.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { m -> HealthCard(m, Modifier.weight(1f)) }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthCard(m: HealthMetric, modifier: Modifier = Modifier) {
+    val animated by androidx.compose.animation.core.animateIntAsState(
+        targetValue = m.value,
+        animationSpec = androidx.compose.animation.core.tween(650),
+        label = "hc"
+    )
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = modifier
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Box(
+                Modifier.size(30.dp).background(m.accent.copy(alpha = 0.14f), RoundedCornerShape(9.dp)),
+                contentAlignment = Alignment.Center
+            ) { Icon(m.icon, contentDescription = null, tint = m.accent, modifier = Modifier.size(17.dp)) }
+            Spacer(Modifier.height(8.dp))
+            Text("$animated", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(m.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
 }
 
