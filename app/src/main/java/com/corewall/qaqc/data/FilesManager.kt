@@ -57,6 +57,37 @@ class FilesManager(private val context: Context) {
     fun sizeOf(file: File): Long =
         if (file.isDirectory) file.walkTopDown().filter { it.isFile }.sumOf { it.length() } else file.length()
 
+    /** اسم فريد داخل مجلد (بيضيف رقم لو الاسم موجود). */
+    private fun uniqueDest(dir: File, name: String): File {
+        var dest = File(dir, name)
+        if (!dest.exists()) return dest
+        val base = name.substringBeforeLast('.', name)
+        val ext = name.substringAfterLast('.', "")
+        var i = 2
+        while (dest.exists()) {
+            dest = File(dir, if (ext.isEmpty()) "$base ($i)" else "$base ($i).$ext")
+            i++
+        }
+        return dest
+    }
+
+    /** نسخ ملف/مجلد لمجلد هدف (بيحافظ على النسخة الأصلية). */
+    fun copyInto(file: File, targetDir: File): Boolean = runCatching {
+        targetDir.mkdirs()
+        val dest = uniqueDest(targetDir, file.name)
+        if (file.isDirectory) file.copyRecursively(dest, overwrite = false)
+        else { file.copyTo(dest, overwrite = false); dest.exists() }
+    }.getOrDefault(false)
+
+    /** نقل ملف/مجلد لمجلد هدف. */
+    fun moveInto(file: File, targetDir: File): Boolean {
+        if (targetDir.absolutePath.startsWith(file.absolutePath)) return false // منع نقل مجلد لجوّه نفسه
+        return if (copyInto(file, targetDir)) file.deleteRecursively() else false
+    }
+
+    /** تكرار الملف/المجلد في نفس المكان. */
+    fun duplicate(file: File): Boolean = file.parentFile?.let { copyInto(file, it) } ?: false
+
     fun displayNameOf(uri: Uri): String {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor ->

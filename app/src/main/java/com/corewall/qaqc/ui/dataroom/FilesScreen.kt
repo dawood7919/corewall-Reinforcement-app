@@ -33,7 +33,12 @@ import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoveToInbox
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -142,7 +147,10 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     var newFolderDialog by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<File?>(null) }
     var detailTarget by remember { mutableStateOf<File?>(null) }
+    var actionTarget by remember { mutableStateOf<File?>(null) }
     var renameTarget by remember { mutableStateOf<File?>(null) }
+    // (ملف, هل نقل؟) — لاختيار الدور الهدف للنسخ/النقل
+    var floorPick by remember { mutableStateOf<Pair<File, Boolean>?>(null) }
     var searchActive by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var gridMode by remember { mutableStateOf(true) }
@@ -237,7 +245,7 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel("المجلدات", folders.size) }
             items(folders, span = { GridItemSpan(1) }, key = { "d-${it.name}" }) { f ->
                 FolderCard(f, vm, onOpen = { subPath = if (subPath.isEmpty()) f.name else "$subPath/${f.name}" },
-                    onMenu = { detailTarget = f })
+                    onMenu = { actionTarget = f })
             }
         }
         if (docs.isNotEmpty()) {
@@ -247,8 +255,8 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 span = { GridItemSpan(if (gridMode) 1 else maxLineSpan) },
                 key = { "f-${it.name}" }
             ) { f ->
-                if (gridMode) FileGridCard(f, onOpen = { openFile(vm, context, f) }, onMenu = { detailTarget = f })
-                else FileListRow(f, onOpen = { openFile(vm, context, f) }, onMenu = { detailTarget = f })
+                if (gridMode) FileGridCard(f, onOpen = { openFile(vm, context, f) }, onMenu = { actionTarget = f })
+                else FileListRow(f, onOpen = { openFile(vm, context, f) }, onMenu = { actionTarget = f })
             }
         }
     }
@@ -258,6 +266,37 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         CreateFolderSheet(
             onDismiss = { newFolderDialog = false },
             onCreate = { name -> vm.files.createFolder(currentDir, name); refresh++; newFolderDialog = false }
+        )
+    }
+
+    actionTarget?.let { f ->
+        FileActionSheet(
+            file = f,
+            onDismiss = { actionTarget = null },
+            onOpen = { actionTarget = null; if (f.isDirectory) { subPath = if (subPath.isEmpty()) f.name else "$subPath/${f.name}" } else openFile(vm, context, f) },
+            onShare = { actionTarget = null; if (!f.isDirectory) vm.files.share(f) },
+            onRename = { actionTarget = null; renameTarget = f },
+            onDuplicate = { actionTarget = null; vm.files.duplicate(f); refresh++; Toast.makeText(context, "اتعمل نسخة ✓", Toast.LENGTH_SHORT).show() },
+            onCopyFloor = { actionTarget = null; floorPick = f to false },
+            onMoveFloor = { actionTarget = null; floorPick = f to true },
+            onDetails = { actionTarget = null; detailTarget = f },
+            onDelete = { actionTarget = null; deleteTarget = f }
+        )
+    }
+
+    floorPick?.let { (f, isMove) ->
+        com.corewall.qaqc.ui.LevelPickerDialog(
+            levels = vm.levels,
+            current = level,
+            title = if (isMove) "نقل إلى دور" else "نسخ إلى دور",
+            onPick = { target ->
+                val dir = vm.files.levelDir(target)
+                val ok = if (isMove) vm.files.moveInto(f, dir) else vm.files.copyInto(f, dir)
+                refresh++
+                floorPick = null
+                Toast.makeText(context, if (ok) "تم ${if (isMove) "النقل" else "النسخ"} إلى $target ✓" else "فشلت العملية", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { floorPick = null }
         )
     }
 
@@ -474,8 +513,12 @@ private fun FolderCard(f: File, vm: MainViewModel, onOpen: () -> Unit, onMenu: (
         shadowElevation = 1.dp
     ) {
         Column(Modifier.padding(14.dp)) {
-            Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Folder, contentDescription = null, tint = accent, modifier = Modifier.size(26.dp))
+            Row(verticalAlignment = Alignment.Top) {
+                Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Folder, contentDescription = null, tint = accent, modifier = Modifier.size(26.dp))
+                }
+                Spacer(Modifier.weight(1f))
+                MenuDot(onMenu)
             }
             Spacer(Modifier.height(10.dp))
             Text(f.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -502,6 +545,11 @@ private fun FileGridCard(f: File, onOpen: () -> Unit, onMenu: () -> Unit) {
                 Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     disciplineOf(f.name)?.let { Chip(it, disciplineColor(it)) }
                     revisionOf(f.name)?.let { Chip("$it · LATEST", srt.green) }
+                }
+                Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), shape = RoundedCornerShape(10.dp)) {
+                        MenuDot(onMenu)
+                    }
                 }
             }
             Column(Modifier.padding(12.dp)) {
@@ -533,7 +581,19 @@ private fun FileListRow(f: File, onOpen: () -> Unit, onMenu: () -> Unit) {
                     disciplineOf(f.name)?.let { Spacer(Modifier.width(6.dp)); Chip(it, disciplineColor(it)) }
                 }
             }
+            MenuDot(onMenu)
         }
+    }
+}
+
+@Composable
+private fun MenuDot(onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(10.dp), color = Color.Transparent) {
+        Icon(
+            Icons.Filled.MoreVert, contentDescription = "خيارات",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(6.dp).size(20.dp)
+        )
     }
 }
 
@@ -566,6 +626,61 @@ private fun CenterIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, ti
 private fun Chip(text: String, color: Color) {
     Surface(color = color, shape = RoundedCornerShape(6.dp)) {
         Text(text, Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+    }
+}
+
+// ---------------------------------------------------------------- شيت الإجراءات (⋮)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FileActionSheet(
+    file: File, onDismiss: () -> Unit, onOpen: () -> Unit, onShare: () -> Unit,
+    onRename: () -> Unit, onDuplicate: () -> Unit, onCopyFloor: () -> Unit,
+    onMoveFloor: () -> Unit, onDetails: () -> Unit, onDelete: () -> Unit
+) {
+    val srt = LocalSrtColors.current
+    val isDir = file.isDirectory
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+            // رأس صغير بالملف
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                    if (isDir) CenterIcon(Icons.Filled.Folder, srt.blue) else FileThumbnail(file, Modifier.fillMaxSize())
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(file.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (isDir) "مجلد" else "${file.extension.uppercase()} · ${sizeText(file.length())}", style = MaterialTheme.typography.labelSmall, color = srt.text3)
+                }
+            }
+            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp), color = srt.divider)
+
+            ActionRow(Icons.Filled.OpenInNew, "فتح", if (isDir) "افتح المجلد" else "افتح الملف", srt.blue, onOpen)
+            ActionRow(Icons.Filled.DriveFileRenameOutline, "إعادة تسمية", "غيّر اسم ${if (isDir) "المجلد" else "الملف"}", srt.orange, onRename)
+            if (!isDir) ActionRow(Icons.Filled.Share, "مشاركة", "أرسل لتطبيق تاني", srt.green, onShare)
+            ActionRow(Icons.Filled.ContentCopy, "تكرار", "اعمل نسخة في نفس المكان", srt.purple, onDuplicate)
+            ActionRow(Icons.Filled.MoveToInbox, "نسخ إلى دور", "انسخه لمكتبة دور تاني", srt.blue, onCopyFloor)
+            ActionRow(Icons.Filled.DriveFileMove, "نقل إلى دور", "انقله لمكتبة دور تاني", srt.orange, onMoveFloor)
+            ActionRow(Icons.Filled.Info, "التفاصيل", "معاينة، الحجم، التاريخ، المالك", srt.text3, onDetails)
+            ActionRow(Icons.Filled.Delete, "حذف", "امسح نهائي", srt.red, onDelete)
+        }
+    }
+}
+
+@Composable
+private fun ActionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, accent: Color, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(accent.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

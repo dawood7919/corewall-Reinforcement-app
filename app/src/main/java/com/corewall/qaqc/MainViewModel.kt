@@ -89,7 +89,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _canGoBack = MutableStateFlow(false)
     val canGoBack: StateFlow<Boolean> = _canGoBack
 
-    private val _currentLevel = MutableStateFlow("GROUND")
+    // بيفتح على آخر دور شغّال المستخدم سابه (محفوظ) — مش دايماً GROUND.
+    private val _currentLevel = MutableStateFlow(
+        settingsStore.getLastLevel()?.takeIf { it in levels } ?: levels.firstOrNull() ?: "GROUND"
+    )
     val currentLevel: StateFlow<String> = _currentLevel
 
     private val _namingMode = MutableStateFlow(false)
@@ -159,13 +162,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setLevel(level: String) {
-        if (level in levels) _currentLevel.value = level
+        if (level in levels) {
+            _currentLevel.value = level
+            settingsStore.setLastLevel(level)
+        }
     }
 
     fun stepLevel(delta: Int) {
         val idx = levels.indexOf(_currentLevel.value)
         val next = (idx + delta).coerceIn(0, levels.size - 1)
         _currentLevel.value = levels[next]
+        settingsStore.setLastLevel(levels[next])
     }
 
     fun setNamingMode(enabled: Boolean) { _namingMode.value = enabled }

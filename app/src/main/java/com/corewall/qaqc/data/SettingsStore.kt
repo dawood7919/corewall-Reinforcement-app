@@ -38,4 +38,11 @@ class SettingsStore(context: Context) {
             .putBoolean("showStatuses", next.showStatuses)
             .apply()
     }
+
+    /** آخر دور شغّال المستخدم فتحه — عشان التطبيق يفتح من نفس المكان. */
+    fun getLastLevel(): String? = prefs.getString("lastLevel", null)
+
+    fun setLastLevel(level: String) {
+        prefs.edit().putString("lastLevel", level).apply()
+    }
 }
