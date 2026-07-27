@@ -231,30 +231,14 @@ fun AddDailyDialog(
 
 @Composable
 private fun NumberRow(label: String, value: Int, onChange: (Int) -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
-            IconButton(onClick = { onChange((value - 1).coerceAtLeast(0)) }) {
-                Icon(Icons.Filled.Remove, contentDescription = "نقص")
-            }
-        }
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Text(
-            "$value",
-            Modifier.width(48.dp),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-            IconButton(onClick = { onChange(value + 1) }) {
-                Icon(Icons.Filled.Add, contentDescription = "زيادة")
-            }
-        }
+        Spacer(Modifier.height(6.dp))
+        com.corewall.qaqc.ui.theme.SrtStepper(value = value, onChange = onChange, modifier = Modifier.fillMaxWidth())
     }
 }
 

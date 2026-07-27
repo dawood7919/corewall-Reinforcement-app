@@ -161,15 +161,16 @@ private fun DetailsContent(vm: MainViewModel, element: PlanElement) {
     val mark = names[element.id]
 
     Column(Modifier.verticalScroll(rememberScrollState())) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 mark ?: "عنصر غير مسمّى",
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 "(${element.id})",
+                Modifier.padding(bottom = 4.dp),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -304,23 +305,13 @@ private fun DetailsContent(vm: MainViewModel, element: PlanElement) {
 @Composable
 private fun GapWarning(vm: MainViewModel, mark: String) {
     val schedule by vm.schedule.collectAsStateWithLifecycle()
+    val level by vm.currentLevel.collectAsStateWithLifecycle()
     val gaps = remember(schedule, mark) { vm.logic.gapLevels(schedule, mark) }
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = MaterialTheme.shapes.small,
+    com.corewall.qaqc.ui.theme.SrtCallout(
+        title = "فجوة بيانات",
+        body = "الدور الحالي $level ضمن مدى العنصر لكن لا يوجد صف يغطيه.\nالأدوار الناقصة: ${gaps.joinToString("، ")}",
         modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Warning, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "فجوة بيانات حقيقية في الجدول الأصلي: الدور الحالي جوّه مدى العنصر " +
-                    "لكن مفيش صف بيغطيه. الأدوار الناقصة: ${gaps.joinToString("، ")} — راجع الرسمة/الكلاود.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
+    )
 }
 
 @Composable
