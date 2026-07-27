@@ -124,11 +124,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (lens != Lens.REINF) _namingMode.value = false
     }
 
-    /** من القائمة الجانبية: افتح المسقط بعدسة معيّنة. */
+    /** من القائمة الجانبية: افتح المسقط (تبويب 1) بعدسة معيّنة. */
     fun goToLens(lens: Lens) {
         setSection(Section.COREWALL)
         setLens(lens)
-        setTabIndex(0)
+        setTabIndex(1)
     }
 
     fun goToManpower() {

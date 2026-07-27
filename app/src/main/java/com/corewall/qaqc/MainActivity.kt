@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.People
@@ -56,6 +57,7 @@ import com.corewall.qaqc.ui.dataroom.FilesScreen
 import com.corewall.qaqc.ui.dataroom.TasksScreen
 import com.corewall.qaqc.ui.home.AnalysisScreen
 import com.corewall.qaqc.ui.home.HomeScreen
+import com.corewall.qaqc.ui.home.MissionControlScreen
 import com.corewall.qaqc.ui.home.UnifiedSheet
 import com.corewall.qaqc.ui.manpower.AttendanceFileDetailScreen
 import com.corewall.qaqc.ui.manpower.AttendanceScreen
@@ -86,8 +88,8 @@ private data class TabSpec(val label: String, val icon: ImageVector)
 
 private fun tabsFor(section: Section): List<TabSpec> = when (section) {
     Section.COREWALL -> listOf(
-        TabSpec("البرج", Icons.Filled.Apartment),
-        TabSpec("التحليل", Icons.Filled.Insights),
+        TabSpec("الرئيسية", Icons.Filled.Home),
+        TabSpec("المسقط", Icons.Filled.Map),
         TabSpec("الملفات", Icons.Filled.Folder),
         TabSpec("المهام", Icons.Filled.Checklist),
         TabSpec("الإعدادات", Icons.Filled.Settings)
@@ -166,8 +168,8 @@ fun MainScreen(vm: MainViewModel) {
             val m = Modifier.padding(padding)
             when (section) {
                 Section.COREWALL -> when (tabIndex) {
-                    0 -> HomeScreen(vm, m)
-                    1 -> AnalysisScreen(vm, m)
+                    0 -> MissionControlScreen(vm, m)
+                    1 -> HomeScreen(vm, m)
                     2 -> FilesScreen(vm, m)
                     3 -> TasksScreen(vm, m)
                     else -> SettingsScreen(vm, m)
