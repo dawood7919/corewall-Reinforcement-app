@@ -41,6 +41,22 @@ class FilesManager(private val context: Context) {
 
     fun delete(file: File): Boolean = file.deleteRecursively()
 
+    /** إعادة تسمية مع الحفاظ على الامتداد لو المستخدم مكتبوش. */
+    fun rename(file: File, newName: String): Boolean {
+        val trimmed = newName.trim()
+        if (trimmed.isEmpty()) return false
+        val ext = file.extension
+        val hasExt = trimmed.contains('.')
+        val finalName = sanitize(if (hasExt || file.isDirectory || ext.isEmpty()) trimmed else "$trimmed.$ext")
+        val target = File(file.parentFile, finalName)
+        if (target.exists()) return false
+        return file.renameTo(target)
+    }
+
+    /** الحجم الكلي (بايت) لمجلد أو ملف. */
+    fun sizeOf(file: File): Long =
+        if (file.isDirectory) file.walkTopDown().filter { it.isFile }.sumOf { it.length() } else file.length()
+
     fun displayNameOf(uri: Uri): String {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor ->
