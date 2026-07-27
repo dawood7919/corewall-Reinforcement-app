@@ -47,8 +47,11 @@ enum class Section(val title: String) {
     MANPOWER("Manpower")
 }
 
-/** شاشات ملء-الشاشة إضافية من القائمة الجانبية (S13–S16). */
-enum class AppScreen { NOTIFICATIONS, SETTINGS, SYNC, ABOUT }
+/** شاشات ملء-الشاشة إضافية من القائمة الجانبية (S13–S16) + ملاحظات الدور. */
+enum class AppScreen { NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES }
+
+/** معرّف وهمي للملاحظات المربوطة بالدور نفسه (مش بعنصر). */
+const val FLOOR_NOTE_ID = "__FLOOR__"
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 

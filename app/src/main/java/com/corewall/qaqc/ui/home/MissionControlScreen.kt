@@ -197,7 +197,7 @@ fun MissionControlScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(8.dp))
         QuickActions(
             onPlan = { vm.setLens(Lens.REINF); vm.setTabIndex(1) },
-            onNote = { vm.setLens(Lens.DATA); vm.setTabIndex(1) },
+            onNote = { vm.openAppScreen(com.corewall.qaqc.AppScreen.FLOOR_NOTES) },
             onAttendance = { vm.goToManpower() },
             onFiles = { vm.setTabIndex(2) },
             onTasks = { vm.setTabIndex(3) }

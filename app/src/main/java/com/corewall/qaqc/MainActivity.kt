@@ -51,6 +51,7 @@ import com.corewall.qaqc.ui.ActiveLevelHeader
 import com.corewall.qaqc.ui.AppDrawer
 import com.corewall.qaqc.ui.appscreens.AboutScreen
 import com.corewall.qaqc.ui.appscreens.AppSettingsScreen
+import com.corewall.qaqc.ui.appscreens.FloorNotesScreen
 import com.corewall.qaqc.ui.appscreens.NotificationsScreen
 import com.corewall.qaqc.ui.appscreens.SyncScreen
 import com.corewall.qaqc.ui.dataroom.FilesScreen
@@ -126,13 +127,13 @@ fun MainScreen(vm: MainViewModel) {
     ) {
         when {
             drawerState.isOpen -> scope.launch { drawerState.close() }
-            appScreen == com.corewall.qaqc.AppScreen.ABOUT -> vm.openAppScreen(com.corewall.qaqc.AppScreen.SETTINGS)
-            appScreen != null -> vm.closeAppScreen()
-            // ملاحظة: About بيرجع لـSettings؛ باقي الشاشات بترجع للرئيسية
-            openAttendanceFileId != null -> vm.closeAttendanceFile()
+            // النوافذ اللي فوق أي شاشة (مثلاً محرّر ملاحظة فُتح من ملاحظات الدور) تتقفل الأول
             viewingImage != null -> vm.closeImage()
             editingNote != null -> vm.closeNoteEditor()
             openPdfPath != null -> vm.closePdf()
+            openAttendanceFileId != null -> vm.closeAttendanceFile()
+            appScreen == com.corewall.qaqc.AppScreen.ABOUT -> vm.openAppScreen(com.corewall.qaqc.AppScreen.SETTINGS)
+            appScreen != null -> vm.closeAppScreen()
             selectedElementId != null -> vm.selectElement(null)
             namingMode -> vm.setNamingMode(false)
             else -> vm.popTab()
@@ -192,19 +193,13 @@ fun MainScreen(vm: MainViewModel) {
             }
         }
     }
-    openPdfPath?.let { path -> PdfViewerScreen(vm = vm, path = path, onClose = { vm.closePdf() }) }
-    editingNote?.let { note -> NoteEditorScreen(vm = vm, note = note, onClose = { vm.closeNoteEditor() }) }
-    viewingImage?.let { path -> ImageViewerScreen(files = vm.files, path = path, onClose = { vm.closeImage() }) }
-    openAttendanceFileId?.let { id ->
-        AttendanceFileDetailScreen(vm = vm, fileId = id, onClose = { vm.closeAttendanceFile() })
-    }
-
-    // ===== شاشات القائمة الجانبية (S13–S16) بملء الشاشة =====
+    // ===== شاشات القائمة الجانبية (S13–S16 + ملاحظات الدور) بملء الشاشة =====
     appScreen?.let { screen ->
         val (title, back) = when (screen) {
             com.corewall.qaqc.AppScreen.NOTIFICATIONS -> "الإشعارات" to { vm.closeAppScreen() }
             com.corewall.qaqc.AppScreen.SETTINGS -> "الإعدادات" to { vm.closeAppScreen() }
             com.corewall.qaqc.AppScreen.SYNC -> "مزامنة البيانات" to { vm.closeAppScreen() }
+            com.corewall.qaqc.AppScreen.FLOOR_NOTES -> "ملاحظات الدور" to { vm.closeAppScreen() }
             com.corewall.qaqc.AppScreen.ABOUT -> "عن التطبيق" to { vm.openAppScreen(com.corewall.qaqc.AppScreen.SETTINGS) }
         }
         AppScreenScaffold(title = title, onBack = back) { inner ->
@@ -212,9 +207,18 @@ fun MainScreen(vm: MainViewModel) {
                 com.corewall.qaqc.AppScreen.NOTIFICATIONS -> NotificationsScreen(vm, inner)
                 com.corewall.qaqc.AppScreen.SETTINGS -> AppSettingsScreen(vm, inner)
                 com.corewall.qaqc.AppScreen.SYNC -> SyncScreen(vm, inner)
+                com.corewall.qaqc.AppScreen.FLOOR_NOTES -> FloorNotesScreen(vm, inner)
                 com.corewall.qaqc.AppScreen.ABOUT -> AboutScreen(inner)
             }
         }
+    }
+
+    // النوافذ اللي بتتفتح فوق أي شاشة (بعد appScreen عشان ترسم فوقها)
+    openPdfPath?.let { path -> PdfViewerScreen(vm = vm, path = path, onClose = { vm.closePdf() }) }
+    editingNote?.let { note -> NoteEditorScreen(vm = vm, note = note, onClose = { vm.closeNoteEditor() }) }
+    viewingImage?.let { path -> ImageViewerScreen(files = vm.files, path = path, onClose = { vm.closeImage() }) }
+    openAttendanceFileId?.let { id ->
+        AttendanceFileDetailScreen(vm = vm, fileId = id, onClose = { vm.closeAttendanceFile() })
     }
 }
 
