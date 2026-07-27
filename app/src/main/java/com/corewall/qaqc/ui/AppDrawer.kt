@@ -24,8 +24,11 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Summarize
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material3.HorizontalDivider
@@ -54,18 +57,21 @@ import com.corewall.qaqc.ui.theme.LocalAppGradients
  * بعناوين فرعية + قسم عام + مبدّل ثيم سريع.
  */
 @Composable
-fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit, onAbout: () -> Unit) {
+fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
     val section by vm.section.collectAsStateWithLifecycle()
     val lens by vm.lens.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val unread by vm.unreadNotifications.collectAsStateWithLifecycle()
     val gradient = LocalAppGradients.current.header
+
+    fun go(action: () -> Unit) { action(); onNavigate() }
 
     Column(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
     ) {
-        // هيدر بروفايل بتدرّج
+        // هيدر بروفايل بتدرّج + جرس إشعارات
         Column(
             Modifier
                 .fillMaxWidth()
@@ -79,9 +85,24 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit, onAbout: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) { Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White) }
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(Modifier.weight(1f)) {
+                    Text("م. أحمد حسن", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
                     Text("QA/QC Engineer", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.85f))
-                    Text("Core Wall QA/QC", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Box(contentAlignment = Alignment.TopEnd) {
+                    Surface(
+                        onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.NOTIFICATIONS) } },
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White.copy(alpha = 0.2f)
+                    ) {
+                        Icon(Icons.Filled.Notifications, contentDescription = "الإشعارات", tint = Color.White, modifier = Modifier.padding(9.dp).size(22.dp))
+                    }
+                    if (unread > 0) {
+                        Box(
+                            Modifier.size(18.dp).background(Color(0xFFFF3B30), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) { Text("$unread", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold) }
+                    }
                 }
             }
         }
@@ -110,6 +131,17 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit, onAbout: () -> Unit) {
             onClick = { vm.goToLens(Lens.DATA); onNavigate() }
         )
 
+        DrawerItem(
+            icon = Icons.Filled.Summarize, title = "التقارير", subtitle = "Reports & Analytics",
+            selected = section == Section.MANPOWER,
+            onClick = { go { vm.goToManpower(); vm.setTabIndex(1) } }
+        )
+        DrawerItem(
+            icon = Icons.Filled.Notifications, title = "الإشعارات", subtitle = "Notifications",
+            selected = false, badge = if (unread > 0) unread else null,
+            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.NOTIFICATIONS) } }
+        )
+
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(Modifier.padding(horizontal = 20.dp))
         Spacer(Modifier.height(8.dp))
@@ -117,15 +149,15 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit, onAbout: () -> Unit) {
 
         DrawerItem(
             icon = Icons.Filled.Settings, title = "الإعدادات", subtitle = null, selected = false,
-            onClick = { vm.goToCorewallTab(4); onNavigate() }
+            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.SETTINGS) } }
         )
         DrawerItem(
-            icon = Icons.Filled.Backup, title = "النسخ الاحتياطي", subtitle = null, selected = false,
-            onClick = { vm.goToCorewallTab(4); onNavigate() }
+            icon = Icons.Filled.Sync, title = "مزامنة البيانات", subtitle = null, selected = false,
+            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.SYNC) } }
         )
         DrawerItem(
             icon = Icons.Filled.Info, title = "عن التطبيق", subtitle = null, selected = false,
-            onClick = onAbout
+            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.ABOUT) } }
         )
 
         Spacer(Modifier.height(12.dp))
@@ -157,7 +189,7 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun DrawerItem(icon: ImageVector, title: String, subtitle: String?, selected: Boolean, onClick: () -> Unit) {
+private fun DrawerItem(icon: ImageVector, title: String, subtitle: String?, selected: Boolean, onClick: () -> Unit, badge: Int? = null) {
     Surface(
         onClick = onClick,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -180,6 +212,12 @@ private fun DrawerItem(icon: ImageVector, title: String, subtitle: String?, sele
                     color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
                 )
                 if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (badge != null) {
+                Box(
+                    Modifier.size(24.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) { Text("$badge", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold) }
             }
         }
     }

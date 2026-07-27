@@ -47,6 +47,9 @@ enum class Section(val title: String) {
     MANPOWER("Manpower")
 }
 
+/** شاشات ملء-الشاشة إضافية من القائمة الجانبية (S13–S16). */
+enum class AppScreen { NOTIFICATIONS, SETTINGS, SYNC, ABOUT }
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val repo: AppRepository = (app as CoreWallApp).repository
@@ -357,6 +360,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val viewingImage: StateFlow<String?> = _viewingImage
     fun openImage(path: String) { _viewingImage.value = path }
     fun closeImage() { _viewingImage.value = null }
+
+    /** شاشة ملء-الشاشة الحالية (إشعارات/إعدادات/مزامنة/عن) — من القائمة الجانبية. */
+    private val _appScreen = MutableStateFlow<AppScreen?>(null)
+    val appScreen: StateFlow<AppScreen?> = _appScreen
+    fun openAppScreen(screen: AppScreen) { _appScreen.value = screen }
+    fun closeAppScreen() { _appScreen.value = null }
+
+    /** عدد الإشعارات غير المقروءة (مشتق من منطق الفجوات/التغييرات — placeholder ثابت مؤقتاً). */
+    private val _unreadNotifications = MutableStateFlow(0)
+    val unreadNotifications: StateFlow<Int> = _unreadNotifications
+    fun setUnreadNotifications(n: Int) { _unreadNotifications.value = n }
 
     /** أسماء العناصر المتاحة للـmentions (@). */
     fun allMarks(): List<String> = repo.baseSchedule.allMarks

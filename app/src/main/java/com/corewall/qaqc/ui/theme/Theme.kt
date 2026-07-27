@@ -101,84 +101,142 @@ private val BlueprintCategoryColors = CategoryColors(
 
 val LocalCategoryColors = staticCompositionLocalOf { LightCategoryColors }
 
-/** تدرّجات لونية (ستايل Aurora) — للهيدر والأسطح المميزة. */
+/**
+ * لوحة SRT الموسّعة — التوكنات اللي مالهاش مقابل في Material colorScheme
+ * (text-3, الألوان الدلالية الثابتة، وخلفية الأزرق الخفيفة blue-tint).
+ * ثابتة المعنى في كل التطبيق زي ما الـ spec بيقول.
+ */
+data class SrtColors(
+    val blue: Color,
+    val bluePress: Color,
+    val blueTint: Color,
+    val surface2: Color,
+    val divider: Color,
+    val text3: Color,
+    val green: Color,
+    val orange: Color,
+    val red: Color,
+    val grayDot: Color,
+    val purple: Color
+)
+
+private val SrtLight = SrtColors(
+    blue = Color(0xFF3A6EF0),
+    bluePress = Color(0xFF2F5AD0),
+    blueTint = Color(0xFFEBF1FE),
+    surface2 = Color(0xFFF2F3F6),
+    divider = Color(0xFFEEEFF2),
+    text3 = Color(0xFF8C92A0),
+    green = Color(0xFF34C759),
+    orange = Color(0xFFFF9500),
+    red = Color(0xFFFF3B30),
+    grayDot = Color(0xFFAEB2BC),
+    purple = Color(0xFFAF52DE)
+)
+
+private val SrtDark = SrtColors(
+    blue = Color(0xFF4E7DF5),
+    bluePress = Color(0xFF3A6EF0),
+    blueTint = Color(0xFF1B2540),
+    surface2 = Color(0xFF1F2229),
+    divider = Color(0xFF23262E),
+    text3 = Color(0xFF7E8592),
+    green = Color(0xFF34C759),
+    orange = Color(0xFFFF9500),
+    red = Color(0xFFFF453A),
+    grayDot = Color(0xFF5A5F6C),
+    purple = Color(0xFFBF5AF2)
+)
+
+private val SrtBlueprint = SrtLight.copy(
+    blue = Color(0xFF7FD1F7),
+    bluePress = Color(0xFF5FB8E8),
+    blueTint = Color(0xFF10395B),
+    surface2 = Color(0xFF15355A),
+    divider = Color(0xFF15355A),
+    text3 = Color(0xFF8FB4D4)
+)
+
+val LocalSrtColors = staticCompositionLocalOf { SrtLight }
+
+/** تدرّجات لونية — للهيدر وكروت الأبطال (hero) الزرقا. */
 data class AppGradients(val header: List<Color>, val fab: List<Color>)
 
-private val AuroraLightGradients = AppGradients(
-    header = listOf(Color(0xFF7C86EC), Color(0xFF5B66D6)),
-    fab = listOf(Color(0xFF7C86EC), Color(0xFF5B66D6))
+private val BlueLightGradients = AppGradients(
+    header = listOf(Color(0xFF4E7DF5), Color(0xFF3A6EF0)),
+    fab = listOf(Color(0xFF4E7DF5), Color(0xFF3A6EF0))
 )
-private val AuroraDarkGradients = AppGradients(
-    header = listOf(Color(0xFF3A3F7A), Color(0xFF23264A)),
-    fab = listOf(Color(0xFF6E79E0), Color(0xFF4B57C4))
+private val BlueDarkGradients = AppGradients(
+    header = listOf(Color(0xFF3A6EF0), Color(0xFF2F5AD0)),
+    fab = listOf(Color(0xFF4E7DF5), Color(0xFF3A6EF0))
 )
 private val BlueprintGradients = AppGradients(
     header = listOf(Color(0xFF14486E), Color(0xFF0E2A48)),
     fab = listOf(Color(0xFF2E86C1), Color(0xFF14486E))
 )
 
-val LocalAppGradients = staticCompositionLocalOf { AuroraLightGradients }
+val LocalAppGradients = staticCompositionLocalOf { BlueLightGradients }
 
 object StatusColors {
     fun of(status: InspectionStatus): Color = when (status) {
-        InspectionStatus.NONE -> Color(0xFF8A8A8E)
-        InspectionStatus.WIR_SUBMITTED -> Color(0xFFFF9F0A)
+        InspectionStatus.NONE -> Color(0xFFAEB2BC)
+        InspectionStatus.WIR_SUBMITTED -> Color(0xFFAF52DE)
         InspectionStatus.APPROVED -> Color(0xFF34C759)
-        InspectionStatus.CAST -> Color(0xFF0A84FF)
+        InspectionStatus.CAST -> Color(0xFF3A6EF0)
         InspectionStatus.REJECTED -> Color(0xFFFF3B30)
     }
 }
 
 // ---------------------------------------------------------------- الثيمات
 
-// Aurora فاتح: خلفية لافندر + نيلي متدرّج + كروت بيضا ناعمة (ستايل Finance app)
+// SRT فاتح: خلفية رمادي فاتح #F7F8FA + أزرق iOS #3A6EF0 + كروت بيضا
 private val ReimaginedLight = lightColorScheme(
-    primary = Color(0xFF5B66D6),
+    primary = Color(0xFF3A6EF0),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFE6E8FB),
-    onPrimaryContainer = Color(0xFF2C336E),
-    secondary = Color(0xFF7C86EC),
-    secondaryContainer = Color(0xFFEDEFFC),
-    onSecondaryContainer = Color(0xFF2C336E),
-    tertiary = Color(0xFF37B98A),
+    primaryContainer = Color(0xFFEBF1FE),
+    onPrimaryContainer = Color(0xFF2F5AD0),
+    secondary = Color(0xFF3A6EF0),
+    secondaryContainer = Color(0xFFEBF1FE),
+    onSecondaryContainer = Color(0xFF2F5AD0),
+    tertiary = Color(0xFF34C759),
     onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFD6F5E8),
-    onTertiaryContainer = Color(0xFF0E4632),
-    background = Color(0xFFEFF1FB),
-    onBackground = Color(0xFF1E2038),
+    tertiaryContainer = Color(0xFFDDF6E3),
+    onTertiaryContainer = Color(0xFF0B5127),
+    background = Color(0xFFF7F8FA),
+    onBackground = Color(0xFF1C1E26),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1E2038),
-    surfaceVariant = Color(0xFFEEF0FA),
-    onSurfaceVariant = Color(0xFF7E82A0),
-    outline = Color(0xFFE0E3F1),
-    error = Color(0xFFF25C6E),
-    errorContainer = Color(0xFFFFE1E5),
-    onErrorContainer = Color(0xFF6B121F)
+    onSurface = Color(0xFF1C1E26),
+    surfaceVariant = Color(0xFFF2F3F6),
+    onSurfaceVariant = Color(0xFF6B7280),
+    outline = Color(0xFFE8EAEE),
+    error = Color(0xFFFF3B30),
+    errorContainer = Color(0xFFFFE3E1),
+    onErrorContainer = Color(0xFF7A1610)
 )
 
-// Aurora دارك: نيلي غامق مخملي + نفس الأكسنت
+// SRT دارك: خلفية #0B0C12 + أسطح #16181F + نفس الأزرق
 private val ReimaginedDark = darkColorScheme(
-    primary = Color(0xFF8B95F0),
-    onPrimary = Color(0xFF1A1E3A),
-    primaryContainer = Color(0xFF2E3466),
-    onPrimaryContainer = Color(0xFFD9DCFB),
-    secondary = Color(0xFF9AA2F2),
-    secondaryContainer = Color(0xFF262B52),
-    onSecondaryContainer = Color(0xFFD9DCFB),
-    tertiary = Color(0xFF4FD3A0),
-    onTertiary = Color(0xFF06281C),
-    tertiaryContainer = Color(0xFF10452F),
-    onTertiaryContainer = Color(0xFFCFF6E5),
-    background = Color(0xFF0F1024),
-    onBackground = Color(0xFFE7E8F6),
-    surface = Color(0xFF191B36),
-    onSurface = Color(0xFFE7E8F6),
-    surfaceVariant = Color(0xFF232645),
-    onSurfaceVariant = Color(0xFF9DA1C4),
-    outline = Color(0xFF33375C),
-    error = Color(0xFFFF7A88),
-    errorContainer = Color(0xFF4A1620),
-    onErrorContainer = Color(0xFFFFD9DD)
+    primary = Color(0xFF4E7DF5),
+    onPrimary = Color(0xFF07122E),
+    primaryContainer = Color(0xFF1B2540),
+    onPrimaryContainer = Color(0xFFCFDCFB),
+    secondary = Color(0xFF4E7DF5),
+    secondaryContainer = Color(0xFF1B2540),
+    onSecondaryContainer = Color(0xFFCFDCFB),
+    tertiary = Color(0xFF34C759),
+    onTertiary = Color(0xFF04220F),
+    tertiaryContainer = Color(0xFF10361E),
+    onTertiaryContainer = Color(0xFFCFF6D9),
+    background = Color(0xFF0B0C12),
+    onBackground = Color(0xFFF5F6F8),
+    surface = Color(0xFF16181F),
+    onSurface = Color(0xFFF5F6F8),
+    surfaceVariant = Color(0xFF1F2229),
+    onSurfaceVariant = Color(0xFF9CA3AF),
+    outline = Color(0xFF282B33),
+    error = Color(0xFFFF453A),
+    errorContainer = Color(0xFF3E1512),
+    onErrorContainer = Color(0xFFFFD9D5)
 )
 
 // Blueprint: أزرق لوحة هندسية + سماوي 7FD1F7 وحواف حادة
@@ -203,12 +261,12 @@ private val ReimaginedBlueprint = darkColorScheme(
     onErrorContainer = Color(0xFFFFD9D3)
 )
 
-// أنصاف أقطار كبيرة (24/16) — وBlueprint حاد (6/4)
+// أنصاف أقطار SRT: input 14 / icon 12 / card 18 / sheet 28 — وBlueprint حاد (6/4)
 private val SoftShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(16.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(24.dp),
+    extraSmall = RoundedCornerShape(12.dp),
+    small = RoundedCornerShape(14.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(22.dp),
     extraLarge = RoundedCornerShape(28.dp)
 )
 
@@ -233,13 +291,19 @@ fun CoreWallTheme(theme: AppTheme, content: @Composable () -> Unit) {
         AppTheme.BLUEPRINT -> BlueprintCategoryColors
     }
     val gradients = when (theme) {
-        AppTheme.IOS_LIGHT -> AuroraLightGradients
-        AppTheme.DARK_OLED -> AuroraDarkGradients
+        AppTheme.IOS_LIGHT -> BlueLightGradients
+        AppTheme.DARK_OLED -> BlueDarkGradients
         AppTheme.BLUEPRINT -> BlueprintGradients
+    }
+    val srt = when (theme) {
+        AppTheme.IOS_LIGHT -> SrtLight
+        AppTheme.DARK_OLED -> SrtDark
+        AppTheme.BLUEPRINT -> SrtBlueprint
     }
     CompositionLocalProvider(
         LocalCategoryColors provides categories,
-        LocalAppGradients provides gradients
+        LocalAppGradients provides gradients,
+        LocalSrtColors provides srt
     ) {
         MaterialTheme(
             colorScheme = scheme,

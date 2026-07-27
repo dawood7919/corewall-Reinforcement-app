@@ -7,9 +7,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Checklist
@@ -46,6 +48,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.corewall.qaqc.ui.ActiveLevelHeader
 import com.corewall.qaqc.ui.AppDrawer
+import com.corewall.qaqc.ui.appscreens.AboutScreen
+import com.corewall.qaqc.ui.appscreens.AppSettingsScreen
+import com.corewall.qaqc.ui.appscreens.NotificationsScreen
+import com.corewall.qaqc.ui.appscreens.SyncScreen
 import com.corewall.qaqc.ui.dataroom.FilesScreen
 import com.corewall.qaqc.ui.dataroom.TasksScreen
 import com.corewall.qaqc.ui.home.AnalysisScreen
@@ -105,19 +111,22 @@ fun MainScreen(vm: MainViewModel) {
     val editingNote by vm.editingNote.collectAsStateWithLifecycle()
     val viewingImage by vm.viewingImage.collectAsStateWithLifecycle()
     val openAttendanceFileId by vm.openAttendanceFileId.collectAsStateWithLifecycle()
+    val appScreen by vm.appScreen.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val tabs = tabsFor(section)
-    var showAbout by remember { mutableStateOf(false) }
 
     BackHandler(
-        enabled = drawerState.isOpen || openAttendanceFileId != null || viewingImage != null ||
+        enabled = drawerState.isOpen || appScreen != null || openAttendanceFileId != null || viewingImage != null ||
             editingNote != null || openPdfPath != null || selectedElementId != null ||
             namingMode || canGoBack
     ) {
         when {
             drawerState.isOpen -> scope.launch { drawerState.close() }
+            appScreen == com.corewall.qaqc.AppScreen.ABOUT -> vm.openAppScreen(com.corewall.qaqc.AppScreen.SETTINGS)
+            appScreen != null -> vm.closeAppScreen()
+            // ملاحظة: About بيرجع لـSettings؛ باقي الشاشات بترجع للرئيسية
             openAttendanceFileId != null -> vm.closeAttendanceFile()
             viewingImage != null -> vm.closeImage()
             editingNote != null -> vm.closeNoteEditor()
@@ -134,8 +143,7 @@ fun MainScreen(vm: MainViewModel) {
             ModalDrawerSheet {
                 AppDrawer(
                     vm = vm,
-                    onNavigate = { scope.launch { drawerState.close() } },
-                    onAbout = { scope.launch { drawerState.close() }; showAbout = true }
+                    onNavigate = { scope.launch { drawerState.close() } }
                 )
             }
         }
@@ -189,17 +197,44 @@ fun MainScreen(vm: MainViewModel) {
         AttendanceFileDetailScreen(vm = vm, fileId = id, onClose = { vm.closeAttendanceFile() })
     }
 
-    if (showAbout) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showAbout = false },
-            title = { Text("Core Wall QA/QC") },
-            text = {
-                Text(
-                    "تطبيق أندرويد Native لإدارة جودة الكور وول: التسليح، العدّ، الداتا، " +
-                        "والعمالة (Manpower) — كل حاجة معزولة لكل دور.\n\nنسخة 4.2"
+    // ===== شاشات القائمة الجانبية (S13–S16) بملء الشاشة =====
+    appScreen?.let { screen ->
+        val (title, back) = when (screen) {
+            com.corewall.qaqc.AppScreen.NOTIFICATIONS -> "الإشعارات" to { vm.closeAppScreen() }
+            com.corewall.qaqc.AppScreen.SETTINGS -> "الإعدادات" to { vm.closeAppScreen() }
+            com.corewall.qaqc.AppScreen.SYNC -> "مزامنة البيانات" to { vm.closeAppScreen() }
+            com.corewall.qaqc.AppScreen.ABOUT -> "عن التطبيق" to { vm.openAppScreen(com.corewall.qaqc.AppScreen.SETTINGS) }
+        }
+        AppScreenScaffold(title = title, onBack = back) { inner ->
+            when (screen) {
+                com.corewall.qaqc.AppScreen.NOTIFICATIONS -> NotificationsScreen(vm, inner)
+                com.corewall.qaqc.AppScreen.SETTINGS -> AppSettingsScreen(vm, inner)
+                com.corewall.qaqc.AppScreen.SYNC -> SyncScreen(vm, inner)
+                com.corewall.qaqc.AppScreen.ABOUT -> AboutScreen(inner)
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun AppScreenScaffold(title: String, onBack: () -> Unit, content: @Composable (Modifier) -> Unit) {
+    androidx.compose.material3.Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            topBar = {
+                androidx.compose.material3.CenterAlignedTopAppBar(
+                    title = { Text(title, fontWeight = FontWeight.SemiBold) },
+                    navigationIcon = {
+                        androidx.compose.material3.IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBackIos, contentDescription = "رجوع")
+                        }
+                    }
                 )
-            },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { showAbout = false }) { Text("تمام") } }
-        )
+            }
+        ) { padding -> content(Modifier.padding(padding)) }
     }
 }
