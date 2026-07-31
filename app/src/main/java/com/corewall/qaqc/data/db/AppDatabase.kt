@@ -19,9 +19,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PdfAnnotationEntity::class,
         NoteEntity::class,
         AttendanceFileEntity::class,
-        DailyAttendanceEntity::class
+        DailyAttendanceEntity::class,
+        SitePhotoEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -36,6 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun attendanceFileDao(): AttendanceFileDao
     abstract fun dailyAttendanceDao(): DailyAttendanceDao
+    abstract fun sitePhotoDao(): SitePhotoDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -90,14 +92,12 @@ abstract class AppDatabase : RoomDatabase() {
 
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // عزل العدّ لكل دور — الصفوف القديمة بتتنسب لـGROUND
                 db.execSQL("ALTER TABLE `bar_counts` ADD COLUMN `level` TEXT NOT NULL DEFAULT 'GROUND'")
             }
         }
 
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // المهام تبقى مربوطة بدور — الصفوف القديمة اللي مالهاش دور تروح GROUND
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `tasks_new` (" +
                         "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
@@ -166,6 +166,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `site_photos` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`level` TEXT NOT NULL, " +
+                        "`filePath` TEXT NOT NULL, " +
+                        "`comment` TEXT NOT NULL, " +
+                        "`timestamp` INTEGER NOT NULL)"
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -177,7 +190,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "corewall.db"
                 ).addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                    MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+                    MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
                 ).build().also { instance = it }
             }
     }

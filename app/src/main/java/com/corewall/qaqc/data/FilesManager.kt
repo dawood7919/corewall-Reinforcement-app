@@ -26,6 +26,10 @@ class FilesManager(private val context: Context) {
     fun attachmentsDir(level: String, elementId: String): File =
         File(root, "attachments/${sanitize(level)}/${sanitize(elementId)}").apply { mkdirs() }
 
+    /** مجلد صور الموقع (Site Photos) لكل دور. */
+    fun sitePhotosDir(level: String): File =
+        File(root, "site-photos/${sanitize(level)}").apply { mkdirs() }
+
     private fun sanitize(name: String) = name.replace(Regex("[^A-Za-z0-9._\\- ]"), "_")
 
     fun list(dir: File): List<File> =
@@ -81,7 +85,7 @@ class FilesManager(private val context: Context) {
 
     /** نقل ملف/مجلد لمجلد هدف. */
     fun moveInto(file: File, targetDir: File): Boolean {
-        if (targetDir.absolutePath.startsWith(file.absolutePath)) return false // منع نقل مجلد لجوّه نفسه
+        if (targetDir.absolutePath.startsWith(file.absolutePath)) return false
         return if (copyInto(file, targetDir)) file.deleteRecursively() else false
     }
 
@@ -123,6 +127,12 @@ class FilesManager(private val context: Context) {
     fun newImageFile(level: String, elementId: String): File {
         val dir = File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").apply { mkdirs() }
         return File(dir, "IMG_${System.currentTimeMillis()}.jpg")
+    }
+
+    /** ملف صورة جديد لالتقاط صورة موقع (Site Photos) للدور. */
+    fun newSitePhotoFile(level: String): File {
+        val dir = sitePhotosDir(level)
+        return File(dir, "SITE_${System.currentTimeMillis()}.jpg")
     }
 
     /** نسخ صور مختارة من المعرض لمجلد صور الملاحظات — بترجع مساراتها. */
