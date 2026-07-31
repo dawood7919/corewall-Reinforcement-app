@@ -41,6 +41,7 @@ import com.corewall.qaqc.ui.appscreens.AboutScreen
 import com.corewall.qaqc.ui.appscreens.AppSettingsScreen
 import com.corewall.qaqc.ui.appscreens.FloorNotesScreen
 import com.corewall.qaqc.ui.appscreens.NotificationsScreen
+import com.corewall.qaqc.ui.appscreens.SitePhotosScreen
 import com.corewall.qaqc.ui.appscreens.SyncScreen
 import com.corewall.qaqc.ui.cad.CadViewerScreen
 import com.corewall.qaqc.ui.dataroom.FilesScreen
@@ -188,6 +189,7 @@ fun MainScreen(vm: MainViewModel) {
             AppScreen.SETTINGS -> "الإعدادات" to { vm.closeAppScreen() }
             AppScreen.SYNC -> "مزامنة البيانات" to { vm.closeAppScreen() }
             AppScreen.FLOOR_NOTES -> "ملاحظات الدور" to { vm.closeAppScreen() }
+            AppScreen.SITE_PHOTOS -> "Site Photos · ${vm.currentLevel.value}" to { vm.closeAppScreen() }
             AppScreen.ABOUT -> "عن التطبيق" to { vm.openAppScreen(AppScreen.SETTINGS) }
         }
         AppScreenScaffold(title = title, onBack = back) { inner ->
@@ -196,6 +198,7 @@ fun MainScreen(vm: MainViewModel) {
                 AppScreen.SETTINGS -> AppSettingsScreen(vm, inner)
                 AppScreen.SYNC -> SyncScreen(vm, inner)
                 AppScreen.FLOOR_NOTES -> FloorNotesScreen(vm, inner)
+                AppScreen.SITE_PHOTOS -> SitePhotosScreen(vm, inner)
                 AppScreen.ABOUT -> AboutScreen(inner)
             }
         }
