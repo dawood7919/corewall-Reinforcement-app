@@ -15,6 +15,7 @@ import com.corewall.qaqc.data.db.DailyAttendanceEntity
 import com.corewall.qaqc.data.db.ElementAttachmentEntity
 import com.corewall.qaqc.data.db.NoteEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
+import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,7 +43,7 @@ enum class Section(val title: String) {
     MANPOWER("Manpower")
 }
 
-enum class AppScreen { NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES }
+enum class AppScreen { NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS }
 
 const val FLOOR_NOTE_ID = "__FLOOR__"
 
@@ -329,6 +330,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val viewingImage: StateFlow<String?> = _viewingImage
     fun openImage(path: String) { _viewingImage.value = path }
     fun closeImage() { _viewingImage.value = null }
+
+    // -------- Site Photos --------
+
+    val sitePhotos: StateFlow<List<SitePhotoEntity>> =
+        combine(repo.sitePhotos, _currentLevel) { all, level ->
+            all.filter { it.level == level }.sortedByDescending { it.timestamp }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addSitePhoto(filePath: String, comment: String) {
+        viewModelScope.launch {
+            repo.saveSitePhoto(
+                SitePhotoEntity(
+                    level = _currentLevel.value,
+                    filePath = filePath,
+                    comment = comment.trim(),
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun updateSitePhotoComment(photo: SitePhotoEntity, comment: String) {
+        viewModelScope.launch {
+            repo.saveSitePhoto(photo.copy(comment = comment.trim()))
+        }
+    }
+
+    fun deleteSitePhoto(photo: SitePhotoEntity) {
+        viewModelScope.launch { repo.deleteSitePhoto(photo) }
+    }
 
     private val _appScreen = MutableStateFlow<AppScreen?>(null)
     val appScreen: StateFlow<AppScreen?> = _appScreen
