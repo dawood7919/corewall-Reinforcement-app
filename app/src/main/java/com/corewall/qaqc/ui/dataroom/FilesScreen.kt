@@ -100,6 +100,7 @@ private fun sizeText(bytes: Long): String = when {
 
 private fun isImage(f: File) = f.extension.lowercase() in listOf("jpg", "jpeg", "png", "webp", "gif", "heic", "bmp")
 private fun isPdf(f: File) = f.extension.equals("pdf", ignoreCase = true)
+private fun isCad(f: File) = f.extension.lowercase() in listOf("dxf", "dwg")
 
 /** يستخرج التخصص من اسم الملف (ARCH/STRUCT/MEP/CIVIL) — ميزة هندسية. */
 private fun disciplineOf(name: String): String? {
@@ -339,9 +340,14 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 }
 
 private fun openFile(vm: MainViewModel, context: android.content.Context, f: File) {
-    if (isPdf(f)) vm.openPdf(f.absolutePath)
-    else if (isImage(f)) vm.openImage(f.absolutePath)
-    else if (!vm.files.openExternally(f)) Toast.makeText(context, "مفيش تطبيق يفتح الملف ده", Toast.LENGTH_SHORT).show()
+    when {
+        isPdf(f) -> vm.openPdf(f.absolutePath)
+        isImage(f) -> vm.openImage(f.absolutePath)
+        isCad(f) -> vm.openCad(f.absolutePath)
+        else -> if (!vm.files.openExternally(f)) {
+            Toast.makeText(context, "مفيش تطبيق يفتح الملف ده", Toast.LENGTH_SHORT).show()
+        }
+    }
 }
 
 // ---------------------------------------------------------------- الهيدر
@@ -610,6 +616,7 @@ private fun FileThumbnail(f: File, modifier: Modifier = Modifier) {
             if (bmp != null) androidx.compose.foundation.Image(bmp.asImageBitmap(), contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
             else CenterIcon(Icons.Filled.Image, LocalSrtColors.current.blue)
         }
+        isCad(f) -> CenterIcon(Icons.Filled.InsertDriveFile, LocalSrtColors.current.orange)
         f.extension.lowercase() in listOf("xls", "xlsx", "csv") -> CenterIcon(Icons.Filled.TableChart, LocalSrtColors.current.green)
         else -> CenterIcon(Icons.Filled.InsertDriveFile, LocalSrtColors.current.text3)
     }
