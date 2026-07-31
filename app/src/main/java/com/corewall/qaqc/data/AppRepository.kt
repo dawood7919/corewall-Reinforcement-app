@@ -12,6 +12,7 @@ import com.corewall.qaqc.data.db.InspectionEntity
 import com.corewall.qaqc.data.db.NoteEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.RangeEditEntity
+import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
 import com.corewall.qaqc.data.model.BeamRange
 import com.corewall.qaqc.data.model.PlanData
@@ -159,10 +160,20 @@ class AppRepository(context: Context) {
     suspend fun saveNote(note: NoteEntity): Long = db.noteDao().upsert(note)
     suspend fun deleteNote(note: NoteEntity) {
         db.noteDao().delete(note.id)
-        // نمسح صور الملاحظة من القرص كمان
         runCatching {
             json.decodeFromString<List<String>>(note.imagePathsJson).forEach { java.io.File(it).delete() }
         }
+    }
+
+    // ---------- Site Photos (صور الموقع لكل دور) ----------
+
+    val sitePhotos: Flow<List<SitePhotoEntity>> = db.sitePhotoDao().observeAll()
+
+    suspend fun saveSitePhoto(photo: SitePhotoEntity): Long = db.sitePhotoDao().upsert(photo)
+
+    suspend fun deleteSitePhoto(photo: SitePhotoEntity) {
+        db.sitePhotoDao().delete(photo.id)
+        runCatching { java.io.File(photo.filePath).delete() }
     }
 
     // ---------- Manpower (ملفات الحضور + السجلات اليومية) ----------
@@ -190,7 +201,7 @@ class AppRepository(context: Context) {
 
     @Serializable
     data class Backup(
-        val version: Int = 1,
+        val version: Int = 2,
         val exportedAt: Long,
         val names: List<ElementNameEntity>,
         val inspections: List<InspectionEntity>,
@@ -202,7 +213,8 @@ class AppRepository(context: Context) {
         val pdfAnnotations: List<PdfAnnotationEntity> = emptyList(),
         val notes: List<NoteEntity> = emptyList(),
         val attendanceFiles: List<AttendanceFileEntity> = emptyList(),
-        val dailyAttendance: List<DailyAttendanceEntity> = emptyList()
+        val dailyAttendance: List<DailyAttendanceEntity> = emptyList(),
+        val sitePhotos: List<SitePhotoEntity> = emptyList()
     )
 
     suspend fun exportBackupJson(): String = json.encodeToString(
@@ -218,7 +230,8 @@ class AppRepository(context: Context) {
             pdfAnnotations = db.pdfAnnotationDao().getAll(),
             notes = db.noteDao().getAll(),
             attendanceFiles = db.attendanceFileDao().getAll(),
-            dailyAttendance = db.dailyAttendanceDao().getAll()
+            dailyAttendance = db.dailyAttendanceDao().getAll(),
+            sitePhotos = db.sitePhotoDao().getAll()
         )
     )
 
@@ -236,7 +249,9 @@ class AppRepository(context: Context) {
         db.noteDao().upsertAll(backup.notes.map { it.copy(id = 0) })
         db.attendanceFileDao().upsertAll(backup.attendanceFiles.map { it.copy(id = 0) })
         db.dailyAttendanceDao().upsertAll(backup.dailyAttendance.map { it.copy(id = 0) })
+        db.sitePhotoDao().upsertAll(backup.sitePhotos.map { it.copy(id = 0) })
         "تم استيراد ${backup.names.size} اسم و${backup.inspections.size} حالة فحص " +
-            "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ و${backup.tasks.size} مهمة"
+            "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ و${backup.tasks.size} مهمة " +
+            "و${backup.sitePhotos.size} صورة موقع"
     }
 }
