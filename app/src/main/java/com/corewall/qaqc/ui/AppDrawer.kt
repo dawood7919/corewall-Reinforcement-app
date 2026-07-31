@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Sync
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.corewall.qaqc.AppScreen
 import com.corewall.qaqc.Lens
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.Section
@@ -91,7 +93,7 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
                 }
                 Box(contentAlignment = Alignment.TopEnd) {
                     Surface(
-                        onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.NOTIFICATIONS) } },
+                        onClick = { go { vm.openAppScreen(AppScreen.NOTIFICATIONS) } },
                         shape = RoundedCornerShape(12.dp),
                         color = Color.White.copy(alpha = 0.2f)
                     ) {
@@ -130,6 +132,11 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
             selected = section == Section.COREWALL && lens == Lens.DATA,
             onClick = { vm.goToLens(Lens.DATA); onNavigate() }
         )
+        DrawerItem(
+            icon = Icons.Filled.PhotoCamera, title = "Site Photos", subtitle = "معرض صور الدور · تعليق + تاريخ",
+            selected = false,
+            onClick = { go { vm.openAppScreen(AppScreen.SITE_PHOTOS) } }
+        )
 
         DrawerItem(
             icon = Icons.Filled.Summarize, title = "التقارير", subtitle = "Reports & Analytics",
@@ -139,7 +146,7 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
         DrawerItem(
             icon = Icons.Filled.Notifications, title = "الإشعارات", subtitle = "Notifications",
             selected = false, badge = if (unread > 0) unread else null,
-            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.NOTIFICATIONS) } }
+            onClick = { go { vm.openAppScreen(AppScreen.NOTIFICATIONS) } }
         )
 
         Spacer(Modifier.height(8.dp))
@@ -149,15 +156,15 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
 
         DrawerItem(
             icon = Icons.Filled.Settings, title = "الإعدادات", subtitle = null, selected = false,
-            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.SETTINGS) } }
+            onClick = { go { vm.openAppScreen(AppScreen.SETTINGS) } }
         )
         DrawerItem(
             icon = Icons.Filled.Sync, title = "مزامنة البيانات", subtitle = null, selected = false,
-            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.SYNC) } }
+            onClick = { go { vm.openAppScreen(AppScreen.SYNC) } }
         )
         DrawerItem(
             icon = Icons.Filled.Info, title = "عن التطبيق", subtitle = null, selected = false,
-            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.ABOUT) } }
+            onClick = { go { vm.openAppScreen(AppScreen.ABOUT) } }
         )
 
         Spacer(Modifier.height(12.dp))
