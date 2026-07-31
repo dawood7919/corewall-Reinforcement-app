@@ -212,3 +212,21 @@ interface RangeEditDao {
     @Query("DELETE FROM range_edits WHERE mark = :mark AND rowIndex = :rowIndex")
     suspend fun delete(mark: String, rowIndex: Int)
 }
+
+@Dao
+interface SitePhotoDao {
+    @Query("SELECT * FROM site_photos ORDER BY timestamp DESC")
+    fun observeAll(): Flow<List<SitePhotoEntity>>
+
+    @Query("SELECT * FROM site_photos")
+    suspend fun getAll(): List<SitePhotoEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: SitePhotoEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<SitePhotoEntity>)
+
+    @Query("DELETE FROM site_photos WHERE id = :id")
+    suspend fun delete(id: Long)
+}

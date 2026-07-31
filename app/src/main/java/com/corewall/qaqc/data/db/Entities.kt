@@ -182,3 +182,17 @@ data class RangeEditEntity(
     val rowIndex: Int,
     val patchJson: String
 )
+
+/**
+ * صورة موقع (Site Photo) مربوطة بدور واحد فقط.
+ * كل صورة لها تعليق نصي يظهر تحتها بخط كبير + تاريخ ووقت الالتقاط.
+ */
+@Serializable
+@Entity(tableName = "site_photos")
+data class SitePhotoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val level: String,
+    val filePath: String,
+    val comment: String = "",
+    val timestamp: Long
+)
