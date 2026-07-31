@@ -5,25 +5,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
-import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Summarize
-import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,20 +24,15 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.corewall.qaqc.ui.ActiveLevelHeader
@@ -54,9 +42,9 @@ import com.corewall.qaqc.ui.appscreens.AppSettingsScreen
 import com.corewall.qaqc.ui.appscreens.FloorNotesScreen
 import com.corewall.qaqc.ui.appscreens.NotificationsScreen
 import com.corewall.qaqc.ui.appscreens.SyncScreen
+import com.corewall.qaqc.ui.cad.CadViewerScreen
 import com.corewall.qaqc.ui.dataroom.FilesScreen
 import com.corewall.qaqc.ui.dataroom.TasksScreen
-import com.corewall.qaqc.ui.home.AnalysisScreen
 import com.corewall.qaqc.ui.home.HomeScreen
 import com.corewall.qaqc.ui.home.MissionControlScreen
 import com.corewall.qaqc.ui.home.UnifiedSheet
@@ -111,6 +99,7 @@ fun MainScreen(vm: MainViewModel) {
     val namingMode by vm.namingMode.collectAsStateWithLifecycle()
     val canGoBack by vm.canGoBack.collectAsStateWithLifecycle()
     val openPdfPath by vm.openPdfPath.collectAsStateWithLifecycle()
+    val openCadPath by vm.openCadPath.collectAsStateWithLifecycle()
     val editingNote by vm.editingNote.collectAsStateWithLifecycle()
     val viewingImage by vm.viewingImage.collectAsStateWithLifecycle()
     val openAttendanceFileId by vm.openAttendanceFileId.collectAsStateWithLifecycle()
@@ -122,17 +111,17 @@ fun MainScreen(vm: MainViewModel) {
 
     BackHandler(
         enabled = drawerState.isOpen || appScreen != null || openAttendanceFileId != null || viewingImage != null ||
-            editingNote != null || openPdfPath != null || selectedElementId != null ||
+            editingNote != null || openPdfPath != null || openCadPath != null || selectedElementId != null ||
             namingMode || canGoBack
     ) {
         when {
             drawerState.isOpen -> scope.launch { drawerState.close() }
-            // النوافذ اللي فوق أي شاشة (مثلاً محرّر ملاحظة فُتح من ملاحظات الدور) تتقفل الأول
             viewingImage != null -> vm.closeImage()
             editingNote != null -> vm.closeNoteEditor()
+            openCadPath != null -> vm.closeCad()
             openPdfPath != null -> vm.closePdf()
             openAttendanceFileId != null -> vm.closeAttendanceFile()
-            appScreen == com.corewall.qaqc.AppScreen.ABOUT -> vm.openAppScreen(com.corewall.qaqc.AppScreen.SETTINGS)
+            appScreen == AppScreen.ABOUT -> vm.openAppScreen(AppScreen.SETTINGS)
             appScreen != null -> vm.closeAppScreen()
             selectedElementId != null -> vm.selectElement(null)
             namingMode -> vm.setNamingMode(false)
@@ -185,7 +174,6 @@ fun MainScreen(vm: MainViewModel) {
         }
     }
 
-    // ===== Overlays =====
     if (section == Section.COREWALL) {
         selectedElementId?.let { id ->
             vm.planData.elements.firstOrNull { it.id == id }?.let { element ->
@@ -193,28 +181,28 @@ fun MainScreen(vm: MainViewModel) {
             }
         }
     }
-    // ===== شاشات القائمة الجانبية (S13–S16 + ملاحظات الدور) بملء الشاشة =====
+
     appScreen?.let { screen ->
         val (title, back) = when (screen) {
-            com.corewall.qaqc.AppScreen.NOTIFICATIONS -> "الإشعارات" to { vm.closeAppScreen() }
-            com.corewall.qaqc.AppScreen.SETTINGS -> "الإعدادات" to { vm.closeAppScreen() }
-            com.corewall.qaqc.AppScreen.SYNC -> "مزامنة البيانات" to { vm.closeAppScreen() }
-            com.corewall.qaqc.AppScreen.FLOOR_NOTES -> "ملاحظات الدور" to { vm.closeAppScreen() }
-            com.corewall.qaqc.AppScreen.ABOUT -> "عن التطبيق" to { vm.openAppScreen(com.corewall.qaqc.AppScreen.SETTINGS) }
+            AppScreen.NOTIFICATIONS -> "الإشعارات" to { vm.closeAppScreen() }
+            AppScreen.SETTINGS -> "الإعدادات" to { vm.closeAppScreen() }
+            AppScreen.SYNC -> "مزامنة البيانات" to { vm.closeAppScreen() }
+            AppScreen.FLOOR_NOTES -> "ملاحظات الدور" to { vm.closeAppScreen() }
+            AppScreen.ABOUT -> "عن التطبيق" to { vm.openAppScreen(AppScreen.SETTINGS) }
         }
         AppScreenScaffold(title = title, onBack = back) { inner ->
             when (screen) {
-                com.corewall.qaqc.AppScreen.NOTIFICATIONS -> NotificationsScreen(vm, inner)
-                com.corewall.qaqc.AppScreen.SETTINGS -> AppSettingsScreen(vm, inner)
-                com.corewall.qaqc.AppScreen.SYNC -> SyncScreen(vm, inner)
-                com.corewall.qaqc.AppScreen.FLOOR_NOTES -> FloorNotesScreen(vm, inner)
-                com.corewall.qaqc.AppScreen.ABOUT -> AboutScreen(inner)
+                AppScreen.NOTIFICATIONS -> NotificationsScreen(vm, inner)
+                AppScreen.SETTINGS -> AppSettingsScreen(vm, inner)
+                AppScreen.SYNC -> SyncScreen(vm, inner)
+                AppScreen.FLOOR_NOTES -> FloorNotesScreen(vm, inner)
+                AppScreen.ABOUT -> AboutScreen(inner)
             }
         }
     }
 
-    // النوافذ اللي بتتفتح فوق أي شاشة (بعد appScreen عشان ترسم فوقها)
     openPdfPath?.let { path -> PdfViewerScreen(vm = vm, path = path, onClose = { vm.closePdf() }) }
+    openCadPath?.let { path -> CadViewerScreen(path = path, files = vm.files, onClose = { vm.closeCad() }) }
     editingNote?.let { note -> NoteEditorScreen(vm = vm, note = note, onClose = { vm.closeNoteEditor() }) }
     viewingImage?.let { path -> ImageViewerScreen(files = vm.files, path = path, onClose = { vm.closeImage() }) }
     openAttendanceFileId?.let { id ->
