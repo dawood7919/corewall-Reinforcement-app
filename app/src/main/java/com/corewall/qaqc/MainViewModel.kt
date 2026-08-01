@@ -338,14 +338,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             all.filter { it.level == level }.sortedByDescending { it.timestamp }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    fun addSitePhoto(filePath: String, comment: String) {
+    fun addSitePhoto(filePath: String, comment: String, folder: String = "") {
         viewModelScope.launch {
             repo.saveSitePhoto(
                 SitePhotoEntity(
                     level = _currentLevel.value,
                     filePath = filePath,
                     comment = comment.trim(),
-                    timestamp = System.currentTimeMillis()
+                    timestamp = System.currentTimeMillis(),
+                    folder = folder.trim()
                 )
             )
         }
