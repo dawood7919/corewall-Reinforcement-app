@@ -185,7 +185,8 @@ data class RangeEditEntity(
 
 /**
  * صورة موقع (Site Photo) مربوطة بدور واحد فقط.
- * كل صورة لها تعليق نصي يظهر تحتها بخط كبير + تاريخ ووقت الالتقاط.
+ * folder: مسار نسبي من جذر صور الدور ("" = الجذر، "Inspection" = مجلد فرعي).
+ * التعليق يظهر **مكتوبًا فوق الصورة** (overlay) وليس كعنوان منفصل فقط.
  */
 @Serializable
 @Entity(tableName = "site_photos")
@@ -194,5 +195,7 @@ data class SitePhotoEntity(
     val level: String,
     val filePath: String,
     val comment: String = "",
-    val timestamp: Long
+    val timestamp: Long,
+    /** مجلد نسبي داخل site-photos/{level}/ — فارغ = الجذر */
+    @ColumnInfo(defaultValue = "") val folder: String = ""
 )

@@ -26,21 +26,37 @@ class FilesManager(private val context: Context) {
     fun attachmentsDir(level: String, elementId: String): File =
         File(root, "attachments/${sanitize(level)}/${sanitize(elementId)}").apply { mkdirs() }
 
-    /** مجلد صور الموقع (Site Photos) لكل دور. */
-    fun sitePhotosDir(level: String): File =
-        File(root, "site-photos/${sanitize(level)}").apply { mkdirs() }
+    /** مجلد صور الموقع (Site Photos) لكل دور — يدعم مجلدات فرعية. */
+    fun sitePhotosDir(level: String, folder: String = ""): File {
+        val base = File(root, "site-photos/${sanitize(level)}")
+        val dir = if (folder.isBlank()) base else File(base, sanitizeFolderPath(folder))
+        return dir.apply { mkdirs() }
+    }
 
     private fun sanitize(name: String) = name.replace(Regex("[^A-Za-z0-9._\\- ]"), "_")
+
+    /** تنظيف مسار مجلد نسبي (يمنع الخروج خارج الجذر). */
+    private fun sanitizeFolderPath(folder: String): String =
+        folder.split('/').map { sanitize(it) }.filter { it.isNotBlank() && it != "." && it != ".." }.joinToString("/")
 
     fun list(dir: File): List<File> =
         dir.listFiles()?.sortedWith(
             compareByDescending<File> { it.isDirectory }.thenBy { it.name.lowercase() }
         ) ?: emptyList()
 
+    /** المجلدات الفرعية المباشرة داخل مجلد صور الموقع. */
+    fun listSitePhotoFolders(level: String, folder: String = ""): List<File> =
+        list(sitePhotosDir(level, folder)).filter { it.isDirectory }
+
     fun createFolder(parent: File, name: String): Boolean {
         val clean = sanitize(name.trim())
         if (clean.isEmpty()) return false
         return File(parent, clean).mkdirs()
+    }
+
+    fun createSitePhotoFolder(level: String, parentFolder: String, name: String): Boolean {
+        val parent = sitePhotosDir(level, parentFolder)
+        return createFolder(parent, name)
     }
 
     fun delete(file: File): Boolean = file.deleteRecursively()
@@ -129,9 +145,9 @@ class FilesManager(private val context: Context) {
         return File(dir, "IMG_${System.currentTimeMillis()}.jpg")
     }
 
-    /** ملف صورة جديد لالتقاط صورة موقع (Site Photos) للدور. */
-    fun newSitePhotoFile(level: String): File {
-        val dir = sitePhotosDir(level)
+    /** ملف صورة جديد لالتقاط صورة موقع (Site Photos) — داخل المجلد الحالي. */
+    fun newSitePhotoFile(level: String, folder: String = ""): File {
+        val dir = sitePhotosDir(level, folder)
         return File(dir, "SITE_${System.currentTimeMillis()}.jpg")
     }
 
