@@ -21,7 +21,17 @@ import kotlinx.serialization.json.putJsonObject
  * الواجهة بترجّع نص الرد الخام (المفروض JSON) — التحقق بيحصل في الطبقة الأعلى.
  */
 interface AiProvider {
-    suspend fun complete(config: AiConfig, systemPrompt: String, userContent: String): String
+    /**
+     * [expectJson] بيشغّل وضع الـJSON عند المزوّد. لازم يبقى false للطلبات
+     * اللي بترجّع نص (التقارير بـMarkdown) — غير كده المزوّد بيجبر الرد
+     * يبقى JSON والمستخدم بيشوف كود بدل المستند.
+     */
+    suspend fun complete(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        expectJson: Boolean = true
+    ): String
 
     /**
      * نفس الطلب بس مع صور (base64 JPEG) — للـPDF وصور الموقع.
@@ -51,7 +61,12 @@ fun providerFor(id: AiProviderId): AiProvider = when (id) {
  * ده اللي التطبيق بيستخدمه افتراضياً.
  */
 object OpenAiCompatProvider : AiProvider {
-    override suspend fun complete(config: AiConfig, systemPrompt: String, userContent: String): String {
+    override suspend fun complete(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        expectJson: Boolean
+    ): String {
         val payload = buildJsonObject {
             put("model", config.model)
             put("temperature", 0.2)
@@ -59,7 +74,7 @@ object OpenAiCompatProvider : AiProvider {
             // فالـJSON بيوصل ناقص — ده كان سبب فشل تحليل ملفات BBS.
             put("max_tokens", MAX_TOKENS)
             // بنطلب JSON صريح — بيقلّل جداً احتمال رد نصي حر
-            putJsonObject("response_format") { put("type", "json_object") }
+            if (expectJson) putJsonObject("response_format") { put("type", "json_object") }
             putJsonArray("messages") {
                 add(buildJsonObject { put("role", "system"); put("content", systemPrompt) })
                 add(buildJsonObject { put("role", "user"); put("content", userContent) })
@@ -126,7 +141,12 @@ object OpenAiCompatProvider : AiProvider {
 
 /** Anthropic Messages API. */
 object AnthropicProvider : AiProvider {
-    override suspend fun complete(config: AiConfig, systemPrompt: String, userContent: String): String {
+    override suspend fun complete(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        expectJson: Boolean
+    ): String {
         val payload = buildJsonObject {
             put("model", config.model)
             put("max_tokens", MAX_TOKENS)
@@ -152,7 +172,12 @@ object AnthropicProvider : AiProvider {
 
 /** Google Gemini generateContent. */
 object GeminiProvider : AiProvider {
-    override suspend fun complete(config: AiConfig, systemPrompt: String, userContent: String): String {
+    override suspend fun complete(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        expectJson: Boolean
+    ): String {
         val payload = buildJsonObject {
             putJsonObject("systemInstruction") {
                 putJsonArray("parts") { add(buildJsonObject { put("text", systemPrompt) }) }
@@ -165,7 +190,7 @@ object GeminiProvider : AiProvider {
             }
             putJsonObject("generationConfig") {
                 put("temperature", 0.2)
-                put("responseMimeType", "application/json")
+                if (expectJson) put("responseMimeType", "application/json")
             }
         }.toString()
 

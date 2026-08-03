@@ -222,7 +222,11 @@ class AiEngine(
         val knowledge = retrieve(level, question)
         val past = withContext(Dispatchers.IO) { chatDao.forLevel(level) }
             .takeLast(8)
-            .joinToString("\n") { "${if (it.role == "user") "المستخدم" else "المساعد"}: ${it.content}" }
+            .joinToString("\n") {
+                val who = if (it.role == "user") "المستخدم" else "المساعد"
+                // ردود المساعد متخزّنة JSON — بنبعت الخلاصة بس بدل الكود كله
+                "$who: ${if (it.role == "user") it.content else headlineOf(it.content)}"
+            }
 
         val userMsg = buildString {
             appendLine("### حالة المشروع (محسوبة من التطبيق)")
@@ -236,15 +240,48 @@ class AiEngine(
             append(question)
         }
 
-        val answer = providerFor(config.provider).complete(config, AiPrompt.CHAT_SYSTEM, userMsg)
+        val raw = providerFor(config.provider).complete(config, AiPrompt.CHAT_SYSTEM, userMsg)
+        // بنخزّن الـJSON زي ما هو — الشاشة هي اللي بترسمه كروت ورسوم.
+        // لو الموديل ردّ نص حر، بنلفّه في بلوك نصي عشان العرض يفضل موحّد.
+        val stored = normalizeAnswer(raw)
         withContext(Dispatchers.IO) {
             chatDao.upsert(
-                ChatMessageEntity(level = level, role = "assistant", content = answer.trim(),
+                ChatMessageEntity(level = level, role = "assistant", content = stored,
                     createdAt = System.currentTimeMillis())
             )
         }
-        return answer.trim()
+        return stored
     }
+
+    /**
+     * بيضمن إن اللي بيتخزّن دايماً [ChatAnswer] صالح.
+     * الموديل ساعات بيتجاهل المخطط ويرد نص — بدل ما نعرضه خام،
+     * بنحطّه في بلوك TEXT فالشاشة عندها شكل واحد تتعامل معاه.
+     */
+    private fun normalizeAnswer(raw: String): String {
+        val parsed = runCatching {
+            val obj = JsonRepair.extractObject(raw) ?: error("no json")
+            json.decodeFromString(com.corewall.qaqc.ai.model.ChatAnswer.serializer(), obj.json)
+        }.getOrNull()
+
+        val answer = when {
+            parsed == null || (parsed.headline.isBlank() && parsed.blocks.isEmpty()) ->
+                com.corewall.qaqc.ai.model.ChatAnswer(
+                    headline = "",
+                    blocks = listOf(
+                        com.corewall.qaqc.ai.model.AnswerBlock(type = "TEXT", body = raw.trim())
+                    )
+                )
+            else -> parsed
+        }
+        return json.encodeToString(com.corewall.qaqc.ai.model.ChatAnswer.serializer(), answer)
+    }
+
+    /** الخلاصة من رد متخزّن — للسياق ولمعاينة المحادثة. */
+    private fun headlineOf(stored: String): String = runCatching {
+        val a = json.decodeFromString(com.corewall.qaqc.ai.model.ChatAnswer.serializer(), stored)
+        a.headline.ifBlank { a.blocks.firstOrNull { it.body.isNotBlank() }?.body.orEmpty() }
+    }.getOrElse { stored }.take(400)
 
     /**
      * استرجاع بسيط وفعّال: بندوّر بكلمات السؤال في الحقائق والمستندات.
@@ -363,7 +400,8 @@ class AiEngine(
             appendLine("### معرفة المستندات")
             appendLine(knowledge.ifBlank { "(مفيش مستندات محلّلة)" })
         }
-        val md = providerFor(config.provider).complete(config, AiPrompt.REPORT_SYSTEM, user)
+        // التقرير Markdown مش JSON — لازم نطفي وضع الـJSON عند المزوّد
+        val md = providerFor(config.provider).complete(config, AiPrompt.REPORT_SYSTEM, user, expectJson = false)
         return com.corewall.qaqc.ai.model.GeneratedReport(
             title = kind.label,
             markdown = md.trim(),

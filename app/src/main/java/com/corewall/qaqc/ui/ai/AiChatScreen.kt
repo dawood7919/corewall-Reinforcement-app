@@ -1,7 +1,9 @@
 package com.corewall.qaqc.ui.ai
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Source
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -40,11 +44,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.ai.model.AnswerBlock
+import com.corewall.qaqc.ai.model.ChatAnswer
 import com.corewall.qaqc.data.db.ChatMessageEntity
+import com.corewall.qaqc.ui.ai.blocks.AnswerBlockCard
+import com.corewall.qaqc.ui.ai.blocks.Collapsible
+import com.corewall.qaqc.ui.ai.blocks.ThinkingRow
 import com.corewall.qaqc.ui.theme.LocalSrtColors
+import kotlinx.serialization.json.Json
 
 /** أمثلة أسئلة بتظهر لما المحادثة تكون فاضية. */
 private val SUGGESTIONS = listOf(
@@ -56,9 +67,21 @@ private val SUGGESTIONS = listOf(
     "كام عامل النهاردة؟"
 )
 
+private val answerJson = Json {
+    ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true
+}
+
 /**
- * المساعد الهندسي: بيشوف بيانات المشروع + المستندات المحلّلة
- * ويجاوب أسئلة طبيعية عن الدور الشغّال.
+ * بيفكّ الرد المتخزّن. الردود القديمة كانت نص عادي —
+ * بنلفّها في بلوك نصي بدل ما نكسرها.
+ */
+private fun parseAnswer(content: String): ChatAnswer =
+    runCatching { answerJson.decodeFromString(ChatAnswer.serializer(), content) }
+        .getOrElse { ChatAnswer(blocks = listOf(AnswerBlock(type = "TEXT", body = content))) }
+
+/**
+ * المساعد الهندسي: بيشوف بيانات المشروع + المستندات المحلّلة،
+ * وبيرُدّ ببيانات مرسومة — كروت أرقام ورسوم وجداول، مش نص خام.
  */
 @Composable
 fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
@@ -79,7 +102,6 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     }
 
     Column(modifier.fillMaxSize().imePadding()) {
-        // شريط معرفة: كام مستند اتحلّل
         Surface(color = srt.blueTint, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = srt.blue, modifier = Modifier.size(16.dp))
@@ -105,10 +127,12 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 LazyColumn(
                     Modifier.fillMaxSize(), state = listState,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    items(messages, key = { it.id.takeIf { id -> id != 0L } ?: it.createdAt }) { m -> Bubble(m) }
-                    if (busy) item { TypingBubble() }
+                    items(messages, key = { it.id.takeIf { id -> id != 0L } ?: it.createdAt }) { m ->
+                        if (m.role == "user") UserBubble(m) else AnswerCard(m) { vm.askAi(it) }
+                    }
+                    if (busy) item { ThinkingRow("بيراجع بيانات الدور…") }
                 }
             }
         }
@@ -119,16 +143,12 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        // صندوق الكتابة
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                Modifier.padding(12.dp),
-                verticalAlignment = Alignment.Bottom
-            ) {
+            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Bottom) {
                 Surface(
                     shape = RoundedCornerShape(22.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -174,46 +194,99 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Bubble(m: ChatMessageEntity) {
+private fun UserBubble(m: ChatMessageEntity) {
     val srt = LocalSrtColors.current
-    val isUser = m.role == "user"
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-    ) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Surface(
-            shape = RoundedCornerShape(
-                topStart = 18.dp, topEnd = 18.dp,
-                bottomStart = if (isUser) 18.dp else 4.dp,
-                bottomEnd = if (isUser) 4.dp else 18.dp
-            ),
-            color = if (isUser) srt.blue else MaterialTheme.colorScheme.surface,
-            border = if (isUser) null
-            else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.fillMaxWidth(0.88f)
+            shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 4.dp),
+            color = srt.blue,
+            modifier = Modifier.fillMaxWidth(0.86f)
         ) {
             Text(
                 m.content,
                 Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
+                color = Color.White
             )
         }
     }
 }
 
+/**
+ * رد المساعد: الخلاصة في سطر بارز، بعدين البلوكات بتدخل واحد ورا التاني،
+ * وتحت المصادر وأسئلة المتابعة.
+ */
 @Composable
-private fun TypingBubble() {
+private fun AnswerCard(m: ChatMessageEntity, onFollowUp: (String) -> Unit) {
     val srt = LocalSrtColors.current
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = srt.blue, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("بيراجع بيانات الدور…", style = MaterialTheme.typography.bodySmall, color = srt.text3)
+    val answer = remember(m.id, m.content) { parseAnswer(m.content) }
+    var showSources by remember(m.id) { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (answer.headline.isNotBlank()) {
+            Row(verticalAlignment = Alignment.Top) {
+                Box(
+                    Modifier.size(26.dp).clip(CircleShape).background(srt.blueTint),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null,
+                        tint = srt.blue, modifier = Modifier.size(15.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    answer.headline,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        answer.blocks.take(6).forEachIndexed { i, b -> AnswerBlockCard(b, i) }
+
+        if (answer.sources.isNotEmpty()) {
+            Row(
+                Modifier.clip(RoundedCornerShape(8.dp)).clickable { showSources = !showSources }
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.Source, contentDescription = null, tint = srt.text3, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "المصادر (${answer.sources.size})",
+                    style = MaterialTheme.typography.labelSmall, color = srt.text3
+                )
+            }
+            Collapsible(showSources) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    answer.sources.take(8).forEach {
+                        Text("• $it", style = MaterialTheme.typography.labelSmall, color = srt.text3)
+                    }
+                }
+            }
+        }
+
+        if (answer.followUps.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                answer.followUps.take(4).forEach { q ->
+                    Surface(
+                        onClick = { onFollowUp(q) },
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    ) {
+                        Text(
+                            q, Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = srt.blue, maxLines = 1
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -234,11 +307,11 @@ private fun EmptyChat(configured: Boolean, onPick: (String) -> Unit) {
         Text("المساعد الهندسي", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text(
-            if (configured) "اسأل عن أي حاجة في الدور — التسليح، الفحوصات، المستندات، العمالة."
+            if (configured) "اسأل عن أي حاجة في الدور — الرد بيجي أرقام ورسوم، مش نص."
             else "ضيف مفتاح API من إعدادات المساعد الذكي عشان تبدأ.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
         )
         if (configured) {
             Spacer(Modifier.height(18.dp))

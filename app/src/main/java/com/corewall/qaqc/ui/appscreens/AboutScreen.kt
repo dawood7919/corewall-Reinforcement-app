@@ -48,7 +48,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         Spacer(Modifier.height(16.dp))
         Text("Core Wall QA/QC", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
-        Text("الإصدار 6.2 (Build 24)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("الإصدار 6.3 (Build 25)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(28.dp))
 
         SrtGroupedList {

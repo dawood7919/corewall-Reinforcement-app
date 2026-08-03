@@ -300,10 +300,16 @@ fun CoreWallTheme(theme: AppTheme, content: @Composable () -> Unit) {
         AppTheme.DARK_OLED -> SrtDark
         AppTheme.BLUEPRINT -> SrtBlueprint
     }
+    val viz = when (theme) {
+        AppTheme.IOS_LIGHT -> VizLight
+        AppTheme.DARK_OLED -> VizDark
+        AppTheme.BLUEPRINT -> VizBlueprint
+    }
     CompositionLocalProvider(
         LocalCategoryColors provides categories,
         LocalAppGradients provides gradients,
-        LocalSrtColors provides srt
+        LocalSrtColors provides srt,
+        LocalVizColors provides viz
     ) {
         MaterialTheme(
             colorScheme = scheme,
