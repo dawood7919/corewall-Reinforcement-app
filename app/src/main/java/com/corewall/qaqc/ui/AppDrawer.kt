@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.DarkMode
@@ -154,6 +155,11 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         SectionLabel("عام")
 
+        DrawerItem(
+            icon = Icons.Filled.AutoAwesome, title = "المساعد الذكي", subtitle = "تحليل الدور بالذكاء الاصطناعي",
+            selected = false,
+            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_SETTINGS) } }
+        )
         DrawerItem(
             icon = Icons.Filled.Settings, title = "الإعدادات", subtitle = null, selected = false,
             onClick = { go { vm.openAppScreen(AppScreen.SETTINGS) } }

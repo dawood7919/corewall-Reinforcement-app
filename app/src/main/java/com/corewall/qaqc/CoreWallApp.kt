@@ -1,9 +1,11 @@
 package com.corewall.qaqc
 
 import android.app.Application
+import com.corewall.qaqc.ai.AiRepository
 import com.corewall.qaqc.data.AppRepository
 import com.corewall.qaqc.data.FilesManager
 import com.corewall.qaqc.data.SettingsStore
+import com.corewall.qaqc.data.db.AppDatabase
 
 class CoreWallApp : Application() {
     lateinit var repository: AppRepository
@@ -12,11 +14,14 @@ class CoreWallApp : Application() {
         private set
     lateinit var filesManager: FilesManager
         private set
+    lateinit var aiRepository: AiRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
         repository = AppRepository(this)
         settingsStore = SettingsStore(this)
         filesManager = FilesManager(this)
+        aiRepository = AiRepository(AppDatabase.get(this).aiAnalysisDao())
     }
 }

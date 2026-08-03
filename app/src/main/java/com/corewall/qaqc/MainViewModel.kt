@@ -43,7 +43,9 @@ enum class Section(val title: String) {
     MANPOWER("Manpower")
 }
 
-enum class AppScreen { NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS }
+enum class AppScreen {
+    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, AI_ANALYSIS, AI_SETTINGS
+}
 
 const val FLOOR_NOTE_ID = "__FLOOR__"
 
@@ -352,6 +354,92 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // -------- مساعد الـ AI (معزول لكل دور زي باقي التطبيق) --------
+
+    private val aiRepo: com.corewall.qaqc.ai.AiRepository = (app as CoreWallApp).aiRepository
+
+    val aiConfig: StateFlow<com.corewall.qaqc.ai.AiConfig> = settingsStore.aiConfig
+
+    private val _aiState = MutableStateFlow<com.corewall.qaqc.ai.model.AiUiState>(
+        com.corewall.qaqc.ai.model.AiUiState.NotConfigured
+    )
+    val aiState: StateFlow<com.corewall.qaqc.ai.model.AiUiState> = _aiState
+
+    private var aiJob: kotlinx.coroutines.Job? = null
+
+    init {
+        // أول ما الدور أو الإعدادات تتغيّر: اعرض الكاش فوراً (من غير أي طلب شبكة).
+        viewModelScope.launch {
+            combine(_currentLevel, settingsStore.aiConfig) { level, cfg -> level to cfg }
+                .collect { (level, cfg) -> loadCachedAi(level, cfg) }
+        }
+    }
+
+    private suspend fun loadCachedAi(level: String, cfg: com.corewall.qaqc.ai.AiConfig) {
+        val cached = aiRepo.cachedFor(level)
+        _aiState.value = when {
+            cached != null -> com.corewall.qaqc.ai.model.AiUiState.Ready(
+                analysis = cached.first,
+                level = level,
+                model = cached.second.model,
+                generatedAt = cached.second.createdAt,
+                cached = true
+            )
+            !cfg.isConfigured -> com.corewall.qaqc.ai.model.AiUiState.NotConfigured
+            else -> com.corewall.qaqc.ai.model.AiUiState.Idle
+        }
+    }
+
+    /** بيبني لقطة الدور الحالي ويبعتها للـ AI. مفيش شبكة من غير مفتاح. */
+    fun refreshAiAnalysis() {
+        val cfg = settingsStore.aiConfig.value
+        if (!cfg.isConfigured) {
+            _aiState.value = com.corewall.qaqc.ai.model.AiUiState.NotConfigured
+            return
+        }
+        if (aiJob?.isActive == true) return
+
+        val previous = _aiState.value as? com.corewall.qaqc.ai.model.AiUiState.Ready
+        _aiState.value = com.corewall.qaqc.ai.model.AiUiState.Loading
+
+        aiJob = viewModelScope.launch {
+            val level = _currentLevel.value
+            val result = runCatching {
+                val context = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    com.corewall.qaqc.ai.context.FloorContextBuilder.build(
+                        project = "BHR Tower 1",
+                        level = level,
+                        planData = planData,
+                        schedule = schedule.value,
+                        logic = logic,
+                        names = names.value,
+                        inspections = inspections.value,
+                        barCounts = barCounts.value,
+                        notes = notes.value,
+                        tasks = tasks.value,
+                        attachments = attachments.value,
+                        attendanceFiles = attendanceFiles.value,
+                        dailyAttendance = dailyAttendance.value
+                    )
+                }
+                aiRepo.analyze(cfg, context)
+            }
+            _aiState.value = result.fold(
+                onSuccess = { (analysis, at) ->
+                    com.corewall.qaqc.ai.model.AiUiState.Ready(
+                        analysis = analysis, level = level, model = cfg.model,
+                        generatedAt = at, cached = false
+                    )
+                },
+                onFailure = { e ->
+                    val msg = (e as? com.corewall.qaqc.ai.AiError)?.userMessage
+                        ?: "حصل خطأ غير متوقع أثناء التحليل."
+                    com.corewall.qaqc.ai.model.AiUiState.Error(msg, previous)
+                }
+            )
+        }
+    }
+
     fun updateSitePhotoComment(photo: SitePhotoEntity, comment: String) {
         viewModelScope.launch {
             repo.saveSitePhoto(photo.copy(comment = comment.trim()))
@@ -362,6 +450,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.deleteSitePhoto(photo) }
     }
 
+    fun updateAiConfig(transform: (com.corewall.qaqc.ai.AiConfig) -> com.corewall.qaqc.ai.AiConfig) =
+        settingsStore.updateAiConfig(transform)
+
+    fun switchAiProvider(provider: com.corewall.qaqc.ai.AiProviderId) =
+        settingsStore.switchAiProvider(provider)
+
+    /** شاشة ملء-الشاشة الحالية (إشعارات/إعدادات/مزامنة/عن) — من القائمة الجانبية. */
     private val _appScreen = MutableStateFlow<AppScreen?>(null)
     val appScreen: StateFlow<AppScreen?> = _appScreen
     fun openAppScreen(screen: AppScreen) { _appScreen.value = screen }

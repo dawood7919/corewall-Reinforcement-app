@@ -199,3 +199,15 @@ data class SitePhotoEntity(
     /** مجلد نسبي داخل site-photos/{level}/ — فارغ = الجذر */
     @ColumnInfo(defaultValue = "") val folder: String = ""
 )
+
+/**
+ * آخر تحليل AI لكل دور — متخزّن عشان يتعرض فوراً وأوفلاين
+ * من غير ما نستدعي الخدمة كل مرة. مفتاح الجدول = الدور.
+ */
+@Entity(tableName = "ai_analysis")
+data class AiAnalysisEntity(
+    @PrimaryKey val level: String,
+    val json: String,
+    val model: String,
+    val createdAt: Long
+)

@@ -230,3 +230,18 @@ interface SitePhotoDao {
     @Query("DELETE FROM site_photos WHERE id = :id")
     suspend fun delete(id: Long)
 }
+
+@Dao
+interface AiAnalysisDao {
+    @Query("SELECT * FROM ai_analysis WHERE level = :level LIMIT 1")
+    fun observeForLevel(level: String): Flow<AiAnalysisEntity?>
+
+    @Query("SELECT * FROM ai_analysis WHERE level = :level LIMIT 1")
+    suspend fun getForLevel(level: String): AiAnalysisEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: AiAnalysisEntity)
+
+    @Query("DELETE FROM ai_analysis WHERE level = :level")
+    suspend fun deleteForLevel(level: String)
+}

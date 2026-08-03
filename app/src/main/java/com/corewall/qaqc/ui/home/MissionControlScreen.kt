@@ -135,6 +135,16 @@ fun MissionControlScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(12.dp))
         GreetingHeader(project = "BHR Tower 1", level = level, completion = completion)
 
+        // مساعد الـ AI — أول حاجة المهندس يشوفها بعد الترحيب
+        Spacer(Modifier.height(16.dp))
+        val aiState by vm.aiState.collectAsStateWithLifecycle()
+        com.corewall.qaqc.ui.ai.AiDashboardCard(
+            state = aiState,
+            onRefresh = { vm.refreshAiAnalysis() },
+            onOpenSettings = { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_SETTINGS) },
+            onOpenFull = { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_ANALYSIS) }
+        )
+
         Spacer(Modifier.height(16.dp))
         BuildingJourney(levels = levels, currentIdx = levelIdx, completion = completion,
             statusText = when {

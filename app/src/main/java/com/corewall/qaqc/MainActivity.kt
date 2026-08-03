@@ -37,6 +37,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.corewall.qaqc.ui.ActiveLevelHeader
 import com.corewall.qaqc.ui.AppDrawer
+import com.corewall.qaqc.ui.ai.AiAnalysisScreen
+import com.corewall.qaqc.ui.ai.AiSettingsScreen
 import com.corewall.qaqc.ui.appscreens.AboutScreen
 import com.corewall.qaqc.ui.appscreens.AppSettingsScreen
 import com.corewall.qaqc.ui.appscreens.FloorNotesScreen
@@ -190,6 +192,8 @@ fun MainScreen(vm: MainViewModel) {
             AppScreen.SYNC -> "مزامنة البيانات" to { vm.closeAppScreen() }
             AppScreen.FLOOR_NOTES -> "ملاحظات الدور" to { vm.closeAppScreen() }
             AppScreen.SITE_PHOTOS -> "Site Photos · ${vm.currentLevel.value}" to { vm.closeAppScreen() }
+            AppScreen.AI_ANALYSIS -> "التحليل الذكي" to { vm.closeAppScreen() }
+            AppScreen.AI_SETTINGS -> "المساعد الذكي" to { vm.closeAppScreen() }
             AppScreen.ABOUT -> "عن التطبيق" to { vm.openAppScreen(AppScreen.SETTINGS) }
         }
         AppScreenScaffold(title = title, onBack = back) { inner ->
@@ -199,6 +203,8 @@ fun MainScreen(vm: MainViewModel) {
                 AppScreen.SYNC -> SyncScreen(vm, inner)
                 AppScreen.FLOOR_NOTES -> FloorNotesScreen(vm, inner)
                 AppScreen.SITE_PHOTOS -> SitePhotosScreen(vm, inner)
+                AppScreen.AI_ANALYSIS -> AiAnalysisScreen(vm, inner)
+                AppScreen.AI_SETTINGS -> AiSettingsScreen(vm, inner)
                 AppScreen.ABOUT -> AboutScreen(inner)
             }
         }

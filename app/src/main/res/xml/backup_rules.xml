@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  مفتاح الـ AI مستثنى من النسخ الاحتياطي السحابي عشان ميطلعش بره الجهاز.
+  باقي بيانات التطبيق (Room + الإعدادات) بتتنسخ عادي.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="ai_secret.xml" />
+</full-backup-content>

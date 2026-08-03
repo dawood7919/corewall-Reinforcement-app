@@ -1,6 +1,8 @@
 package com.corewall.qaqc.data
 
 import android.content.Context
+import com.corewall.qaqc.ai.AiConfig
+import com.corewall.qaqc.ai.AiProviderId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -18,6 +20,12 @@ data class AppSettings(
 
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+    /**
+     * إعدادات الـ AI في ملف منفصل — مستثنى من النسخ الاحتياطي السحابي
+     * (backup_rules.xml) عشان مفتاح الـ API ميطلعش بره الجهاز.
+     */
+    private val aiPrefs = context.getSharedPreferences("ai_secret", Context.MODE_PRIVATE)
 
     private val _settings = MutableStateFlow(
         AppSettings(
@@ -44,5 +52,36 @@ class SettingsStore(context: Context) {
 
     fun setLastLevel(level: String) {
         prefs.edit().putString("lastLevel", level).apply()
+    }
+
+    // ---------- إعدادات الـ AI ----------
+    // المفتاح بيتكتب من المستخدم ومتخزّن على الجهاز بس — مفيش مفتاح جوّه الكود.
+
+    private val _aiConfig = MutableStateFlow(
+        AiProviderId.from(aiPrefs.getString("aiProvider", null)).let { provider ->
+            AiConfig(
+                provider = provider,
+                apiKey = aiPrefs.getString("aiApiKey", "").orEmpty(),
+                model = aiPrefs.getString("aiModel", null) ?: provider.defaultModel,
+                baseUrl = aiPrefs.getString("aiBaseUrl", null) ?: provider.defaultBaseUrl
+            )
+        }
+    )
+    val aiConfig: StateFlow<AiConfig> = _aiConfig
+
+    fun updateAiConfig(transform: (AiConfig) -> AiConfig) {
+        val next = transform(_aiConfig.value)
+        _aiConfig.value = next
+        aiPrefs.edit()
+            .putString("aiProvider", next.provider.name)
+            .putString("aiApiKey", next.apiKey)
+            .putString("aiModel", next.model)
+            .putString("aiBaseUrl", next.baseUrl)
+            .apply()
+    }
+
+    /** تبديل المزوّد بيرجّع الموديل والـ baseUrl لافتراضيات المزوّد الجديد. */
+    fun switchAiProvider(provider: AiProviderId) = updateAiConfig {
+        it.copy(provider = provider, model = provider.defaultModel, baseUrl = provider.defaultBaseUrl)
     }
 }
