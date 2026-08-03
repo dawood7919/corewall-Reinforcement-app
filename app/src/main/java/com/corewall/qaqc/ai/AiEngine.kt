@@ -275,6 +275,135 @@ class AiEngine(
         }.take(14_000)
     }
 
+    // ---------------------------------------------------------------- الداشبورد الديناميكي
+
+    /**
+     * الـ AI بيقرّر الداشبورد بنفسه حسب البيانات المتاحة.
+     * بيتخزّن في نفس جدول الكاش بمفتاح مختلف — من غير أي تعديل في قاعدة البيانات
+     * (تفادياً لمخاطر الـ migration).
+     */
+    suspend fun buildDashboard(
+        config: AiConfig,
+        level: String,
+        projectSnapshot: String,
+        cache: com.corewall.qaqc.data.db.AiAnalysisDao
+    ): Pair<com.corewall.qaqc.ai.model.DashboardSpec, Long> {
+        if (!config.isConfigured) throw AiError.NoKey
+        val knowledge = knowledgeDigest(level)
+        val user = buildString {
+            appendLine("### بيانات الدور (محسوبة من التطبيق)")
+            appendLine(projectSnapshot)
+            appendLine()
+            appendLine("### معرفة المستندات المرفوعة")
+            appendLine(knowledge.ifBlank { "(مفيش مستندات محلّلة)" })
+        }
+        val raw = providerFor(config.provider).complete(config, AiPrompt.DASHBOARD_SYSTEM, user)
+        val spec = parseJson(raw, com.corewall.qaqc.ai.model.DashboardSpec.serializer())
+        val now = System.currentTimeMillis()
+        withContext(Dispatchers.IO) {
+            cache.upsert(
+                com.corewall.qaqc.data.db.AiAnalysisEntity(
+                    level = dashKey(level),
+                    json = json.encodeToString(com.corewall.qaqc.ai.model.DashboardSpec.serializer(), spec),
+                    model = config.model,
+                    createdAt = now
+                )
+            )
+        }
+        return spec to now
+    }
+
+    suspend fun cachedDashboard(
+        level: String,
+        cache: com.corewall.qaqc.data.db.AiAnalysisDao
+    ): Pair<com.corewall.qaqc.ai.model.DashboardSpec, Long>? = withContext(Dispatchers.IO) {
+        val row = cache.getForLevel(dashKey(level)) ?: return@withContext null
+        val spec = runCatching {
+            json.decodeFromString(com.corewall.qaqc.ai.model.DashboardSpec.serializer(), row.json)
+        }.getOrNull() ?: return@withContext null
+        spec to row.createdAt
+    }
+
+    private fun dashKey(level: String) = "dash::$level"
+
+    // ---------------------------------------------------------------- توليد المستندات
+
+    /** بيولّد تقرير هندسي (يومي/أسبوعي/فحص/مواد/تعليمات) من بيانات حقيقية. */
+    suspend fun generateReport(
+        config: AiConfig,
+        level: String,
+        kind: com.corewall.qaqc.ai.model.ReportKind,
+        projectSnapshot: String
+    ): com.corewall.qaqc.ai.model.GeneratedReport {
+        if (!config.isConfigured) throw AiError.NoKey
+        val knowledge = knowledgeDigest(level)
+        val user = buildString {
+            appendLine("نوع التقرير المطلوب: ${kind.label} — ${kind.prompt}")
+            appendLine()
+            appendLine("### بيانات الدور (محسوبة من التطبيق — استخدمها زي ما هي)")
+            appendLine(projectSnapshot)
+            appendLine()
+            appendLine("### معرفة المستندات")
+            appendLine(knowledge.ifBlank { "(مفيش مستندات محلّلة)" })
+        }
+        val md = providerFor(config.provider).complete(config, AiPrompt.REPORT_SYSTEM, user)
+        return com.corewall.qaqc.ai.model.GeneratedReport(
+            title = kind.label,
+            markdown = md.trim(),
+            generatedAt = System.currentTimeMillis(),
+            kind = kind.name
+        )
+    }
+
+    /** ملخّص كل معرفة الدور — بيتحطّ في سياق الداشبورد والتقارير. */
+    private suspend fun knowledgeDigest(level: String): String = withContext(Dispatchers.IO) {
+        val docs = documentDao.forLevel(level)
+        if (docs.isEmpty()) return@withContext ""
+        val facts = factDao.forLevel(level)
+        buildString {
+            docs.take(25).forEach { d ->
+                append("- ${d.fileName} [${d.docType}]")
+                if (d.drawingNumber.isNotBlank()) append(" ${d.drawingNumber}")
+                if (d.revision.isNotBlank()) append(" ${d.revision}")
+                appendLine(": ${d.summary.take(200)}")
+            }
+            if (facts.isNotEmpty()) {
+                appendLine()
+                appendLine("حقائق مستخرجة (${facts.size}):")
+                facts.groupBy { it.kind }.forEach { (kind, list) ->
+                    appendLine("  $kind: " + list.take(40).joinToString("، ") { "${it.key}=${it.value}${it.unit}" })
+                }
+            }
+        }.take(12_000)
+    }
+
+    /** فكّ JSON عام مع تحمّل علامات markdown والنص الزيادة. */
+    private fun <T> parseJson(raw: String, serializer: kotlinx.serialization.KSerializer<T>): T {
+        val text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        val start = text.indexOf('{')
+        if (start < 0) throw AiError.BadResponse(raw.take(300))
+        var depth = 0
+        var inStr = false
+        var esc = false
+        for (i in start until text.length) {
+            val c = text[i]
+            when {
+                esc -> esc = false
+                c == '\\' && inStr -> esc = true
+                c == '"' -> inStr = !inStr
+                inStr -> Unit
+                c == '{' -> depth++
+                c == '}' -> {
+                    depth--
+                    if (depth == 0) return runCatching {
+                        json.decodeFromString(serializer, text.substring(start, i + 1))
+                    }.getOrElse { throw AiError.BadResponse(text.take(300)) }
+                }
+            }
+        }
+        throw AiError.BadResponse(raw.take(300))
+    }
+
     // ---------------------------------------------------------------- مساعدات
 
     internal fun parseExtraction(raw: String): DocExtraction {

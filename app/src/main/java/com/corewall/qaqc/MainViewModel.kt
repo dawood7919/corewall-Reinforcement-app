@@ -44,7 +44,7 @@ enum class Section(val title: String) {
 }
 
 enum class AppScreen {
-    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, AI_ANALYSIS, AI_SETTINGS, AI_CHAT, AI_KNOWLEDGE
+    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, AI_ANALYSIS, AI_SETTINGS, AI_CHAT, AI_KNOWLEDGE, AI_REPORTS
 }
 
 const val FLOOR_NOTE_ID = "__FLOOR__"
@@ -374,6 +374,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             combine(_currentLevel, settingsStore.aiConfig) { level, cfg -> level to cfg }
                 .collect { (level, cfg) ->
                     loadCachedAi(level, cfg)
+                    loadCachedDashboard(level, cfg)
                     loadKnowledge()
                     // أول ما يبقى فيه مفتاح: حلّل أي حاجة معلّقة (رفعها قبل المفتاح مثلاً)
                     if (cfg.isConfigured) autoAnalyze()
@@ -512,9 +513,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!cfg.isConfigured || autoJob?.isActive == true) return
         autoJob = viewModelScope.launch {
             _analyzing.value = 1
-            runCatching { aiEngine.analyzePending(cfg, levels, max = 12) }
+            val n = runCatching { aiEngine.analyzePending(cfg, levels, max = 12) }.getOrDefault(0)
             _analyzing.value = 0
             loadKnowledge()
+            // إشعار استباقي: الـAI بيقول اتحلّل إيه وإيه اللي لقاه
+            if (n > 0) {
+                val fresh = _documents.value.filter { it.status == "DONE" }.sortedByDescending { it.analyzedAt }.take(n)
+                if (fresh.isNotEmpty()) {
+                    _uploadInsight.value = buildString {
+                        append("حلّلت ")
+                        append(fresh.size)
+                        append(if (fresh.size == 1) " ملف جديد:\n" else " ملفات جديدة:\n")
+                        fresh.forEach { d ->
+                            append("• ")
+                            append(d.fileName)
+                            if (d.docType != "OTHER") append(" [" + d.docType + "]")
+                            if (d.summary.isNotBlank()) { append(" — "); append(d.summary.take(120)) }
+                            append("\n")
+                        }
+                    }.trim()
+                }
+                // اللوحة اتغيّرت لأن فيه معرفة جديدة
+                refreshDashboard()
+            }
         }
     }
 
@@ -618,6 +639,107 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     appendLine("  ${it.mark}: موقع ${it.siteTotals}، رسمة ${it.drawingTotals}، مطابق=${it.matches}")
                 }
             }
+        }
+    }
+
+    // -------- Phase 2: داشبورد ديناميكي + تقارير + إشعار استباقي --------
+
+    private val aiCacheDao by lazy {
+        com.corewall.qaqc.data.db.AppDatabase.get(getApplication()).aiAnalysisDao()
+    }
+
+    private val _dashboard = MutableStateFlow<com.corewall.qaqc.ai.model.DashboardState>(
+        com.corewall.qaqc.ai.model.DashboardState.NotConfigured
+    )
+    val dashboard: StateFlow<com.corewall.qaqc.ai.model.DashboardState> = _dashboard
+
+    /** رسالة استباقية بعد تحليل ملفات جديدة — "حلّلت كذا، ودي النتيجة". */
+    private val _uploadInsight = MutableStateFlow<String?>(null)
+    val uploadInsight: StateFlow<String?> = _uploadInsight
+    fun dismissUploadInsight() { _uploadInsight.value = null }
+
+    private var dashJob: kotlinx.coroutines.Job? = null
+
+    private suspend fun loadCachedDashboard(level: String, cfg: com.corewall.qaqc.ai.AiConfig) {
+        val cached = runCatching { aiEngine.cachedDashboard(level, aiCacheDao) }.getOrNull()
+        _dashboard.value = when {
+            cached != null -> com.corewall.qaqc.ai.model.DashboardState.Ready(
+                cached.first, level, cached.second, cached = true
+            )
+            !cfg.isConfigured -> com.corewall.qaqc.ai.model.DashboardState.NotConfigured
+            else -> com.corewall.qaqc.ai.model.DashboardState.Idle
+        }
+    }
+
+    /** الـ AI يعيد بناء لوحة الدور حسب البيانات المتاحة دلوقتي. */
+    fun refreshDashboard() {
+        val cfg = settingsStore.aiConfig.value
+        if (!cfg.isConfigured) {
+            _dashboard.value = com.corewall.qaqc.ai.model.DashboardState.NotConfigured
+            return
+        }
+        if (dashJob?.isActive == true) return
+        _dashboard.value = com.corewall.qaqc.ai.model.DashboardState.Loading
+        dashJob = viewModelScope.launch {
+            val level = _currentLevel.value
+            val snapshot = withContext(kotlinx.coroutines.Dispatchers.Default) { buildProjectSnapshot(level) }
+            runCatching { aiEngine.buildDashboard(cfg, level, snapshot, aiCacheDao) }
+                .onSuccess { (spec, at) ->
+                    _dashboard.value = com.corewall.qaqc.ai.model.DashboardState.Ready(spec, level, at, cached = false)
+                }
+                .onFailure { e ->
+                    _dashboard.value = com.corewall.qaqc.ai.model.DashboardState.Error(
+                        (e as? com.corewall.qaqc.ai.AiError)?.userMessage ?: "تعذّر بناء اللوحة."
+                    )
+                }
+        }
+    }
+
+    // ---- توليد المستندات ----
+
+    private val _report = MutableStateFlow<com.corewall.qaqc.ai.model.GeneratedReport?>(null)
+    val report: StateFlow<com.corewall.qaqc.ai.model.GeneratedReport?> = _report
+
+    private val _reportBusy = MutableStateFlow(false)
+    val reportBusy: StateFlow<Boolean> = _reportBusy
+
+    private val _reportError = MutableStateFlow<String?>(null)
+    val reportError: StateFlow<String?> = _reportError
+
+    fun generateReport(kind: com.corewall.qaqc.ai.model.ReportKind) {
+        val cfg = settingsStore.aiConfig.value
+        if (!cfg.isConfigured) { _reportError.value = "ضيف مفتاح API الأول."; return }
+        if (_reportBusy.value) return
+        _reportBusy.value = true
+        _reportError.value = null
+        viewModelScope.launch {
+            val level = _currentLevel.value
+            val snapshot = withContext(kotlinx.coroutines.Dispatchers.Default) { buildProjectSnapshot(level) }
+            runCatching { aiEngine.generateReport(cfg, level, kind, snapshot) }
+                .onSuccess { _report.value = it }
+                .onFailure { e ->
+                    _reportError.value = (e as? com.corewall.qaqc.ai.AiError)?.userMessage ?: "تعذّر توليد التقرير."
+                }
+            _reportBusy.value = false
+        }
+    }
+
+    fun clearReport() { _report.value = null; _reportError.value = null }
+
+    /** بيحفظ التقرير كملف Markdown في مكتبة الدور ويرجّع الملف للمشاركة. */
+    fun saveReportToFiles(onSaved: (java.io.File?) -> Unit) {
+        val r = _report.value ?: return onSaved(null)
+        viewModelScope.launch {
+            val f = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    val dir = files.levelDir(_currentLevel.value)
+                    val name = "${r.title}-${_currentLevel.value}-${System.currentTimeMillis()}.md"
+                        .replace(Regex("[^\\p{L}\\p{N}._\\-]"), "_")
+                    java.io.File(dir, name).apply { writeText(r.markdown) }
+                }.getOrNull()
+            }
+            f?.let { registerFiles(listOf(it)) }
+            onSaved(f)
         }
     }
 

@@ -135,7 +135,26 @@ fun MissionControlScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(12.dp))
         GreetingHeader(project = "BHR Tower 1", level = level, completion = completion)
 
-        // مساعد الـ AI — أول حاجة المهندس يشوفها بعد الترحيب
+        // إشعار استباقي: الـAI بيقول اتحلّل إيه بعد الرفع من غير ما تسأله
+        val insight by vm.uploadInsight.collectAsStateWithLifecycle()
+        insight?.let {
+            Spacer(Modifier.height(16.dp))
+            com.corewall.qaqc.ui.ai.UploadInsightBanner(
+                text = it,
+                onDismiss = { vm.dismissUploadInsight() },
+                onOpenKnowledge = { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_KNOWLEDGE) }
+            )
+        }
+
+        // لوحة الدور اللي الـAI بيقرّرها حسب البيانات المتاحة
+        Spacer(Modifier.height(16.dp))
+        val dash by vm.dashboard.collectAsStateWithLifecycle()
+        com.corewall.qaqc.ui.ai.DynamicDashboard(
+            state = dash,
+            onRefresh = { vm.refreshDashboard() }
+        )
+
+        // مساعد الـ AI — تحليل الدور
         Spacer(Modifier.height(16.dp))
         val aiState by vm.aiState.collectAsStateWithLifecycle()
         com.corewall.qaqc.ui.ai.AiDashboardCard(

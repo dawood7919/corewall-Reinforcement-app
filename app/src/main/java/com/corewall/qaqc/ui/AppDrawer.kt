@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Groups
@@ -157,6 +158,11 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         SectionLabel("عام")
 
+        DrawerItem(
+            icon = Icons.Filled.Description, title = "توليد المستندات", subtitle = "تقارير يومية · فحص · طلب مواد",
+            selected = false,
+            onClick = { go { vm.openAppScreen(AppScreen.AI_REPORTS) } }
+        )
         DrawerItem(
             icon = Icons.Filled.Storage, title = "ذاكرة المشروع", subtitle = "الملفات اللي الـAI حلّلها",
             selected = false,
