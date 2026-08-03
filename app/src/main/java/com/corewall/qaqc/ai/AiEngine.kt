@@ -54,6 +54,9 @@ class AiEngine(
     private val json = Json {
         ignoreUnknownKeys = true; isLenient = true
         encodeDefaults = true; explicitNulls = false
+        // الموديل بيرجّع null بدل القيمة الفاضية أحياناً — نخليها القيمة الافتراضية
+        // بدل ما الفك كله يفشل على حقل واحد.
+        coerceInputValues = true
     }
 
     // ---------------------------------------------------------------- تسجيل وتحليل
@@ -120,10 +123,9 @@ class AiEngine(
                 analyzedAt = System.currentTimeMillis()))
         }
 
-        val extraction = runCatching { parseExtraction(raw) }.getOrElse {
-            val peek = raw.trim().replace(Regex("\\s+"), " ").take(180)
-            val msg = if (peek.isBlank()) "الموديل رجّع رد فاضي — يمكن مش داعم تحليل الصور"
-            else "رد غير مفهوم من الموديل: $peek"
+        val (extraction, truncated) = runCatching { parseExtraction(raw) }.getOrElse {
+            val msg = if (raw.isBlank()) "الموديل رجّع رد فاضي — يمكن مش داعم تحليل الصور"
+            else "رد غير مفهوم من الموديل: ${peek(raw)}"
             return save(doc.copy(status = "FAILED", error = msg, analyzedAt = System.currentTimeMillis()))
         }
 
@@ -144,7 +146,11 @@ class AiEngine(
             engineer = extraction.engineer,
             docDate = extraction.date,
             summary = extraction.summary,
-            status = "DONE", error = "",
+            status = "DONE",
+            // بنحفظ اللي وصل، بس بنقول إنه ناقص بدل ما نسيبه يبان كامل
+            error = if (truncated)
+                "الرد اتقطع — البيانات جزئية (${extraction.facts.size} عنصر). اضغط \"حلّل تاني\" لو ناقص."
+            else "",
             analyzedAt = System.currentTimeMillis()
         )
         withContext(Dispatchers.IO) {
@@ -388,31 +394,11 @@ class AiEngine(
         }.take(12_000)
     }
 
-    /** فكّ JSON عام مع تحمّل علامات markdown والنص الزيادة. */
+    /** فكّ JSON عام مع تحمّل علامات markdown والردود المقطوعة. */
     private fun <T> parseJson(raw: String, serializer: kotlinx.serialization.KSerializer<T>): T {
-        val text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val start = text.indexOf('{')
-        if (start < 0) throw AiError.BadResponse(raw.take(300))
-        var depth = 0
-        var inStr = false
-        var esc = false
-        for (i in start until text.length) {
-            val c = text[i]
-            when {
-                esc -> esc = false
-                c == '\\' && inStr -> esc = true
-                c == '"' -> inStr = !inStr
-                inStr -> Unit
-                c == '{' -> depth++
-                c == '}' -> {
-                    depth--
-                    if (depth == 0) return runCatching {
-                        json.decodeFromString(serializer, text.substring(start, i + 1))
-                    }.getOrElse { throw AiError.BadResponse(text.take(300)) }
-                }
-            }
-        }
-        throw AiError.BadResponse(raw.take(300))
+        val obj = JsonRepair.extractObject(raw) ?: throw AiError.BadResponse(peek(raw))
+        return runCatching { json.decodeFromString(serializer, obj.json) }
+            .getOrElse { throw AiError.BadResponse(peek(raw)) }
     }
 
     // ---------------------------------------------------------------- مساعدات
@@ -424,22 +410,18 @@ class AiEngine(
      */
     private fun describe(e: Throwable): String = e.aiMessage()
 
-    internal fun parseExtraction(raw: String): DocExtraction {
-        val text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val start = text.indexOf('{')
-        require(start >= 0) { "no json" }
-        var depth = 0; var inStr = false; var esc = false
-        for (i in start until text.length) {
-            val c = text[i]
-            when {
-                esc -> esc = false
-                c == '\\' && inStr -> esc = true
-                c == '"' -> inStr = !inStr
-                inStr -> Unit
-                c == '{' -> depth++
-                c == '}' -> { depth--; if (depth == 0) return json.decodeFromString(text.substring(start, i + 1)) }
-            }
-        }
-        error("unbalanced json")
+    /** بيرجّع الاستخراج مع علامة إن الرد كان مقطوع (بيانات جزئية). */
+    internal fun parseExtraction(raw: String): Pair<DocExtraction, Boolean> {
+        val obj = JsonRepair.extractObject(raw) ?: error("مفيش JSON في الرد")
+        return json.decodeFromString<DocExtraction>(obj.json) to obj.repaired
+    }
+
+    /**
+     * لقطة من أول الرد وآخره — الآخر هو اللي بيوضّح إن الرد اتقطع،
+     * وده مكانش باين لما كنا بنعرض البداية بس.
+     */
+    private fun peek(raw: String): String {
+        val s = raw.trim().replace(Regex("\\s+"), " ")
+        return if (s.length <= 260) s else "${s.take(160)} … ${s.takeLast(80)}"
     }
 }

@@ -37,6 +37,9 @@ interface AiProvider {
 
 private val lenientJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
+/** سقف طول الرد. مستندات الـBBS بترجّع مئات الصفوف، والافتراضي بيقطعها. */
+private const val MAX_TOKENS = 8000
+
 fun providerFor(id: AiProviderId): AiProvider = when (id) {
     AiProviderId.OPENROUTER, AiProviderId.OPENAI -> OpenAiCompatProvider
     AiProviderId.ANTHROPIC -> AnthropicProvider
@@ -52,6 +55,9 @@ object OpenAiCompatProvider : AiProvider {
         val payload = buildJsonObject {
             put("model", config.model)
             put("temperature", 0.2)
+            // من غير سقف صريح بعض المزوّدين بيقطعوا الرد عند حد منخفض،
+            // فالـJSON بيوصل ناقص — ده كان سبب فشل تحليل ملفات BBS.
+            put("max_tokens", MAX_TOKENS)
             // بنطلب JSON صريح — بيقلّل جداً احتمال رد نصي حر
             putJsonObject("response_format") { put("type", "json_object") }
             putJsonArray("messages") {
@@ -82,6 +88,7 @@ object OpenAiCompatProvider : AiProvider {
         val payload = buildJsonObject {
             put("model", config.model)
             put("temperature", 0.2)
+            put("max_tokens", MAX_TOKENS)
             putJsonArray("messages") {
                 add(buildJsonObject { put("role", "system"); put("content", systemPrompt) })
                 add(buildJsonObject {
@@ -122,7 +129,7 @@ object AnthropicProvider : AiProvider {
     override suspend fun complete(config: AiConfig, systemPrompt: String, userContent: String): String {
         val payload = buildJsonObject {
             put("model", config.model)
-            put("max_tokens", 4096)
+            put("max_tokens", MAX_TOKENS)
             put("temperature", 0.2)
             put("system", systemPrompt)
             putJsonArray("messages") {

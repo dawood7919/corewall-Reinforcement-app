@@ -180,7 +180,11 @@ private fun DocCard(vm: MainViewModel, doc: DocumentEntity) {
 
             if (doc.error.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
-                Text(doc.error, style = MaterialTheme.typography.bodySmall, color = srt.red)
+                // مستند اتحلّل بس بياناته ناقصة = تنبيه، مش فشل
+                Text(
+                    doc.error, style = MaterialTheme.typography.bodySmall,
+                    color = if (doc.status == "DONE") srt.orange else srt.red
+                )
             }
             if (doc.summary.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
