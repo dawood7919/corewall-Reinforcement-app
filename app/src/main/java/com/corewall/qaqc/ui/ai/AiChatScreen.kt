@@ -51,6 +51,8 @@ import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.ai.model.AnswerBlock
 import com.corewall.qaqc.ai.model.ChatAnswer
 import com.corewall.qaqc.data.db.ChatMessageEntity
+import com.corewall.qaqc.ai.agent.ToolRisk
+import com.corewall.qaqc.ui.ai.blocks.ActionConfirmCard
 import com.corewall.qaqc.ui.ai.blocks.AnswerBlockCard
 import com.corewall.qaqc.ui.ai.blocks.Collapsible
 import com.corewall.qaqc.ui.ai.blocks.ThinkingRow
@@ -59,12 +61,12 @@ import kotlinx.serialization.json.Json
 
 /** أمثلة أسئلة بتظهر لما المحادثة تكون فاضية. */
 private val SUGGESTIONS = listOf(
+    "التسليح هيتغيّر في الدور الجاي؟",
     "لخّص حالة الدور ده",
     "فين فجوات البيانات؟",
+    "وريني ملفات الدور",
     "إيه الفحوصات المعلّقة؟",
-    "عدّ الأسياخ مطابق للرسمة؟",
-    "إيه المستندات المرفوعة للدور؟",
-    "كام عامل النهاردة؟"
+    "الدور جاهز للصبّة؟"
 )
 
 private val answerJson = Json {
@@ -92,6 +94,8 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val error by vm.chatError.collectAsStateWithLifecycle()
     val docs by vm.documents.collectAsStateWithLifecycle()
     val cfg by vm.aiConfig.collectAsStateWithLifecycle()
+    val status by vm.agentStatus.collectAsStateWithLifecycle()
+    val pending by vm.pendingActions.collectAsStateWithLifecycle()
 
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -130,9 +134,24 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     items(messages, key = { it.id.takeIf { id -> id != 0L } ?: it.createdAt }) { m ->
-                        if (m.role == "user") UserBubble(m) else AnswerCard(m) { vm.askAi(it) }
+                        if (m.role == "user") UserBubble(m)
+                        else AnswerCard(
+                            m = m,
+                            onFollowUp = { vm.askAi(it) },
+                            onOpenFile = { vm.openAnyFile(it) }
+                        )
                     }
-                    if (busy) item { ThinkingRow("بيراجع بيانات الدور…") }
+                    // إجراءات الوكيل المستنية موافقة — بتظهر تحت آخر رد
+                    items(pending, key = { it.id }) { p ->
+                        ActionConfirmCard(
+                            title = p.label,
+                            detail = p.action.describe(),
+                            destructive = p.tool.risk == ToolRisk.DESTRUCTIVE,
+                            onConfirm = { vm.confirmAction(p.id) },
+                            onDismiss = { vm.dismissAction(p.id) }
+                        )
+                    }
+                    if (busy) item { ThinkingRow(status ?: "بيراجع بيانات الدور…") }
                 }
             }
         }
@@ -217,7 +236,11 @@ private fun UserBubble(m: ChatMessageEntity) {
  * وتحت المصادر وأسئلة المتابعة.
  */
 @Composable
-private fun AnswerCard(m: ChatMessageEntity, onFollowUp: (String) -> Unit) {
+private fun AnswerCard(
+    m: ChatMessageEntity,
+    onFollowUp: (String) -> Unit,
+    onOpenFile: (String) -> Unit
+) {
     val srt = LocalSrtColors.current
     val answer = remember(m.id, m.content) { parseAnswer(m.content) }
     var showSources by remember(m.id) { mutableStateOf(false) }
@@ -243,7 +266,7 @@ private fun AnswerCard(m: ChatMessageEntity, onFollowUp: (String) -> Unit) {
             }
         }
 
-        answer.blocks.take(6).forEachIndexed { i, b -> AnswerBlockCard(b, i) }
+        answer.blocks.take(6).forEachIndexed { i, b -> AnswerBlockCard(b, i, onOpenFile) }
 
         if (answer.sources.isNotEmpty()) {
             Row(
@@ -307,7 +330,7 @@ private fun EmptyChat(configured: Boolean, onPick: (String) -> Unit) {
         Text("المساعد الهندسي", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text(
-            if (configured) "اسأل عن أي حاجة في الدور — الرد بيجي أرقام ورسوم، مش نص."
+            if (configured) "اسأله عن أي حاجة، أو خلّيه ينفّذ — بيشوف الدور والملفات والجدول."
             else "ضيف مفتاح API من إعدادات المساعد الذكي عشان تبدأ.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

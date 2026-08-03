@@ -377,9 +377,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     loadCachedAi(level, cfg)
                     loadCachedDashboard(level, cfg)
                     loadKnowledge()
+                    refreshSuggestions()
                     // أول ما يبقى فيه مفتاح: حلّل أي حاجة معلّقة (رفعها قبل المفتاح مثلاً)
                     if (cfg.isConfigured) autoAnalyze()
                 }
+        }
+    }
+
+    init {
+        // الاقتراحات بتتبني من بيانات الجودة، فبتتحدّث مع أي تغيير فيها
+        viewModelScope.launch {
+            combine(repo.inspections, repo.tasks) { _, _ -> Unit }
+                .collect { refreshSuggestions() }
         }
     }
 
@@ -583,7 +592,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** حقائق مستخرجة من مستند — للعرض في شاشة المعرفة. */
     suspend fun factsFor(docId: Long) = aiEngine.factsFor(docId)
 
-    /** سؤال للمساعد الهندسي — بيشوف كل معرفة المشروع. */
+    /**
+     * سؤال للمساعد — بيشتغل كوكيل: بيشوف حالة التطبيق، بينفّذ أدوات
+     * قراءة عشان يجيب الحقايق، وبيقترح إجراءات التعديل للموافقة.
+     */
     fun askAi(question: String) {
         val q = question.trim()
         if (q.isBlank() || _chatBusy.value) return
@@ -592,19 +604,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         _chatBusy.value = true
         _chatError.value = null
+        _agentStatus.value = "بيقرا حالة الدور…"
         viewModelScope.launch {
             val level = _currentLevel.value
             // نعرض سؤال المستخدم فوراً
             _chat.value = _chat.value + com.corewall.qaqc.data.db.ChatMessageEntity(
                 level = level, role = "user", content = q, createdAt = System.currentTimeMillis()
             )
-            val snapshot = withContext(kotlinx.coroutines.Dispatchers.Default) { buildProjectSnapshot(level) }
-            runCatching { aiEngine.ask(cfg, level, q, snapshot) }
-                .onFailure { e ->
-                    _chatError.value = e.aiMessage()
+
+            val appState = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.corewall.qaqc.ai.agent.AppSnapshot.build(
+                    agentHost, files, _documents.value, currentScreenName()
+                )
+            }
+            val knowledge = runCatching { aiEngine.knowledgeFor(level, q) }.getOrDefault("")
+            val history = runCatching { aiEngine.historyDigest(level) }.getOrDefault("")
+
+            runCatching {
+                agentEngine.ask(cfg, q, appState, knowledge, history) { thought ->
+                    _agentStatus.value = thought
                 }
+            }.onSuccess { run ->
+                aiEngine.saveTurn(level, q, run.answer)
+                if (run.executed.isNotEmpty()) {
+                    _actionLog.value = (run.executed.reversed() + _actionLog.value).take(60)
+                }
+                _pendingActions.value = run.pending
+            }.onFailure { e ->
+                _chatError.value = e.aiMessage()
+            }
+
             _chat.value = aiEngine.history(level)
+            _agentStatus.value = null
             _chatBusy.value = false
+            refreshSuggestions()
         }
     }
 
@@ -612,10 +645,197 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             aiEngine.clearChat(_currentLevel.value)
             _chat.value = emptyList()
+            _pendingActions.value = emptyList()
         }
     }
 
     fun dismissChatError() { _chatError.value = null }
+
+    // ---------------------------------------------------------------- الوكيل
+
+    /**
+     * الشباك اللي الوكيل بيبصّ منه على التطبيق.
+     *
+     * كائن منفصل مش الـViewModel نفسه، عشان أسماء الحالة هنا (StateFlow)
+     * ماتتلخبطش مع أسماء القيم اللحظية اللي الواجهة عايزاها.
+     */
+    private val agentHost = object : com.corewall.qaqc.ai.agent.AgentHost {
+        override val levels get() = this@MainViewModel.levels
+        override val currentLevel get() = _currentLevel.value
+        override val schedule get() = this@MainViewModel.schedule.value
+        override val logic get() = this@MainViewModel.logic
+        override val planData get() = this@MainViewModel.planData
+        override val names get() = this@MainViewModel.names.value
+        override val inspections get() = this@MainViewModel.inspections.value
+        override val comments get() = this@MainViewModel.comments.value
+        override val barCounts get() = this@MainViewModel.barCounts.value
+        override val tasks get() = this@MainViewModel.tasks.value
+        override val notes get() = this@MainViewModel.notes.value
+        override val sitePhotos get() = this@MainViewModel.sitePhotos.value
+        override val dailyAttendance get() = this@MainViewModel.dailyAttendance.value
+
+        override fun attendanceFileLabels(): Map<Long, String> =
+            attendanceFiles.value.associate { it.id to "${it.company} — ${it.trade}" }
+
+        override fun setLevel(level: String): Boolean {
+            this@MainViewModel.setLevel(level); return true
+        }
+
+        override fun openScreen(screen: String): Boolean = navigateTo(screen)
+
+        override fun openFile(path: String): Boolean {
+            val f = java.io.File(path)
+            if (!f.exists()) return false
+            when (f.extension.lowercase()) {
+                "pdf" -> openPdf(path)
+                "jpg", "jpeg", "png", "webp", "bmp", "gif", "heic" -> openImage(path)
+                "dxf", "dwg" -> openCad(path)
+                else -> return files.openExternally(f)
+            }
+            return true
+        }
+
+        override suspend fun addTask(title: String, level: String): Boolean = runCatching {
+            repo.upsertTask(
+                TaskEntity(title = title, level = level, createdAt = System.currentTimeMillis())
+            )
+        }.isSuccess
+
+        override suspend fun addComment(elementId: String, text: String): Boolean = runCatching {
+            repo.addComment(elementId, _currentLevel.value, text)
+        }.isSuccess
+
+        override suspend fun setInspection(elementId: String, status: String): Boolean = runCatching {
+            repo.setInspection(elementId, _currentLevel.value, status)
+        }.isSuccess
+
+        override suspend fun deleteTask(id: Long): Boolean = runCatching { repo.deleteTask(id) }.isSuccess
+
+        override fun elementIdForMark(mark: String): String? =
+            names.entries.firstOrNull { it.value.equals(mark.trim(), ignoreCase = true) }?.key
+    }
+
+    private val agentEngine by lazy {
+        com.corewall.qaqc.ai.agent.AgentEngine(
+            com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine)
+        )
+    }
+
+    /** سطر بيوضّح الوكيل بيعمل إيه دلوقتي. */
+    private val _agentStatus = MutableStateFlow<String?>(null)
+    val agentStatus: StateFlow<String?> = _agentStatus
+
+    /** إجراءات مستنية موافقة المستخدم. */
+    private val _pendingActions =
+        MutableStateFlow<List<com.corewall.qaqc.ai.agent.PendingAction>>(emptyList())
+    val pendingActions: StateFlow<List<com.corewall.qaqc.ai.agent.PendingAction>> = _pendingActions
+
+    /** سجل كل إجراء الوكيل عمله — ظاهر وقابل للمراجعة. */
+    private val _actionLog =
+        MutableStateFlow<List<com.corewall.qaqc.ai.agent.ActionLogEntry>>(emptyList())
+    val actionLog: StateFlow<List<com.corewall.qaqc.ai.agent.ActionLogEntry>> = _actionLog
+
+    private val _copilotOpen = MutableStateFlow(false)
+    val copilotOpen: StateFlow<Boolean> = _copilotOpen
+    fun setCopilotOpen(open: Boolean) { _copilotOpen.value = open }
+
+    private val _suggestions =
+        MutableStateFlow<List<com.corewall.qaqc.ai.agent.Suggestion>>(emptyList())
+    val suggestions: StateFlow<List<com.corewall.qaqc.ai.agent.Suggestion>> = _suggestions
+
+    /**
+     * بيحسب الاقتراحات محلياً — من غير أي نداء شبكة، فبيشتغل أوفلاين
+     * وبيتحدّث فوراً مع أي تغيير في البيانات.
+     */
+    fun refreshSuggestions() {
+        viewModelScope.launch {
+            _suggestions.value = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                runCatching {
+                    com.corewall.qaqc.ai.agent.SuggestionEngine.build(agentHost, files, _documents.value)
+                }.getOrDefault(emptyList())
+            }
+        }
+    }
+
+    /** بينفّذ إجراء بعد ما المستخدم وافق عليه. */
+    fun confirmAction(id: Long) {
+        val p = _pendingActions.value.firstOrNull { it.id == id } ?: return
+        _pendingActions.value = _pendingActions.value.filterNot { it.id == id }
+        viewModelScope.launch {
+            val executor = com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine)
+            val outcome = executor.run(p.action)
+            _actionLog.value = (
+                listOf(
+                    com.corewall.qaqc.ai.agent.ActionLogEntry(
+                        at = System.currentTimeMillis(),
+                        tool = p.tool.name,
+                        detail = p.action.describe(),
+                        ok = outcome.ok,
+                        auto = false
+                    )
+                ) + _actionLog.value
+                ).take(60)
+            _agentStatus.value = outcome.userMessage.ifBlank { null }
+            loadKnowledge()
+            refreshSuggestions()
+        }
+    }
+
+    fun dismissAction(id: Long) {
+        _pendingActions.value = _pendingActions.value.filterNot { it.id == id }
+    }
+
+    /** بيفتح أي ملف بالعارض المناسب — بيستخدمها الشات لما يعرض ملفات. */
+    fun openAnyFile(path: String) {
+        val f = java.io.File(path)
+        if (!f.exists()) return
+        when (f.extension.lowercase()) {
+            "pdf" -> openPdf(path)
+            "jpg", "jpeg", "png", "webp", "bmp", "gif", "heic" -> openImage(path)
+            "dxf", "dwg" -> openCad(path)
+            else -> files.openExternally(f)
+        }
+    }
+
+    /** اسم الشاشة المفتوحة — بيتبعت للوكيل عشان يعرف إنت فين. */
+    private fun currentScreenName(): String = when (val s = _appScreen.value) {
+        null -> when (_section.value) {
+            Section.COREWALL -> when (_tabIndex.value) {
+                0 -> "الرئيسية (Mission Control)"
+                1 -> "المسقط — عدسة ${_lens.value.label}"
+                2 -> "الملفات"
+                3 -> "المهام"
+                else -> "الإعدادات"
+            }
+            Section.MANPOWER -> when (_tabIndex.value) {
+                0 -> "العمالة — الحضور"
+                1 -> "العمالة — التقارير"
+                2 -> "العمالة — الإحصائيات"
+                else -> "الإعدادات"
+            }
+        }
+        else -> "شاشة ${s.name}"
+    }
+
+    /** بيفتح شاشة بالاسم — الأسماء دي هي اللي الوكيل بيعرفها. */
+    private fun navigateTo(screen: String): Boolean {
+        when (screen.trim().uppercase()) {
+            "HOME", "DASHBOARD" -> { setSection(Section.COREWALL); setTabIndex(0) }
+            "PLAN", "SCHEDULE", "ATTENTION" -> goToLens(Lens.REINF)
+            "COUNTING" -> goToLens(Lens.COUNT)
+            "FILES" -> { setSection(Section.COREWALL); setTabIndex(2) }
+            "TASKS" -> { setSection(Section.COREWALL); setTabIndex(3) }
+            "MANPOWER" -> goToManpower()
+            "NOTES" -> openAppScreen(AppScreen.FLOOR_NOTES)
+            "PHOTOS" -> openAppScreen(AppScreen.SITE_PHOTOS)
+            "KNOWLEDGE" -> openAppScreen(AppScreen.AI_KNOWLEDGE)
+            "REPORTS" -> openAppScreen(AppScreen.AI_REPORTS)
+            "CHAT" -> openAppScreen(AppScreen.AI_CHAT)
+            "SETTINGS" -> openAppScreen(AppScreen.SETTINGS)
+            else -> return false
+        }
+        return true
+    }
 
     /** ملخّص نصّي مختصر لحالة الدور — الأرقام محسوبة، مش من الموديل. */
     private fun buildProjectSnapshot(level: String): String {

@@ -49,8 +49,22 @@ data class AnswerBlock(
     val columns: List<String> = emptyList(),
     val rows: List<List<String>> = emptyList(),
     val items: List<String> = emptyList(),
+    /** ملفات أو صور بيعرضها الرد — بمسارات حقيقية جوّه التطبيق. */
+    val files: List<AnswerFile> = emptyList(),
     /** أكواد العناصر المرتبطة بالبلوك. */
     val marks: List<String> = emptyList()
+)
+
+/**
+ * ملف بيتعرض جوّه الرد.
+ *
+ * [path] لازم يكون مسار حقيقي رجع من أداة — الشاشة بتتأكد إن الملف
+ * موجود قبل ما تعرضه، فمسار متخيّل بيختفي بدل ما يبان كارت مكسور.
+ */
+@Serializable
+data class AnswerFile(
+    val path: String = "",
+    val caption: String = ""
 )
 
 @Serializable

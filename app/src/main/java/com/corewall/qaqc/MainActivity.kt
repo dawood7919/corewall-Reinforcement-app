@@ -188,6 +188,14 @@ fun MainScreen(vm: MainViewModel) {
         }
     }
 
+    // المساعد موجود فوق كل شاشة. بيتخفي بس لما شاشة ملء-الشاشة تكون مفتوحة
+    // (عارض PDF/CAD/صورة/محرّر ملاحظة) عشان مايغطّيش أدواتها.
+    val fullScreenOpen = openPdfPath != null || openCadPath != null ||
+        viewingImage != null || editingNote != null
+    if (!fullScreenOpen) {
+        com.corewall.qaqc.ui.ai.AiCopilotOverlay(vm)
+    }
+
     appScreen?.let { screen ->
         val (title, back) = when (screen) {
             AppScreen.NOTIFICATIONS -> "الإشعارات" to { vm.closeAppScreen() }

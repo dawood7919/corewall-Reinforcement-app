@@ -59,7 +59,12 @@ import com.corewall.qaqc.ui.theme.LocalVizColors
  * حسب ترتيبه — الترتيب بيدّي إحساس إن الرد بيتبني قدامك.
  */
 @Composable
-fun AnswerBlockCard(block: AnswerBlock, index: Int, modifier: Modifier = Modifier) {
+fun AnswerBlockCard(
+    block: AnswerBlock,
+    index: Int,
+    onOpenFile: (String) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
     var visible by remember(block) { mutableStateOf(false) }
     LaunchedEffect(block) {
         kotlinx.coroutines.delay(index * 70L)
@@ -74,7 +79,7 @@ fun AnswerBlockCard(block: AnswerBlock, index: Int, modifier: Modifier = Modifie
         when (block.type.uppercase()) {
             "ALERT" -> AlertBlock(block, modifier)
             "TEXT" -> TextBlock(block, modifier)
-            else -> DataCard(block, modifier)
+            else -> DataCard(block, onOpenFile, modifier)
         }
     }
 }
@@ -143,7 +148,11 @@ private fun AlertBlock(block: AnswerBlock, modifier: Modifier = Modifier) {
 
 /** كارت بيانات: عنوان + المحتوى + عرض جدول للرسوم. */
 @Composable
-private fun DataCard(block: AnswerBlock, modifier: Modifier = Modifier) {
+private fun DataCard(
+    block: AnswerBlock,
+    onOpenFile: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val chart = block.type.uppercase() in setOf("BAR", "SPLIT", "TREND")
     var asTable by remember(block) { mutableStateOf(false) }
 
@@ -195,6 +204,8 @@ private fun DataCard(block: AnswerBlock, modifier: Modifier = Modifier) {
                 "TABLE" -> DataTable(block.columns, block.rows)
                 "LIST" -> BulletList(block.items, numbered = false)
                 "STEPS" -> BulletList(block.items, numbered = true)
+                "FILES" -> FileList(block.files, onOpenFile)
+                "IMAGES" -> ImageGallery(block.files, onOpenFile)
                 else -> Text(block.body, style = MaterialTheme.typography.bodyMedium)
             }
 

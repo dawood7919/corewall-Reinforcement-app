@@ -219,6 +219,42 @@ class AiEngine(
     suspend fun factsFor(docId: Long): List<DocFactEntity> =
         withContext(Dispatchers.IO) { factDao.forDocument(docId) }
 
+    // ---------------------------------------------------------------- دعم الوكيل
+
+    /** المعرفة المرتبطة بسؤال — نفس الاسترجاع اللي بتستخدمه المحادثة. */
+    suspend fun knowledgeFor(level: String, question: String): String = retrieve(level, question)
+
+    /** آخر الرسائل كملخّص — ردود المساعد بتترجع بخلاصتها مش بالـJSON كله. */
+    suspend fun historyDigest(level: String, take: Int = 6): String =
+        withContext(Dispatchers.IO) {
+            chatDao.forLevel(level).takeLast(take).joinToString("\n") {
+                val who = if (it.role == "user") "المستخدم" else "المساعد"
+                "$who: ${if (it.role == "user") it.content else headlineOf(it.content)}"
+            }
+        }
+
+    /** بيسجّل دور محادثة كامل: سؤال المستخدم ورد الوكيل. */
+    suspend fun saveTurn(level: String, question: String, answer: com.corewall.qaqc.ai.model.ChatAnswer) =
+        withContext(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            chatDao.upsert(ChatMessageEntity(level = level, role = "user", content = question, createdAt = now))
+            chatDao.upsert(
+                ChatMessageEntity(
+                    level = level, role = "assistant",
+                    content = json.encodeToString(com.corewall.qaqc.ai.model.ChatAnswer.serializer(), answer),
+                    createdAt = now + 1
+                )
+            )
+        }
+
+    /** مستندات دور — بيستخدمها الوكيل. */
+    suspend fun documentsFor(level: String): List<DocumentEntity> =
+        withContext(Dispatchers.IO) { documentDao.forLevel(level) }
+
+    /** بحث في الحقائق المستخرجة — بيستخدمه الوكيل. */
+    suspend fun searchFacts(query: String, limit: Int = 30): List<DocFactEntity> =
+        withContext(Dispatchers.IO) { factDao.search(query, limit) }
+
     suspend fun clearChat(level: String) = withContext(Dispatchers.IO) { chatDao.clearLevel(level) }
 
     /**
