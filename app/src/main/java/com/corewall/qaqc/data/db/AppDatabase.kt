@@ -235,10 +235,8 @@ abstract class AppDatabase : RoomDatabase() {
                         "`level` TEXT NOT NULL, `role` TEXT NOT NULL, `content` TEXT NOT NULL, " +
                         "`createdAt` INTEGER NOT NULL)"
                 )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_documents_level` ON `documents` (`level`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_facts_level` ON `doc_facts` (`level`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_facts_key` ON `doc_facts` (`key`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_chat_level` ON `chat_messages` (`level`)")
+                // ملاحظة: ممنوع نعمل فهارس هنا طالما الـEntity مش معرّفها —
+                // Room بيقارن المخطط وبيقع لو فيه أي اختلاف (ده اللي كان بيقفل التطبيق).
             }
         }
 
