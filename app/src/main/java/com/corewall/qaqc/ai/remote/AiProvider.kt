@@ -22,6 +22,17 @@ import kotlinx.serialization.json.putJsonObject
  */
 interface AiProvider {
     suspend fun complete(config: AiConfig, systemPrompt: String, userContent: String): String
+
+    /**
+     * نفس الطلب بس مع صور (base64 JPEG) — للـPDF وصور الموقع.
+     * الافتراضي بيرجّع للنص العادي لو المزوّد مش داعم الرؤية.
+     */
+    suspend fun completeWithImages(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        imagesBase64: List<String>
+    ): String = complete(config, systemPrompt, userContent)
 }
 
 private val lenientJson = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -53,6 +64,44 @@ object OpenAiCompatProvider : AiProvider {
             put("Authorization", "Bearer ${config.apiKey}")
             if (config.provider == AiProviderId.OPENROUTER) {
                 // OpenRouter بيطلب/بيفضّل الهيدرز دي لتعريف التطبيق
+                put("HTTP-Referer", "https://github.com/corewall-qaqc")
+                put("X-Title", "CoreWall QA/QC")
+            }
+        }
+
+        val raw = AiHttpClient.postJson("${config.baseUrl.trimEnd('/')}/chat/completions", payload, headers)
+        return extractOpenAiContent(raw)
+    }
+
+    override suspend fun completeWithImages(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        imagesBase64: List<String>
+    ): String {
+        val payload = buildJsonObject {
+            put("model", config.model)
+            put("temperature", 0.2)
+            putJsonArray("messages") {
+                add(buildJsonObject { put("role", "system"); put("content", systemPrompt) })
+                add(buildJsonObject {
+                    put("role", "user")
+                    putJsonArray("content") {
+                        add(buildJsonObject { put("type", "text"); put("text", userContent) })
+                        imagesBase64.forEach { b64 ->
+                            add(buildJsonObject {
+                                put("type", "image_url")
+                                putJsonObject("image_url") { put("url", "data:image/jpeg;base64,$b64") }
+                            })
+                        }
+                    }
+                })
+            }
+        }.toString()
+
+        val headers = buildMap {
+            put("Authorization", "Bearer ${config.apiKey}")
+            if (config.provider == AiProviderId.OPENROUTER) {
                 put("HTTP-Referer", "https://github.com/corewall-qaqc")
                 put("X-Title", "CoreWall QA/QC")
             }

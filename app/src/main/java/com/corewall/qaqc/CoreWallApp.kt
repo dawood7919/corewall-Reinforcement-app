@@ -1,6 +1,7 @@
 package com.corewall.qaqc
 
 import android.app.Application
+import com.corewall.qaqc.ai.AiEngine
 import com.corewall.qaqc.ai.AiRepository
 import com.corewall.qaqc.data.AppRepository
 import com.corewall.qaqc.data.FilesManager
@@ -16,12 +17,16 @@ class CoreWallApp : Application() {
         private set
     lateinit var aiRepository: AiRepository
         private set
+    lateinit var aiEngine: AiEngine
+        private set
 
     override fun onCreate() {
         super.onCreate()
         repository = AppRepository(this)
         settingsStore = SettingsStore(this)
         filesManager = FilesManager(this)
-        aiRepository = AiRepository(AppDatabase.get(this).aiAnalysisDao())
+        val db = AppDatabase.get(this)
+        aiRepository = AiRepository(db.aiAnalysisDao())
+        aiEngine = AiEngine(db.documentDao(), db.docFactDao(), db.chatMessageDao())
     }
 }

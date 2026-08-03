@@ -245,3 +245,69 @@ interface AiAnalysisDao {
     @Query("DELETE FROM ai_analysis WHERE level = :level")
     suspend fun deleteForLevel(level: String)
 }
+
+@Dao
+interface DocumentDao {
+    @Query("SELECT * FROM documents ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<DocumentEntity>>
+
+    @Query("SELECT * FROM documents WHERE level = :level ORDER BY createdAt DESC")
+    suspend fun forLevel(level: String): List<DocumentEntity>
+
+    @Query("SELECT * FROM documents WHERE filePath = :path LIMIT 1")
+    suspend fun byPath(path: String): DocumentEntity?
+
+    @Query("SELECT * FROM documents WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): DocumentEntity?
+
+    @Query("SELECT * FROM documents WHERE status = 'PENDING' ORDER BY createdAt ASC LIMIT :limit")
+    suspend fun pending(limit: Int): List<DocumentEntity>
+
+    @Query("SELECT * FROM documents")
+    suspend fun getAll(): List<DocumentEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: DocumentEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<DocumentEntity>)
+
+    @Query("DELETE FROM documents WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface DocFactDao {
+    @Query("SELECT * FROM doc_facts WHERE level = :level")
+    suspend fun forLevel(level: String): List<DocFactEntity>
+
+    @Query("SELECT * FROM doc_facts WHERE documentId = :docId")
+    suspend fun forDocument(docId: Long): List<DocFactEntity>
+
+    @Query("SELECT * FROM doc_facts WHERE key LIKE '%' || :q || '%' OR value LIKE '%' || :q || '%' LIMIT :limit")
+    suspend fun search(q: String, limit: Int): List<DocFactEntity>
+
+    @Query("SELECT * FROM doc_facts")
+    suspend fun getAll(): List<DocFactEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<DocFactEntity>)
+
+    @Query("DELETE FROM doc_facts WHERE documentId = :docId")
+    suspend fun deleteForDocument(docId: Long)
+}
+
+@Dao
+interface ChatMessageDao {
+    @Query("SELECT * FROM chat_messages WHERE level = :level ORDER BY createdAt ASC")
+    fun observeForLevel(level: String): Flow<List<ChatMessageEntity>>
+
+    @Query("SELECT * FROM chat_messages WHERE level = :level ORDER BY createdAt ASC")
+    suspend fun forLevel(level: String): List<ChatMessageEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: ChatMessageEntity): Long
+
+    @Query("DELETE FROM chat_messages WHERE level = :level")
+    suspend fun clearLevel(level: String)
+}

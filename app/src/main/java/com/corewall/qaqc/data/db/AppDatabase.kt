@@ -21,9 +21,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AttendanceFileEntity::class,
         DailyAttendanceEntity::class,
         SitePhotoEntity::class,
-        AiAnalysisEntity::class
+        AiAnalysisEntity::class,
+        DocumentEntity::class,
+        DocFactEntity::class,
+        ChatMessageEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -40,6 +43,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dailyAttendanceDao(): DailyAttendanceDao
     abstract fun sitePhotoDao(): SitePhotoDao
     abstract fun aiAnalysisDao(): AiAnalysisDao
+    abstract fun documentDao(): DocumentDao
+    abstract fun docFactDao(): DocFactDao
+    abstract fun chatMessageDao(): ChatMessageDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -203,6 +209,39 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
 
+        // طبقة المعرفة: مستندات محلّلة + حقائق مستخرجة (knowledge graph) + محادثة.
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `documents` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`filePath` TEXT NOT NULL, `fileName` TEXT NOT NULL, `level` TEXT NOT NULL, " +
+                        "`docType` TEXT NOT NULL, `title` TEXT NOT NULL, `drawingNumber` TEXT NOT NULL, " +
+                        "`revision` TEXT NOT NULL, `discipline` TEXT NOT NULL, `company` TEXT NOT NULL, " +
+                        "`engineer` TEXT NOT NULL, `docDate` TEXT NOT NULL, `summary` TEXT NOT NULL, " +
+                        "`status` TEXT NOT NULL, `error` TEXT NOT NULL, " +
+                        "`analyzedAt` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `doc_facts` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`documentId` INTEGER NOT NULL, `level` TEXT NOT NULL, `kind` TEXT NOT NULL, " +
+                        "`key` TEXT NOT NULL, `value` TEXT NOT NULL, `unit` TEXT NOT NULL, " +
+                        "`numericValue` REAL NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `chat_messages` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`level` TEXT NOT NULL, `role` TEXT NOT NULL, `content` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_documents_level` ON `documents` (`level`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_facts_level` ON `doc_facts` (`level`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_facts_key` ON `doc_facts` (`key`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_chat_level` ON `chat_messages` (`level`)")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -215,7 +254,7 @@ abstract class AppDatabase : RoomDatabase() {
                 ).addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10
+                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
                 ).build().also { instance = it }
             }
     }

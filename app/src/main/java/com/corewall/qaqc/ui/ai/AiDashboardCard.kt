@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -63,6 +64,7 @@ fun AiDashboardCard(
     onRefresh: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenFull: () -> Unit,
+    onOpenChat: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val srt = LocalSrtColors.current
@@ -90,6 +92,15 @@ fun AiDashboardCard(
                     Text("مساعد CoreWall الذكي", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
                     Text(subtitleFor(state), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.85f))
                 }
+                Surface(
+                    onClick = onOpenChat,
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White.copy(alpha = 0.2f)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "المساعد الهندسي",
+                        tint = Color.White, modifier = Modifier.padding(9.dp).size(20.dp))
+                }
+                Spacer(Modifier.width(8.dp))
                 RefreshButton(loading = state is AiUiState.Loading, onClick = onRefresh)
             }
 

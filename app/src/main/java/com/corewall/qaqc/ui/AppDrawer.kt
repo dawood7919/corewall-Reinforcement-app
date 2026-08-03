@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
@@ -156,9 +157,14 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
         SectionLabel("عام")
 
         DrawerItem(
+            icon = Icons.Filled.Forum, title = "المساعد الهندسي", subtitle = "اسأل عن المشروع بالعربي",
+            selected = false,
+            onClick = { go { vm.openAppScreen(AppScreen.AI_CHAT) } }
+        )
+        DrawerItem(
             icon = Icons.Filled.AutoAwesome, title = "المساعد الذكي", subtitle = "تحليل الدور بالذكاء الاصطناعي",
             selected = false,
-            onClick = { go { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_SETTINGS) } }
+            onClick = { go { vm.openAppScreen(AppScreen.AI_SETTINGS) } }
         )
         DrawerItem(
             icon = Icons.Filled.Settings, title = "الإعدادات", subtitle = null, selected = false,

@@ -211,3 +211,59 @@ data class AiAnalysisEntity(
     val model: String,
     val createdAt: Long
 )
+
+/**
+ * مستند اتحلّل بالـ AI. الملف نفسه بيفضل على القرص —
+ * ده "المعرفة" المستخرجة منه عشان يبقى قابل للبحث والفهم.
+ */
+@Entity(tableName = "documents")
+data class DocumentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val filePath: String,
+    val fileName: String,
+    /** الدور اللي اتربط بيه تلقائياً (أو الدور الشغّال وقت الرفع). */
+    val level: String,
+    /** DRAWING | BBS | INSPECTION | METHOD_STATEMENT | SUBMITTAL | REPORT | PHOTO | OTHER */
+    val docType: String,
+    val title: String,
+    val drawingNumber: String,
+    val revision: String,
+    val discipline: String,
+    val company: String,
+    val engineer: String,
+    val docDate: String,
+    val summary: String,
+    /** PENDING | ANALYZING | DONE | FAILED | UNSUPPORTED */
+    val status: String,
+    val error: String,
+    val analyzedAt: Long,
+    val createdAt: Long
+)
+
+/**
+ * حقيقة مستخرجة من مستند — دي حجر بناء الـKnowledge Graph:
+ * key = الكيان (كود حائط / بار مارك / قطر)، والربط بيحصل بالـkey عبر المستندات.
+ */
+@Entity(tableName = "doc_facts")
+data class DocFactEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val documentId: Long,
+    val level: String,
+    /** BAR_MARK | WALL_REF | DIAMETER | QUANTITY | DIMENSION | GRID | NOTE | DATE | PARTY | OTHER */
+    val kind: String,
+    val key: String,
+    val value: String,
+    val unit: String,
+    val numericValue: Double
+)
+
+/** رسالة في محادثة المساعد الهندسي (لكل دور). */
+@Entity(tableName = "chat_messages")
+data class ChatMessageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val level: String,
+    /** user | assistant */
+    val role: String,
+    val content: String,
+    val createdAt: Long
+)

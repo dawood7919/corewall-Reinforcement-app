@@ -44,7 +44,7 @@ enum class Section(val title: String) {
 }
 
 enum class AppScreen {
-    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, AI_ANALYSIS, AI_SETTINGS
+    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, AI_ANALYSIS, AI_SETTINGS, AI_CHAT
 }
 
 const val FLOOR_NOTE_ID = "__FLOOR__"
@@ -448,6 +448,138 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteSitePhoto(photo: SitePhotoEntity) {
         viewModelScope.launch { repo.deleteSitePhoto(photo) }
+    }
+
+    // -------- محرّك المعرفة: تحليل المستندات + المحادثة الهندسية --------
+
+    private val aiEngine: com.corewall.qaqc.ai.AiEngine = (app as CoreWallApp).aiEngine
+
+    private val _chat = MutableStateFlow<List<com.corewall.qaqc.data.db.ChatMessageEntity>>(emptyList())
+    val chat: StateFlow<List<com.corewall.qaqc.data.db.ChatMessageEntity>> = _chat
+
+    private val _chatBusy = MutableStateFlow(false)
+    val chatBusy: StateFlow<Boolean> = _chatBusy
+
+    private val _chatError = MutableStateFlow<String?>(null)
+    val chatError: StateFlow<String?> = _chatError
+
+    private val _documents = MutableStateFlow<List<com.corewall.qaqc.data.db.DocumentEntity>>(emptyList())
+    val documents: StateFlow<List<com.corewall.qaqc.data.db.DocumentEntity>> = _documents
+
+    private val _analyzing = MutableStateFlow(0)
+    val analyzing: StateFlow<Int> = _analyzing
+
+    /** بيحمّل المحادثة والمستندات بتاعة الدور الشغّال. */
+    fun loadKnowledge() {
+        viewModelScope.launch {
+            val level = _currentLevel.value
+            _chat.value = aiEngine.history(level)
+            _documents.value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                (getApplication<CoreWallApp>()).let { app ->
+                    com.corewall.qaqc.data.db.AppDatabase.get(app).documentDao().forLevel(level)
+                }
+            }
+        }
+    }
+
+    /**
+     * بيتنادى فور رفع أي ملف: بيسجّله في المعرفة وبيحلّله تلقائي
+     * لو فيه مفتاح API (من غير مفتاح بيفضل PENDING من غير أي شبكة).
+     */
+    fun onFilesImported(files: List<java.io.File>) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            val level = _currentLevel.value
+            files.forEach { f -> runCatching { aiEngine.register(f, level) } }
+            loadKnowledge()
+            val cfg = settingsStore.aiConfig.value
+            if (cfg.isConfigured) {
+                _analyzing.value = _analyzing.value + files.size
+                runCatching { aiEngine.analyzePending(cfg, levels, max = files.size.coerceAtMost(6)) }
+                _analyzing.value = 0
+                loadKnowledge()
+            }
+        }
+    }
+
+    /** تحليل يدوي لكل المستندات المعلّقة. */
+    fun analyzePendingDocuments() {
+        val cfg = settingsStore.aiConfig.value
+        if (!cfg.isConfigured) return
+        viewModelScope.launch {
+            _analyzing.value = 1
+            runCatching { aiEngine.analyzePending(cfg, levels, max = 10) }
+            _analyzing.value = 0
+            loadKnowledge()
+        }
+    }
+
+    /** سؤال للمساعد الهندسي — بيشوف كل معرفة المشروع. */
+    fun askAi(question: String) {
+        val q = question.trim()
+        if (q.isBlank() || _chatBusy.value) return
+        val cfg = settingsStore.aiConfig.value
+        if (!cfg.isConfigured) { _chatError.value = "ضيف مفتاح API من إعدادات المساعد الذكي الأول."; return }
+
+        _chatBusy.value = true
+        _chatError.value = null
+        viewModelScope.launch {
+            val level = _currentLevel.value
+            // نعرض سؤال المستخدم فوراً
+            _chat.value = _chat.value + com.corewall.qaqc.data.db.ChatMessageEntity(
+                level = level, role = "user", content = q, createdAt = System.currentTimeMillis()
+            )
+            val snapshot = withContext(kotlinx.coroutines.Dispatchers.Default) { buildProjectSnapshot(level) }
+            runCatching { aiEngine.ask(cfg, level, q, snapshot) }
+                .onFailure { e ->
+                    _chatError.value = (e as? com.corewall.qaqc.ai.AiError)?.userMessage ?: "تعذّر الرد."
+                }
+            _chat.value = aiEngine.history(level)
+            _chatBusy.value = false
+        }
+    }
+
+    fun clearChat() {
+        viewModelScope.launch {
+            aiEngine.clearChat(_currentLevel.value)
+            _chat.value = emptyList()
+        }
+    }
+
+    fun dismissChatError() { _chatError.value = null }
+
+    /** ملخّص نصّي مختصر لحالة الدور — الأرقام محسوبة، مش من الموديل. */
+    private fun buildProjectSnapshot(level: String): String {
+        val ctx = com.corewall.qaqc.ai.context.FloorContextBuilder.build(
+            project = "BHR Tower 1", level = level,
+            planData = planData, schedule = schedule.value, logic = logic,
+            names = names.value, inspections = inspections.value,
+            barCounts = barCounts.value, notes = notes.value, tasks = tasks.value,
+            attachments = attachments.value, attendanceFiles = attendanceFiles.value,
+            dailyAttendance = dailyAttendance.value
+        )
+        return buildString {
+            appendLine("المشروع: BHR Tower 1 · الدور الشغّال: $level (${ctx.levelIndex + 1} من ${ctx.totalLevels})")
+            appendLine("العناصر: ${ctx.elements.total} (حوائط ${ctx.elements.walls}، كمرات رابطة ${ctx.elements.couplingBeams}، كمرات داخلية ${ctx.elements.internalBeams})، مسمّى ${ctx.elements.named}")
+            appendLine("الفحص: مقبول ${ctx.inspection.approved}، مصبوب ${ctx.inspection.cast}، WIR ${ctx.inspection.wirSubmitted}، مرفوض ${ctx.inspection.rejected}، بدون ${ctx.inspection.notInspected} — الإنجاز ${ctx.inspection.completionPercent}%")
+            if (ctx.dataGaps.isNotEmpty())
+                appendLine("فجوات بيانات: " + ctx.dataGaps.joinToString("، ") { "${it.mark} (ناقص ${it.missingLevels.joinToString("/")})" })
+            appendLine("العمالة النهاردة: ${ctx.manpower.workersToday} عامل، ${ctx.manpower.foremenToday} فورمان، ${ctx.manpower.engineersToday} مهندس (${ctx.manpower.companies} شركة)")
+            appendLine("التوثيق: ${ctx.documentation.notes} ملاحظة، ${ctx.documentation.attachments} مرفق، مهام مفتوحة ${ctx.documentation.openTasks}")
+            if (ctx.reinforcement.isNotEmpty()) {
+                appendLine("تسليح الدور (الصف الشغّال):")
+                ctx.reinforcement.take(25).forEach { r ->
+                    if (r.type == "WALL") appendLine("  ${r.mark}: سُمك ${r.widthMm}mm، رأسي ${r.vertical}، أفقي ${r.horizontal}، أطراف ${r.ties} — ${r.inspectionStatus}")
+                    else appendLine("  ${r.mark}: ${r.widthMm}×${r.depthMm}mm، سفلي ${r.bottom}، علوي ${r.top}، كانات ${r.links} — ${r.inspectionStatus}")
+                }
+            }
+            if (ctx.barCountChecks.isNotEmpty()) {
+                appendLine("عدّ الأسياخ (موقع مقابل رسمة):")
+                ctx.barCountChecks.take(15).forEach {
+                    appendLine("  ${it.mark}: موقع ${it.siteTotals}، رسمة ${it.drawingTotals}، مطابق=${it.matches}")
+                }
+            }
+        }
     }
 
     fun updateAiConfig(transform: (com.corewall.qaqc.ai.AiConfig) -> com.corewall.qaqc.ai.AiConfig) =

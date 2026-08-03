@@ -142,7 +142,8 @@ fun MissionControlScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             state = aiState,
             onRefresh = { vm.refreshAiAnalysis() },
             onOpenSettings = { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_SETTINGS) },
-            onOpenFull = { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_ANALYSIS) }
+            onOpenFull = { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_ANALYSIS) },
+            onOpenChat = { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_CHAT) }
         )
 
         Spacer(Modifier.height(16.dp))

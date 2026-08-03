@@ -183,6 +183,8 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         if (uris.isNotEmpty()) {
             val copied = vm.files.importUris(uris, currentDir)
             refresh++
+            // المعرفة: تسجيل الملفات وتحليلها تلقائي (من غير مفتاح API مفيش أي شبكة)
+            vm.onFilesImported(copied)
             Toast.makeText(context, "اترفع ${copied.size} ملف ✓", Toast.LENGTH_SHORT).show()
         }
     }
