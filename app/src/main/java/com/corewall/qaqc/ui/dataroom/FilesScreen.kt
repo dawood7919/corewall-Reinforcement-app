@@ -184,15 +184,21 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             val copied = vm.files.importUris(uris, currentDir)
             refresh++
             // المعرفة: تسجيل الملفات وتحليلها تلقائي (من غير مفتاح API مفيش أي شبكة)
-            vm.onFilesImported(copied)
+            vm.registerFiles(copied)
             Toast.makeText(context, "اترفع ${copied.size} ملف ✓", Toast.LENGTH_SHORT).show()
         }
     }
+    var lastPhoto by remember { mutableStateOf<File?>(null) }
     val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        if (ok) { refresh++; Toast.makeText(context, "اتصوّرت الصورة ✓", Toast.LENGTH_SHORT).show() }
+        if (ok) {
+            refresh++
+            lastPhoto?.let { vm.registerFiles(listOf(it)) }
+            Toast.makeText(context, "اتصوّرت الصورة ✓", Toast.LENGTH_SHORT).show()
+        }
     }
     fun capture() {
         val f = File(currentDir, "IMG_${System.currentTimeMillis()}.jpg")
+        lastPhoto = f
         photoUri = vm.files.uriFor(f)
         runCatching { takePhoto.launch(photoUri!!) }
             .onFailure { Toast.makeText(context, "مفيش كاميرا متاحة", Toast.LENGTH_SHORT).show() }

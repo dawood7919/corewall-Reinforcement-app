@@ -44,7 +44,7 @@ enum class Section(val title: String) {
 }
 
 enum class AppScreen {
-    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, AI_ANALYSIS, AI_SETTINGS, AI_CHAT
+    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, AI_ANALYSIS, AI_SETTINGS, AI_CHAT, AI_KNOWLEDGE
 }
 
 const val FLOOR_NOTE_ID = "__FLOOR__"
@@ -240,6 +240,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val copied = withContext(Dispatchers.IO) {
                 files.importUris(uris, files.attachmentsDir(level, elementId))
+                    .also { registerFiles(it, level) }
             }
             copied.forEach { file ->
                 repo.addAttachment(
@@ -371,7 +372,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // أول ما الدور أو الإعدادات تتغيّر: اعرض الكاش فوراً (من غير أي طلب شبكة).
         viewModelScope.launch {
             combine(_currentLevel, settingsStore.aiConfig) { level, cfg -> level to cfg }
-                .collect { (level, cfg) -> loadCachedAi(level, cfg) }
+                .collect { (level, cfg) ->
+                    loadCachedAi(level, cfg)
+                    loadKnowledge()
+                    // أول ما يبقى فيه مفتاح: حلّل أي حاجة معلّقة (رفعها قبل المفتاح مثلاً)
+                    if (cfg.isConfigured) autoAnalyze()
+                }
         }
     }
 
@@ -486,6 +492,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * بيتنادى فور رفع أي ملف: بيسجّله في المعرفة وبيحلّله تلقائي
      * لو فيه مفتاح API (من غير مفتاح بيفضل PENDING من غير أي شبكة).
      */
+    /**
+     * نقطة دخول واحدة لأي ملف بيدخل التطبيق من أي مكان
+     * (رفع، كاميرا، صور موقع، مرفقات ملاحظات، مرفقات عناصر).
+     */
+    fun registerFiles(files: List<java.io.File>, level: String = _currentLevel.value) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            files.forEach { f -> runCatching { aiEngine.register(f, level) } }
+            loadKnowledge()
+            autoAnalyze()
+        }
+    }
+
+    /** بيحلّل أي مستند معلّق — بينادى تلقائي عند الرفع، عند فتح التطبيق، وعند إضافة المفتاح. */
+    private var autoJob: kotlinx.coroutines.Job? = null
+    private fun autoAnalyze() {
+        val cfg = settingsStore.aiConfig.value
+        if (!cfg.isConfigured || autoJob?.isActive == true) return
+        autoJob = viewModelScope.launch {
+            _analyzing.value = 1
+            runCatching { aiEngine.analyzePending(cfg, levels, max = 12) }
+            _analyzing.value = 0
+            loadKnowledge()
+        }
+    }
+
     fun onFilesImported(files: List<java.io.File>) {
         if (files.isEmpty()) return
         viewModelScope.launch {
@@ -502,17 +534,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** تحليل يدوي لكل المستندات المعلّقة. */
-    fun analyzePendingDocuments() {
+    /** تحليل يدوي لكل المعلّق (زر "حلّل الكل"). */
+    fun analyzePendingDocuments() = autoAnalyze()
+
+    /** إعادة محاولة مستند فشل أو معلّق. */
+    fun reanalyzeDocument(docId: Long) {
         val cfg = settingsStore.aiConfig.value
         if (!cfg.isConfigured) return
         viewModelScope.launch {
             _analyzing.value = 1
-            runCatching { aiEngine.analyzePending(cfg, levels, max = 10) }
+            runCatching { aiEngine.reset(docId) }
+            runCatching { aiEngine.analyze(cfg, docId, levels) }
             _analyzing.value = 0
             loadKnowledge()
         }
     }
+
+    /** حقائق مستخرجة من مستند — للعرض في شاشة المعرفة. */
+    suspend fun factsFor(docId: Long) = aiEngine.factsFor(docId)
 
     /** سؤال للمساعد الهندسي — بيشوف كل معرفة المشروع. */
     fun askAi(question: String) {

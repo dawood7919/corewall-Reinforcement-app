@@ -170,6 +170,19 @@ class AiEngine(
     suspend fun history(level: String): List<ChatMessageEntity> =
         withContext(Dispatchers.IO) { chatDao.forLevel(level) }
 
+    /** يرجّع المستند لحالة PENDING عشان يتحلّل تاني. */
+    suspend fun reset(docId: Long) = withContext(Dispatchers.IO) {
+        documentDao.byId(docId)?.let {
+            documentDao.upsert(it.copy(status = "PENDING", error = ""))
+            factDao.deleteForDocument(docId)
+        }
+        Unit
+    }
+
+    /** الحقائق المستخرجة من مستند (للعرض). */
+    suspend fun factsFor(docId: Long): List<DocFactEntity> =
+        withContext(Dispatchers.IO) { factDao.forDocument(docId) }
+
     suspend fun clearChat(level: String) = withContext(Dispatchers.IO) { chatDao.clearLevel(level) }
 
     /**

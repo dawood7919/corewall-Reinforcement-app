@@ -157,7 +157,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
     var pendingCamera by remember { mutableStateOf<File?>(null) }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
-            vm.files.importNoteImages(uris, note.level, note.elementId).forEach {
+            vm.files.importNoteImages(uris, note.level, note.elementId).also { vm.registerFiles(it, note.level) }.forEach {
                 insert("\n![](${it.absolutePath})\n")
             }
         }
@@ -169,7 +169,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
     }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
-            vm.files.importNoteImages(uris, note.level, note.elementId).forEach {
+            vm.files.importNoteImages(uris, note.level, note.elementId).also { vm.registerFiles(it, note.level) }.forEach {
                 insert("\n[[file:${it.absolutePath}]]\n")
             }
         }

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Summarize
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material.icons.outlined.GridView
@@ -156,6 +157,11 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         SectionLabel("عام")
 
+        DrawerItem(
+            icon = Icons.Filled.Storage, title = "ذاكرة المشروع", subtitle = "الملفات اللي الـAI حلّلها",
+            selected = false,
+            onClick = { go { vm.openAppScreen(AppScreen.AI_KNOWLEDGE) } }
+        )
         DrawerItem(
             icon = Icons.Filled.Forum, title = "المساعد الهندسي", subtitle = "اسأل عن المشروع بالعربي",
             selected = false,

@@ -115,6 +115,7 @@ fun SitePhotosScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             val copied = vm.files.importUris(listOf(uri), vm.files.sitePhotosDir(level, currentFolder))
+            vm.registerFiles(copied)
             val file = copied.firstOrNull()
             if (file != null) {
                 pendingCommentPath = file.absolutePath
