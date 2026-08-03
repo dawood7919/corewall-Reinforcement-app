@@ -61,7 +61,8 @@ fun KnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     LaunchedEffect(level) { vm.loadKnowledge() }
 
     val pending = docs.count { it.status == "PENDING" }
-    val failed = docs.count { it.status == "FAILED" || it.status == "UNSUPPORTED" }
+    // "غير مدعوم" مش بيتعاد — نوع الملف نفسه هو المشكلة
+    val retryable = docs.count { it.status == "FAILED" }
     val done = docs.count { it.status == "DONE" }
 
     Column(modifier.fillMaxSize()) {
@@ -79,7 +80,7 @@ fun KnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     Spacer(Modifier.height(8.dp))
                     Text("مفيش مفتاح API — الملفات بتتسجّل بس ومش بتتحلّل.",
                         style = MaterialTheme.typography.bodySmall, color = srt.orange)
-                } else if (pending > 0 || failed > 0) {
+                } else if (pending > 0 || retryable > 0) {
                     Spacer(Modifier.height(10.dp))
                     Surface(
                         onClick = { vm.analyzePendingDocuments() },
@@ -92,7 +93,10 @@ fun KnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                             Icon(Icons.Filled.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                if (analyzing > 0) "بيحلّل…" else "حلّل المعلّق ($pending)",
+                                when {
+                                    analyzing > 0 -> "بيحلّل…"
+                                    else -> "حلّل المعلّق وأعد المحاولة (${pending + retryable})"
+                                },
                                 color = Color.White, fontWeight = FontWeight.SemiBold
                             )
                         }

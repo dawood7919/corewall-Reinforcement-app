@@ -19,6 +19,7 @@ object AiHttpClient {
 
     private const val CONNECT_TIMEOUT_MS = 20_000
     private const val READ_TIMEOUT_MS = 90_000   // التحليل ممكن ياخد وقت
+    private const val CHUNK_BYTES = 32 * 1024
 
     suspend fun postJson(
         url: String,
@@ -36,7 +37,10 @@ object AiHttpClient {
                 headers.forEach { (k, v) -> setRequestProperty(k, v) }
             }
 
-            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            // بنكتب النص مباشرة على الستريم (chunked) بدل ما نعمل نسخة byte[]
+            // كاملة في الذاكرة — الطلبات اللي فيها صور بتبقى ميجابايتات.
+            conn.setChunkedStreamingMode(CHUNK_BYTES)
+            conn.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
 
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
@@ -55,9 +59,13 @@ object AiHttpClient {
         } catch (e: SocketTimeoutException) {
             throw AiError.Timeout
         } catch (e: UnknownHostException) {
-            throw AiError.Network
-        } catch (e: Exception) {
-            throw AiError.Network
+            throw AiError.Network("مفيش وصول للسيرفر (${e.message})")
+        } catch (e: OutOfMemoryError) {
+            // بيحصل مع طلبات الصور الكبيرة — Error مش Exception، فلازم نمسكه هنا
+            throw AiError.TooLarge("الذاكرة مش كافية لإرسال الطلب")
+        } catch (e: Throwable) {
+            // أي حاجة تانية بتوصل للمستخدم بنوعها ورسالتها — مش رسالة عامة
+            throw AiError.Network("${e::class.java.simpleName}: ${e.message.orEmpty()}")
         } finally {
             runCatching { conn?.disconnect() }
         }

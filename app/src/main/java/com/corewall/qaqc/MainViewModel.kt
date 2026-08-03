@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
+import com.corewall.qaqc.ai.aiMessage
 import com.corewall.qaqc.data.AppRepository
 import com.corewall.qaqc.data.AppSettings
 import com.corewall.qaqc.data.FilesManager
@@ -439,9 +440,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 },
                 onFailure = { e ->
-                    val msg = (e as? com.corewall.qaqc.ai.AiError)?.userMessage
-                        ?: "حصل خطأ غير متوقع أثناء التحليل."
-                    com.corewall.qaqc.ai.model.AiUiState.Error(msg, previous)
+                    com.corewall.qaqc.ai.model.AiUiState.Error(e.aiMessage(), previous)
                 }
             )
         }
@@ -555,8 +554,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** تحليل يدوي لكل المعلّق (زر "حلّل الكل"). */
-    fun analyzePendingDocuments() = autoAnalyze()
+    /**
+     * تحليل يدوي: بيرجّع كمان أي مستند فشل لقائمة الانتظار،
+     * عشان زرار واحد يكفي لإعادة المحاولة بعد إصلاح المفتاح أو الموديل.
+     */
+    fun analyzePendingDocuments() {
+        viewModelScope.launch {
+            _documents.value
+                .filter { it.status == "FAILED" }
+                .forEach { runCatching { aiEngine.reset(it.id) } }
+            autoAnalyze()
+        }
+    }
 
     /** إعادة محاولة مستند فشل أو معلّق. */
     fun reanalyzeDocument(docId: Long) {
@@ -592,7 +601,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val snapshot = withContext(kotlinx.coroutines.Dispatchers.Default) { buildProjectSnapshot(level) }
             runCatching { aiEngine.ask(cfg, level, q, snapshot) }
                 .onFailure { e ->
-                    _chatError.value = (e as? com.corewall.qaqc.ai.AiError)?.userMessage ?: "تعذّر الرد."
+                    _chatError.value = e.aiMessage()
                 }
             _chat.value = aiEngine.history(level)
             _chatBusy.value = false
@@ -689,7 +698,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 .onFailure { e ->
                     _dashboard.value = com.corewall.qaqc.ai.model.DashboardState.Error(
-                        (e as? com.corewall.qaqc.ai.AiError)?.userMessage ?: "تعذّر بناء اللوحة."
+                        e.aiMessage()
                     )
                 }
         }
@@ -718,7 +727,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { aiEngine.generateReport(cfg, level, kind, snapshot) }
                 .onSuccess { _report.value = it }
                 .onFailure { e ->
-                    _reportError.value = (e as? com.corewall.qaqc.ai.AiError)?.userMessage ?: "تعذّر توليد التقرير."
+                    _reportError.value = e.aiMessage()
                 }
             _reportBusy.value = false
         }

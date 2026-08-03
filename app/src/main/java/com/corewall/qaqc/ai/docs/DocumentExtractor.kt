@@ -22,7 +22,14 @@ object DocumentExtractor {
 
     /** أقصى نص بنبعته للموديل — عشان الطلب يفضل رخيص وسريع. */
     private const val MAX_CHARS = 24_000
-    private const val MAX_PDF_PAGES = 3
+
+    /** حدود الصور: عدد الصفحات ودقّتها وميزانية الحجم الكلي للطلب. */
+    private const val MAX_PDF_PAGES = 4
+    private const val RENDER_WIDTH = 1100
+    private const val JPEG_QUALITY = 65
+
+    /** سقف حجم الـbase64 المتجمّع (~3 ميجا) — فوقه الطلب بيوقع الذاكرة. */
+    private const val IMAGE_BUDGET_CHARS = 3_000_000
 
     sealed interface Content {
         /** نص مقروء — أرخص وأدق مسار. */
@@ -38,7 +45,8 @@ object DocumentExtractor {
     suspend fun extract(file: File): Content = withContext(Dispatchers.IO) {
         if (!file.exists() || file.length() == 0L) return@withContext Content.Unsupported("الملف فاضي أو مش موجود")
         when (file.extension.lowercase()) {
-            in TEXT_EXT -> Content.Text(file.readText().take(MAX_CHARS), "TEXT")
+            in TEXT_EXT -> runCatching { Content.Text(readTextCapped(file), "TEXT") as Content }
+                .getOrElse { Content.Unsupported("تعذّر قراءة الملف النصي") }
             "xlsx", "xlsm" -> runCatching { Content.Text(readXlsx(file).take(MAX_CHARS), "SPREADSHEET") as Content }
                 .getOrElse { Content.Unsupported("تعذّر قراءة ملف الإكسل") }
             "docx" -> runCatching { Content.Text(readDocx(file).take(MAX_CHARS), "DOCUMENT") as Content }
@@ -131,19 +139,30 @@ object DocumentExtractor {
 
     // ---------------------------------------------------------------- PDF / صور
 
+    /**
+     * بنرندر أول صفحات بس، وبنقف لو تعدّينا ميزانية الحجم —
+     * الطلب اللي بيتخطّى الميزانية بيوقّع الذاكرة بدل ما يتحلّل.
+     */
     private fun renderPdf(file: File): List<String> {
         val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
         return PdfRenderer(pfd).use { renderer ->
-            (0 until minOf(renderer.pageCount, MAX_PDF_PAGES)).map { i ->
-                renderer.openPage(i).use { page ->
-                    val w = 1400
-                    val h = (w.toFloat() / page.width * page.height).toInt().coerceAtLeast(1)
-                    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val pages = mutableListOf<String>()
+            var budget = IMAGE_BUDGET_CHARS
+            for (i in 0 until minOf(renderer.pageCount, MAX_PDF_PAGES)) {
+                if (budget <= 0) break
+                val encoded = renderer.openPage(i).use { page ->
+                    val h = (RENDER_WIDTH.toFloat() / page.width * page.height).toInt().coerceAtLeast(1)
+                    // PdfRenderer بيتطلّب ARGB_8888 تحديداً
+                    val bmp = Bitmap.createBitmap(RENDER_WIDTH, h, Bitmap.Config.ARGB_8888)
                     bmp.eraseColor(android.graphics.Color.WHITE)
                     page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     toBase64(bmp).also { bmp.recycle() }
                 }
+                pages += encoded
+                budget -= encoded.length
             }
+            if (pages.isEmpty()) error("مفيش صفحات اتقرت من الـPDF")
+            pages
         }.also { runCatching { pfd.close() } }
     }
 
@@ -151,7 +170,7 @@ object DocumentExtractor {
         val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeFile(file.absolutePath, opts)
         var sample = 1
-        while (opts.outWidth / sample > 1400) sample *= 2
+        while (opts.outWidth / sample > RENDER_WIDTH) sample *= 2
         val bmp = android.graphics.BitmapFactory.decodeFile(
             file.absolutePath,
             android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
@@ -161,8 +180,22 @@ object DocumentExtractor {
 
     private fun toBase64(bmp: Bitmap): String {
         val out = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.JPEG, 80, out)
+        bmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+    }
+
+    /** بنقرا بحد أقصى [MAX_CHARS] حرف — ملف CSV ضخم مايتقريش كله في الذاكرة. */
+    private fun readTextCapped(file: File): String {
+        val buf = CharArray(MAX_CHARS)
+        file.reader(Charsets.UTF_8).use { reader ->
+            var filled = 0
+            while (filled < MAX_CHARS) {
+                val n = reader.read(buf, filled, MAX_CHARS - filled)
+                if (n <= 0) break
+                filled += n
+            }
+            return String(buf, 0, filled)
+        }
     }
 
     private fun unescape(s: String) = s

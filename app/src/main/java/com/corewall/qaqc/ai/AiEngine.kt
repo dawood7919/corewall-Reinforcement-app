@@ -85,7 +85,10 @@ class AiEngine(
         save(doc.copy(status = "ANALYZING", error = ""))
 
         val file = File(doc.filePath)
-        val content = DocumentExtractor.extract(file)
+        val content = runCatching { DocumentExtractor.extract(file) }.getOrElse { e ->
+            return save(doc.copy(status = "FAILED", error = "تعذّر قراءة الملف — ${describe(e)}",
+                analyzedAt = System.currentTimeMillis()))
+        }
         if (content is DocumentExtractor.Content.Unsupported) {
             return save(doc.copy(status = "UNSUPPORTED", error = content.reason, analyzedAt = System.currentTimeMillis()))
         }
@@ -108,12 +111,20 @@ class AiEngine(
                 else -> ""
             }
         }.getOrElse { e ->
-            val msg = (e as? AiError)?.userMessage ?: "فشل التحليل"
-            return save(doc.copy(status = "FAILED", error = msg, analyzedAt = System.currentTimeMillis()))
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            // الملفات المصوّرة محتاجة موديل بيشوف — ده أشهر سبب للرفض
+            val visionHint = if (content is DocumentExtractor.Content.Images && e is AiError.Server)
+                " • الملف ده بيتبعت كصور، فلازم موديل داعم للرؤية (vision) — غيّر الموديل من إعدادات الـAI."
+            else ""
+            return save(doc.copy(status = "FAILED", error = describe(e) + visionHint,
+                analyzedAt = System.currentTimeMillis()))
         }
 
         val extraction = runCatching { parseExtraction(raw) }.getOrElse {
-            return save(doc.copy(status = "FAILED", error = "رد غير مفهوم من الموديل", analyzedAt = System.currentTimeMillis()))
+            val peek = raw.trim().replace(Regex("\\s+"), " ").take(180)
+            val msg = if (peek.isBlank()) "الموديل رجّع رد فاضي — يمكن مش داعم تحليل الصور"
+            else "رد غير مفهوم من الموديل: $peek"
+            return save(doc.copy(status = "FAILED", error = msg, analyzedAt = System.currentTimeMillis()))
         }
 
         // ربط تلقائي بالدور: لو المستند نفسه بيقول دور معروف، نستخدمه
@@ -405,6 +416,13 @@ class AiEngine(
     }
 
     // ---------------------------------------------------------------- مساعدات
+
+    /**
+     * سبب الفشل زي ما هو. الأخطاء المعروفة بترجّع رسالتها الجاهزة،
+     * وأي حاجة تانية بترجّع نوعها ورسالتها — عمرنا ما نخبّي السبب
+     * ورا رسالة عامة، لأن ساعتها مفيش طريقة نعرف بيها المشكلة من الموقع.
+     */
+    private fun describe(e: Throwable): String = e.aiMessage()
 
     internal fun parseExtraction(raw: String): DocExtraction {
         val text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
