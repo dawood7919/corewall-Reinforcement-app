@@ -115,6 +115,14 @@ class AiEngine(
             }
         }.getOrElse { e ->
             if (e is kotlinx.coroutines.CancellationException) throw e
+
+            // انقطاع الشبكة مش فشل نهائي: الملف بيفضل في الانتظار ويتحلّل
+            // لوحده أول ما النت يرجع. تعليمه "فشل" كان بيخلّي الشبكة اللي
+            // قطعت لحظة تحتاج تدخّل يدوي بعدين.
+            if ((e as? AiError)?.retryable == true) {
+                return save(doc.copy(status = "PENDING", error = describe(e)))
+            }
+
             // الملفات المصوّرة محتاجة موديل بيشوف — ده أشهر سبب للرفض
             val visionHint = if (content is DocumentExtractor.Content.Images && e is AiError.Server)
                 " • الملف ده بيتبعت كصور، فلازم موديل داعم للرؤية (vision) — غيّر الموديل من إعدادات الـAI."
@@ -171,13 +179,24 @@ class AiEngine(
         return updated
     }
 
-    /** بيحلّل كل المستندات المعلّقة واحد ورا التاني. */
+    /**
+     * بيحلّل المستندات المعلّقة واحد ورا التاني.
+     * لو النت واقع، بنوقف بعد أول ملف بدل ما نعدّي على الباقي —
+     * كلهم هيفشلوا بنفس السبب والانتظار بيتضاعف على الفاضي.
+     */
     suspend fun analyzePending(config: AiConfig, knownLevels: List<String>, max: Int = 5): Int {
         if (!config.isConfigured) return 0
         val pending = withContext(Dispatchers.IO) { documentDao.pending(max) }
         var done = 0
-        pending.forEach { d ->
-            runCatching { analyze(config, d.id, knownLevels) }.onSuccess { done++ }
+        for (d in pending) {
+            val result = runCatching { analyze(config, d.id, knownLevels) }
+            val doc = result.getOrNull()
+            when {
+                doc == null -> Unit
+                doc.status == "DONE" -> done++
+                // رجع للانتظار = مشكلة شبكة، مفيش فايدة نكمّل الدفعة دلوقتي
+                doc.status == "PENDING" -> return done
+            }
         }
         return done
     }

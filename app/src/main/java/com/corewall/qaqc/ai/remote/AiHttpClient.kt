@@ -3,6 +3,7 @@ package com.corewall.qaqc.ai.remote
 import com.corewall.qaqc.ai.AiError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.net.HttpURLConnection
@@ -14,6 +15,9 @@ import java.net.UnknownHostException
  * عميل HTTP بسيط ومقصود: نقطة نهاية واحدة (POST JSON) —
  * مفيش داعي لمكتبة شبكة كاملة. بيشتغل على Dispatchers.IO
  * بـ timeouts صريحة وتحويل أخطاء مفهومة للمستخدم.
+ *
+ * الشبكة في الموقع بتقطع وترجع، فالطلب بيتعاد لوحده على الأخطاء
+ * المؤقتة بس (انقطاع، مهلة، ضغط، 5xx). المفتاح الغلط مابيتعادش.
  */
 object AiHttpClient {
 
@@ -21,7 +25,29 @@ object AiHttpClient {
     private const val READ_TIMEOUT_MS = 90_000   // التحليل ممكن ياخد وقت
     private const val CHUNK_BYTES = 32 * 1024
 
+    private const val MAX_ATTEMPTS = 3
+    private const val BACKOFF_MS = 1_500L
+
     suspend fun postJson(
+        url: String,
+        body: String,
+        headers: Map<String, String>
+    ): String {
+        var last: AiError? = null
+        repeat(MAX_ATTEMPTS) { attempt ->
+            try {
+                return attempt(url, body, headers)
+            } catch (e: AiError) {
+                if (!e.retryable || attempt == MAX_ATTEMPTS - 1) throw e
+                last = e
+                // تراجع أسّي: 1.5 ثانية، بعدين 3 — من غير ما نضغط على الخدمة
+                delay(BACKOFF_MS * (attempt + 1))
+            }
+        }
+        throw last ?: AiError.Network("فشل الطلب من غير سبب واضح")
+    }
+
+    private suspend fun attempt(
         url: String,
         body: String,
         headers: Map<String, String>
@@ -59,7 +85,8 @@ object AiHttpClient {
         } catch (e: SocketTimeoutException) {
             throw AiError.Timeout
         } catch (e: UnknownHostException) {
-            throw AiError.Network("مفيش وصول للسيرفر (${e.message})")
+            // الـDNS مارجعش عنوان — دي علامة إن الجهاز أوفلاين، مش إن الخدمة واقعة
+            throw AiError.Offline
         } catch (e: OutOfMemoryError) {
             // بيحصل مع طلبات الصور الكبيرة — Error مش Exception، فلازم نمسكه هنا
             throw AiError.TooLarge("الذاكرة مش كافية لإرسال الطلب")

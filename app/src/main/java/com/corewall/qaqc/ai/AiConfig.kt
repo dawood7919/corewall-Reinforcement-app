@@ -49,20 +49,43 @@ data class AiConfig(
  * نعرف ليه التحليل فشل من على الجهاز.
  */
 sealed class AiError(val userMessage: String) : Exception(userMessage) {
+
+    /**
+     * هل يستاهل نحاول تاني؟ انقطاع الشبكة أو ضغط على الخدمة بيروح لوحده،
+     * فالمستند بيفضل في الانتظار بدل ما يتعلّم "فشل" ويحتاج تدخّل يدوي.
+     * المفتاح الغلط أو الرد المكسور مش هيتصلّحوا بالإعادة.
+     */
+    open val retryable: Boolean get() = false
+
     data object NoKey : AiError("مفيش مفتاح API — ضيفه من الإعدادات الأول.")
-    data object Timeout : AiError("الطلب أخد وقت طويل — جرّب تاني، أو قلّل حجم الملف.")
+
+    data object Timeout : AiError("الطلب أخد وقت طويل — جرّب تاني، أو قلّل حجم الملف.") {
+        override val retryable get() = true
+    }
+
+    /** مفيش إنترنت خالص — مختلفة عن "الخدمة ردّت بخطأ". */
+    data object Offline : AiError("مفيش اتصال بالإنترنت — هيتحلّل تلقائي أول ما النت يرجع.") {
+        override val retryable get() = true
+    }
 
     data class Network(val detail: String = "") :
-        AiError("مشكلة اتصال بالخدمة" + detail.brief())
+        AiError("مشكلة اتصال بالخدمة" + detail.brief()) {
+        override val retryable get() = true
+    }
 
     data class Unauthorized(val detail: String) :
         AiError("المفتاح مرفوض أو منتهي. راجع الإعدادات" + detail.brief())
 
     data class RateLimited(val detail: String) :
-        AiError("تجاوزت حد الاستخدام — استنى شوية وجرّب تاني" + detail.brief())
+        AiError("تجاوزت حد الاستخدام — استنى شوية وجرّب تاني" + detail.brief()) {
+        override val retryable get() = true
+    }
 
     data class Server(val code: Int, val detail: String) :
-        AiError("الخدمة رجّعت خطأ $code" + detail.brief())
+        AiError("الخدمة رجّعت خطأ $code" + detail.brief()) {
+        // أخطاء السيرفر (5xx) مؤقتة؛ أخطاء الطلب (4xx) غلط عندنا ومش هتتصلّح بالإعادة
+        override val retryable get() = code >= 500
+    }
 
     data class BadResponse(val detail: String) :
         AiError("رد الـ AI مش مفهوم" + detail.brief())

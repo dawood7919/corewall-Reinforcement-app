@@ -143,7 +143,11 @@ private fun DocCard(vm: MainViewModel, doc: DocumentEntity) {
 
     val (statusColor, statusIcon, statusLabel) = when (doc.status) {
         "DONE" -> Triple(srt.green, Icons.Filled.CheckCircle, "اتحلّل")
-        "PENDING" -> Triple(srt.orange, Icons.Filled.HourglassEmpty, "معلّق")
+        // معلّق ومعاه سبب = الشبكة قطعت، وهيتعاد لوحده — مش نفس "لسه ماتحللش"
+        "PENDING" -> Triple(
+            srt.orange, Icons.Filled.HourglassEmpty,
+            if (doc.error.isNotBlank()) "مستني الشبكة" else "معلّق"
+        )
         "ANALYZING" -> Triple(srt.blue, Icons.Filled.Refresh, "بيتحلّل")
         "UNSUPPORTED" -> Triple(srt.text3, Icons.Filled.ErrorOutline, "غير مدعوم")
         else -> Triple(srt.red, Icons.Filled.ErrorOutline, "فشل")
@@ -180,10 +184,10 @@ private fun DocCard(vm: MainViewModel, doc: DocumentEntity) {
 
             if (doc.error.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
-                // مستند اتحلّل بس بياناته ناقصة = تنبيه، مش فشل
+                // الأحمر للفشل النهائي بس؛ الناقص والمستني تنبيه مش خطأ
                 Text(
                     doc.error, style = MaterialTheme.typography.bodySmall,
-                    color = if (doc.status == "DONE") srt.orange else srt.red
+                    color = if (doc.status == "FAILED") srt.red else srt.orange
                 )
             }
             if (doc.summary.isNotBlank()) {
