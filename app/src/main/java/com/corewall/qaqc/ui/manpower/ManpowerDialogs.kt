@@ -48,6 +48,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -107,17 +112,44 @@ fun NewAttendanceFileDialog(
                 )
                 Spacer(Modifier.height(12.dp))
                 Text("لون الوسم", style = MaterialTheme.typography.labelMedium)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // الدايرة صغيرة، بس مساحة اللمس ٤٨. قبل كده الزرار نفسه كان
+                // 28dp — أقل من الحد الأدنى — وكان **فاضي تماماً** لما ما يكونش
+                // مختار، يعني زرار مالوش أي اسم ولا محتوى لقارئ الشاشة.
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     TAG_COLORS.forEach { c ->
+                        val selected = c == colorTag
                         Box(
                             Modifier
-                                .padding(vertical = 6.dp)
-                                .size(if (c == colorTag) 34.dp else 28.dp)
-                                .background(Color(c), CircleShape),
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .selectable(
+                                    selected = selected,
+                                    role = Role.RadioButton,
+                                    onClick = { colorTag = c }
+                                )
+                                .semantics {
+                                    contentDescription =
+                                        "وسم ${tagColorName(c)}" + if (selected) " — مختار" else ""
+                                },
                             contentAlignment = Alignment.Center
                         ) {
-                            IconButton(onClick = { colorTag = c }, modifier = Modifier.size(if (c == colorTag) 34.dp else 28.dp)) {
-                                if (c == colorTag) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White)
+                            Box(
+                                Modifier
+                                    .size(if (selected) 34.dp else 28.dp)
+                                    .background(Color(c), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (selected) {
+                                    Icon(
+                                        Icons.Filled.Check,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }

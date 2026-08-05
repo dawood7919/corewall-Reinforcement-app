@@ -49,6 +49,20 @@ val TAG_COLORS = listOf(
     0xFF8E44AD, 0xFF2980B9, 0xFF16A085, 0xFFD64545
 )
 
+/**
+ * اسم كل لون وسم. اللون لوحده ما ينفعش يبقى هو المعنى — قارئ الشاشة
+ * محتاج اسم، والمستخدم اللي عنده عمى ألوان محتاج يفرّق بينهم.
+ */
+val TAG_COLOR_NAMES = listOf(
+    "بنفسجي", "أخضر مزرق", "برتقالي", "أحمر",
+    "بنفسجي غامق", "أزرق", "تركواز", "أحمر غامق"
+)
+
+fun tagColorName(color: Long): String {
+    val i = TAG_COLORS.indexOf(color)
+    return if (i >= 0) TAG_COLOR_NAMES[i] else "لون مخصّص"
+}
+
 private val dayFmt = SimpleDateFormat("EEEE", Locale("ar"))
 private val dateFmt = SimpleDateFormat("dd MMM yyyy", Locale("ar"))
 private val shortDateFmt = SimpleDateFormat("dd/MM/yyyy", Locale.ENGLISH)
