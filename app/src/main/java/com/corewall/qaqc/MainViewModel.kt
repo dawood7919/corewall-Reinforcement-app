@@ -327,6 +327,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _editingNote = MutableStateFlow<NoteEntity?>(null)
     val editingNote: StateFlow<NoteEntity?> = _editingNote
 
+    /**
+     * محرّر الملاحظة: البيانات هنا، والظهور من المكدّس. لازم الاتنين يتحرّكوا
+     * مع بعض — لو اتحطّت البيانات من غير ما الوجهة تتفتح، المحرّر ما يبانش.
+     */
     fun openNoteEditor(elementId: String, existing: NoteEntity? = null) {
         val now = System.currentTimeMillis()
         _editingNote.value = existing ?: NoteEntity(
@@ -335,6 +339,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             createdAt = now,
             updatedAt = now
         )
+        navigator.push(Dest.NoteEditor)
     }
 
     fun closeNoteEditor() { navigator.dismiss(Dest.NoteEditor); _editingNote.value = null }

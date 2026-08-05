@@ -1,133 +1,178 @@
 package com.corewall.qaqc.ui.appscreens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.NotificationsNone
-import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
-import com.corewall.qaqc.ui.EmptyState
-import com.corewall.qaqc.ui.theme.LocalSrtColors
+import com.corewall.qaqc.domain.relativeTime
+import com.corewall.qaqc.ui.design.CwButton
+import com.corewall.qaqc.ui.design.CwButtonStyle
+import com.corewall.qaqc.ui.design.CwCard
+import com.corewall.qaqc.ui.design.CwCardStyle
+import com.corewall.qaqc.ui.design.CwEmptyState
+import com.corewall.qaqc.ui.design.CwLeadingIcon
+import com.corewall.qaqc.ui.design.CwStatusBadge
+import com.corewall.qaqc.ui.design.CwTone
+import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.Space
+import com.corewall.qaqc.ui.design.semantic
+import com.corewall.qaqc.ui.nav.Dest
 
 private data class Notif(
     val id: String,
     val icon: ImageVector,
-    val color: Color,
+    val tone: CwTone,
     val title: String,
     val body: String,
-    val time: String
+    val time: String,
+    val dest: Dest?
 )
 
+/**
+ * الإشعارات.
+ *
+ * كل إشعار هنا مشتقّ من بيانات حقيقية في الدور الشغّال — مفيش إشعارات
+ * تجريبية. وكل واحد بيودّيك على الشاشة اللي بتشرحه بدل ما يقف عند الخبر.
+ *
+ * حالة "مقروء" بقت في [rememberSaveable]: قبل كده كانت بتضيع مع أي لفّة
+ * شاشة، فالإشعارات كانت بترجع كلها غير مقروءة.
+ */
 @Composable
 fun NotificationsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
-    val srt = LocalSrtColors.current
+    val c = LocalCwColors.current
     val level by vm.currentLevel.collectAsStateWithLifecycle()
     val schedule by vm.schedule.collectAsStateWithLifecycle()
     val notes by vm.notes.collectAsStateWithLifecycle()
     val daily by vm.dailyAttendance.collectAsStateWithLifecycle()
 
-    val readIds = remember { mutableStateMapOf<String, Boolean>() }
+    var readIds by rememberSaveable { mutableStateOf(emptySet<String>()) }
 
     val notifs = remember(level, schedule, notes, daily) {
-        val list = mutableListOf<Notif>()
-        // فجوات بيانات حقيقية للدور الحالي
-        vm.allMarks().forEach { mark ->
-            val gaps = runCatching { vm.logic.gapLevels(schedule, mark) }.getOrDefault(emptyList())
-            if (level in gaps) {
-                list += Notif(
-                    "gap-$mark", Icons.Filled.WarningAmber, srt.red,
-                    "تنبيه: نقص بيانات — $mark",
-                    "الدور $level ضمن مدى العنصر لكن لا يوجد صف يغطيه. الأدوار الناقصة: ${gaps.joinToString(", ")}",
-                    "الآن"
+        buildList {
+            vm.allMarks().forEach { mark ->
+                val gaps = runCatching { vm.logic.gapLevels(schedule, mark) }.getOrDefault(emptyList())
+                if (level in gaps) {
+                    add(
+                        Notif(
+                            id = "gap-$mark",
+                            icon = Icons.Filled.WarningAmber,
+                            tone = CwTone.Danger,
+                            title = "فجوة بيانات — $mark",
+                            body = "الدور $level داخل مدى العنصر بس مفيش صف بيغطّيه. " +
+                                "الأدوار الناقصة: ${gaps.joinToString("، ")}",
+                            time = "دلوقتي",
+                            dest = Dest.Gaps
+                        )
+                    )
+                }
+            }
+            notes.sortedByDescending { it.updatedAt }.take(5).forEach { n ->
+                add(
+                    Notif(
+                        id = "note-${n.id}",
+                        icon = Icons.Filled.EditNote,
+                        tone = CwTone.Info,
+                        title = "ملاحظة اتحدّثت",
+                        body = n.title.ifBlank { "بدون عنوان" },
+                        time = relativeTime(n.updatedAt),
+                        dest = Dest.FloorNotes
+                    )
+                )
+            }
+            daily.sortedByDescending { it.updatedAt }.take(3).forEach { d ->
+                add(
+                    Notif(
+                        id = "att-${d.id}",
+                        icon = Icons.Filled.Groups,
+                        tone = CwTone.Success,
+                        title = "الحضور اتسجّل",
+                        body = "${d.workers} عامل و${d.foremen} فورمان",
+                        time = relativeTime(d.updatedAt),
+                        dest = Dest.Manpower
+                    )
                 )
             }
         }
-        // ملاحظات جديدة (آخر 5)
-        notes.sortedByDescending { it.updatedAt }.take(5).forEach { n ->
-            list += Notif(
-                "note-${n.id}", Icons.Filled.EditNote, srt.blue,
-                "ملاحظة جديدة",
-                "تم إضافة \"${n.title.ifBlank { "بدون عنوان" }}\"",
-                relTime(n.updatedAt)
-            )
-        }
-        // تحديث حضور (آخر 3)
-        daily.sortedByDescending { it.updatedAt }.take(3).forEach { d ->
-            list += Notif(
-                "att-${d.id}", Icons.Filled.Groups, srt.green,
-                "تحديث الحضور",
-                "تم تسجيل حضور ${d.workers} عامل و ${d.foremen} فورمان",
-                relTime(d.updatedAt)
-            )
-        }
-        list
     }
 
+    if (notifs.isEmpty()) {
+        CwEmptyState(
+            icon = Icons.Filled.NotificationsNone,
+            title = "مفيش إشعارات",
+            detail = "هنا هتلاقي تنبيهات نقص البيانات في الجدول، والملاحظات الجديدة، " +
+                "وتحديثات الحضور — كلها للدور الشغّال.",
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
+    val unreadCount = notifs.count { it.id !in readIds }
+
     Column(modifier.fillMaxSize()) {
-        if (notifs.isNotEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
-                Text(
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Space.screen, vertical = Space.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                if (unreadCount > 0) "$unreadCount غير مقروء" else "كلها مقروءة",
+                style = MaterialTheme.typography.labelLarge,
+                color = c.textTertiary,
+                modifier = Modifier.weight(1f)
+            )
+            if (unreadCount > 0) {
+                CwButton(
                     "تحديد الكل كمقروء",
-                    Modifier.clickable { notifs.forEach { readIds[it.id] = true } },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = srt.blue,
-                    fontWeight = FontWeight.SemiBold
+                    { readIds = notifs.map { it.id }.toSet() },
+                    style = CwButtonStyle.Ghost
                 )
             }
         }
-        if (notifs.isEmpty()) {
-            EmptyState(
-                icon = Icons.Filled.NotificationsNone,
-                title = "لا توجد إشعارات",
-                subtitle = "هتظهر هنا تنبيهات نقص البيانات، الملاحظات الجديدة، وتحديثات الحضور.",
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(notifs, key = { it.id }) { n ->
-                    NotifCard(n, unread = readIds[n.id] != true, onClick = { readIds[n.id] = true })
-                }
+
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = Space.screen, end = Space.screen,
+                top = Space.xs, bottom = Space.bottomInset
+            ),
+            verticalArrangement = Arrangement.spacedBy(Space.stack)
+        ) {
+            items(notifs, key = { it.id }) { n ->
+                NotifCard(
+                    n = n,
+                    unread = n.id !in readIds,
+                    onClick = {
+                        readIds = readIds + n.id
+                        n.dest?.let { vm.go(it) }
+                    }
+                )
             }
         }
     }
@@ -135,43 +180,41 @@ fun NotificationsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
 @Composable
 private fun NotifCard(n: Notif, unread: Boolean, onClick: () -> Unit) {
-    val srt = LocalSrtColors.current
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        modifier = Modifier.fillMaxWidth()
+    val c = LocalCwColors.current
+    CwCard(
+        style = if (unread) CwCardStyle.Accent else CwCardStyle.Plain,
+        accent = n.tone.semantic().solid,
+        onClick = onClick
     ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
-            Box(
-                Modifier.size(52.dp).clip(CircleShape).background(n.color),
-                contentAlignment = Alignment.Center
-            ) { Icon(n.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp)) }
-            Spacer(Modifier.size(12.dp))
+        Row(
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(Space.md)
+        ) {
+            CwLeadingIcon(n.icon, tone = n.tone)
             Column(Modifier.weight(1f)) {
-                Text(n.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.size(2.dp))
-                Text(n.body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                Spacer(Modifier.size(4.dp))
-                Text(n.time, style = MaterialTheme.typography.labelSmall, color = srt.text3)
-            }
-            if (unread) {
-                Spacer(Modifier.size(6.dp))
-                Box(Modifier.size(8.dp).clip(CircleShape).background(srt.red))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        n.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = c.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    // "جديد" مكتوبة — مش نقطة ملوّنة لوحدها.
+                    if (unread) CwStatusBadge("جديد", n.tone, compact = true)
+                }
+                Spacer(Modifier.height(Space.xxs))
+                Text(
+                    n.body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.textSecondary,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(Space.xs))
+                Text(n.time, style = MaterialTheme.typography.labelSmall, color = c.textTertiary)
             }
         }
-    }
-}
-
-private fun relTime(ts: Long): String {
-    if (ts <= 0) return ""
-    val diff = System.currentTimeMillis() - ts
-    val min = diff / 60000
-    return when {
-        min < 1 -> "الآن"
-        min < 60 -> "منذ $min دقيقة"
-        min < 1440 -> "منذ ${min / 60} ساعة"
-        else -> "منذ ${min / 1440} يوم"
     }
 }

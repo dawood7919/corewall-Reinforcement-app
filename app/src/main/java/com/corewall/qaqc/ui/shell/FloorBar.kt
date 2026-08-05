@@ -1,8 +1,5 @@
 package com.corewall.qaqc.ui.shell
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -135,13 +132,15 @@ fun FloorBar(
                             contentDescription = if (unread > 0) "الإشعارات — $unread جديدة" else "الإشعارات",
                             onClick = onNotifications
                         )
-                        AnimatedVisibility(
-                            visible = unread > 0,
-                            enter = fadeIn(),
-                            exit = fadeOut(),
-                            modifier = Modifier.align(Alignment.TopEnd)
-                        ) {
-                            CwCountPill(unread, tone = CwTone.Danger)
+                        // من غير AnimatedVisibility هنا: الـBox جوّه Row،
+                        // فالـoverload بتاع RowScope بيكسب ومينفعش يتنده
+                        // بمستقبِل ضمني. العدّاد كمان مش محتاج حركة.
+                        if (unread > 0) {
+                            CwCountPill(
+                                unread,
+                                tone = CwTone.Danger,
+                                modifier = Modifier.align(Alignment.TopEnd)
+                            )
                         }
                     }
                 }
