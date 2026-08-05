@@ -60,6 +60,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.ui.design.IconSize
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Sizes
+import com.corewall.qaqc.ui.design.Space
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.ui.EmptyState
 import com.corewall.qaqc.ui.notes.rememberThumb
@@ -435,27 +439,16 @@ private fun SitePhotoCard(
                 }
             }
 
-            // أزرار تعديل/حذف
+            // أزرار تعديل/حذف — كانت مساحة لمسها 32dp فوق صورة، يعني أقل من
+            // الحد الأدنى وفوق خلفية متغيّرة. بقت 48dp بخلفية داكنة ثابتة.
             Row(
                 Modifier
                     .align(Alignment.TopEnd)
-                    .padding(6.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    .padding(Space.xs),
+                horizontalArrangement = Arrangement.spacedBy(Space.xs)
             ) {
-                Surface(
-                    onClick = onEdit,
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color.Black.copy(alpha = 0.45f)
-                ) {
-                    Icon(Icons.Filled.Edit, contentDescription = "تعديل", tint = Color.White, modifier = Modifier.padding(7.dp).size(18.dp))
-                }
-                Surface(
-                    onClick = onDelete,
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color.Black.copy(alpha = 0.45f)
-                ) {
-                    Icon(Icons.Filled.Delete, contentDescription = "حذف", tint = Color(0xFFFF6B6B), modifier = Modifier.padding(7.dp).size(18.dp))
-                }
+                PhotoAction(Icons.Filled.Edit, "عدّل تعليق الصورة", Color.White, onEdit)
+                PhotoAction(Icons.Filled.Delete, "امسح الصورة", Color(0xFFFFB3AC), onDelete)
             }
         }
     }
@@ -502,4 +495,27 @@ private fun CommentDialog(
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     )
+}
+
+/**
+ * زرار فوق صورة. الخلفية الداكنة الثابتة مقصودة: الصورة تحته ممكن تكون أي
+ * لون، فالتباين لازم ييجي من الزرار نفسه مش من اللي وراه.
+ */
+@Composable
+private fun PhotoAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = Radius.shapeSm,
+        color = Color.Black.copy(alpha = 0.55f),
+        modifier = Modifier.size(Sizes.touch)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(IconSize.md))
+        }
+    }
 }
