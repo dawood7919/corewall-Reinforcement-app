@@ -126,8 +126,12 @@ sealed interface Dest {
         override val title = "الإعدادات"
     }
 
+    /**
+     * حالة البيانات. اسمها كان "المزامنة" وهي مالهاش سيرفر — الاسم نفسه كان
+     * بيوعد بحاجة مش موجودة.
+     */
     data object Sync : Dest {
-        override val title = "مزامنة البيانات"
+        override val title = "حالة البيانات"
     }
 
     data object About : Dest {

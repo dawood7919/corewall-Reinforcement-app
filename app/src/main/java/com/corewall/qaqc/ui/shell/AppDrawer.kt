@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -173,7 +172,7 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
             DrawerRow(Icons.Filled.Settings, "الإعدادات", null) { go(Dest.Settings) }
         }
         item(key = "sync") {
-            DrawerRow(Icons.Filled.Sync, "مزامنة البيانات", null) { go(Dest.Sync) }
+            DrawerRow(Icons.Filled.Storage, "حالة البيانات", null) { go(Dest.Sync) }
         }
         item(key = "about") {
             DrawerRow(Icons.Filled.Info, "عن التطبيق", null) { go(Dest.About) }

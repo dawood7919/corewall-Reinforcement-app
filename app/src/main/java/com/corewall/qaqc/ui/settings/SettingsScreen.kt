@@ -195,8 +195,8 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         item(key = "system") {
             CwCard(contentPadding = PaddingValues(vertical = Space.xs)) {
                 CwListItem(
-                    title = "مزامنة البيانات",
-                    subtitle = "حالة المزامنة وآخر مرّة اتعملت",
+                    title = "حالة البيانات",
+                    subtitle = "إيه المتسجّل، وفين متخزّن",
                     leading = { CwLeadingIcon(Icons.Filled.CloudSync, tone = CwTone.Info) },
                     onClick = { vm.go(Dest.Sync) }
                 )

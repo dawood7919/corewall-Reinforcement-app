@@ -1,21 +1,16 @@
 package com.corewall.qaqc.ui.dataroom
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Checklist
@@ -24,16 +19,13 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -43,16 +35,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.TaskEntity
+import com.corewall.qaqc.ui.design.CwButton
+import com.corewall.qaqc.ui.design.CwButtonStyle
+import com.corewall.qaqc.ui.design.CwCard
+import com.corewall.qaqc.ui.design.CwCardStyle
+import com.corewall.qaqc.ui.design.CwEmptyState
+import com.corewall.qaqc.ui.design.CwIconButton
+import com.corewall.qaqc.ui.design.CwProgressBar
+import com.corewall.qaqc.ui.design.CwSegmented
+import com.corewall.qaqc.ui.design.CwStatusBadge
+import com.corewall.qaqc.ui.design.CwText
+import com.corewall.qaqc.ui.design.CwTone
+import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.Space
+import com.corewall.qaqc.ui.design.semantic
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,13 +65,14 @@ import java.util.Locale
 private val dueFormat = SimpleDateFormat("dd/MM/yyyy", Locale.ENGLISH)
 
 private enum class TaskFilter(val label: String) {
-    ALL("الكل"), OVERDUE("متأخر"), DONE("المنجز")
+    OPEN("مفتوحة"), OVERDUE("متأخرة"), DONE("منجزة")
 }
 
-private fun priorityColor(priority: Int): Color = when (priority) {
-    2 -> Color(0xFFFF453A)
-    1 -> Color(0xFFFF9F0A)
-    else -> Color(0xFF8E8E93)
+/** الأولوية بتاخد نبرة من النظام — مش لون مكتوب بالإيد. */
+private fun priorityTone(priority: Int): CwTone = when (priority) {
+    2 -> CwTone.Danger
+    1 -> CwTone.Warning
+    else -> CwTone.Neutral
 }
 
 private fun priorityLabel(priority: Int): String = when (priority) {
@@ -75,179 +81,234 @@ private fun priorityLabel(priority: Int): String = when (priority) {
     else -> "عادي"
 }
 
-/** تبويب المهام: To-Do مودرن — أولويات، تواريخ استحقاق، ربط بدور، فلاتر وتقدّم. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * مهام الدور.
+ *
+ * اللي اتصلّح هنا: زرار الحذف كان بيمسح المهمة فوراً من غير أي تأكيد ومن
+ * غير تراجع؛ ألوان الأولوية كانت مكتوبة بالإيد وساقطة في التباين؛ الفلتر
+ * كان بيرجع لأوّله مع كل لفّة شاشة؛ والحالة الفاضية كانت بتتعرض **فوق**
+ * القايمة مش بدالها.
+ */
 @Composable
 fun TasksScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
+    val c = LocalCwColors.current
     val tasks by vm.tasks.collectAsStateWithLifecycle()
     val level by vm.currentLevel.collectAsStateWithLifecycle()
-    var filter by remember { mutableStateOf(TaskFilter.ALL) }
+
+    var filter by rememberSaveable { mutableStateOf(TaskFilter.OPEN) }
     var editTask by remember { mutableStateOf<TaskEntity?>(null) }
-    var showAdd by remember { mutableStateOf(false) }
+    var showAdd by rememberSaveable { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf<TaskEntity?>(null) }
+    var confirmClearDone by rememberSaveable { mutableStateOf(false) }
 
     val now = System.currentTimeMillis()
-    val filtered = when (filter) {
-        TaskFilter.ALL -> tasks.filter { !it.done }
-        TaskFilter.OVERDUE -> tasks.filter { !it.done && (it.dueDate ?: Long.MAX_VALUE) < now }
+    fun isOverdue(t: TaskEntity) = !t.done && (t.dueDate ?: Long.MAX_VALUE) < now
+
+    val filters = TaskFilter.entries
+    val shown = when (filter) {
+        TaskFilter.OPEN -> tasks.filter { !it.done }
+        TaskFilter.OVERDUE -> tasks.filter { isOverdue(it) }
         TaskFilter.DONE -> tasks.filter { it.done }
     }
     val doneCount = tasks.count { it.done }
+    val overdueCount = tasks.count { isOverdue(it) }
 
     Column(modifier.fillMaxSize()) {
-        Column(Modifier.padding(horizontal = 16.dp)) {
+        Column(Modifier.padding(horizontal = Space.screen)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("مهام دور $level", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
-                        "$doneCount / ${tasks.size} منجزة في الدور ده",
+                        "$doneCount من ${tasks.size} منجزة",
+                        style = CwText.metricSmall,
+                        color = c.textPrimary
+                    )
+                    Text(
+                        "مهام دور $level بس — معزولة عن باقي الأدوار",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = c.textTertiary
                     )
                 }
-                Button(onClick = { showAdd = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("مهمة جديدة")
-                }
+                CwButton("مهمة جديدة", { showAdd = true }, icon = Icons.Filled.Add)
             }
             if (tasks.isNotEmpty()) {
-                LinearProgressIndicator(
-                    progress = { doneCount.toFloat() / tasks.size },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
+                Spacer(Modifier.height(Space.sm))
+                CwProgressBar(
+                    fraction = doneCount.toFloat() / tasks.size,
+                    tone = if (overdueCount > 0) CwTone.Warning else CwTone.Success
                 )
             }
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                TaskFilter.entries.forEach { f ->
-                    FilterChip(
-                        selected = filter == f,
-                        onClick = { filter = f },
-                        label = { Text(f.label) }
-                    )
-                }
-            }
+            Spacer(Modifier.height(Space.md))
+            CwSegmented(
+                options = filters,
+                selectedIndex = filters.indexOf(filter),
+                label = { f ->
+                    val n = when (f) {
+                        TaskFilter.OPEN -> tasks.count { !it.done }
+                        TaskFilter.OVERDUE -> overdueCount
+                        TaskFilter.DONE -> doneCount
+                    }
+                    "${f.label} ($n)"
+                },
+                onSelect = { filter = filters[it] }
+            )
         }
 
-        if (filtered.isEmpty()) {
-            com.corewall.qaqc.ui.EmptyState(
+        if (shown.isEmpty()) {
+            CwEmptyState(
                 icon = Icons.Filled.Checklist,
-                title = if (filter == TaskFilter.DONE) "مفيش مهام منجزة" else "مفيش مهام في دور $level",
-                subtitle = if (filter == TaskFilter.DONE) "المهام اللي هتخلّصها هتظهر هنا."
-                else "ابدأ بإضافة مهمة تخص الدور ده — بتتحفظ معاه لوحده."
+                title = when (filter) {
+                    TaskFilter.DONE -> "مفيش مهام منجزة لسه"
+                    TaskFilter.OVERDUE -> "مفيش مهام متأخرة"
+                    TaskFilter.OPEN -> "مفيش مهام مفتوحة في دور $level"
+                },
+                detail = when (filter) {
+                    TaskFilter.OVERDUE -> "كل المهام اللي ليها تاريخ لسه في وقتها."
+                    else -> "المهمة بتتحفظ مع الدور ده لوحده — لو بدّلت الدور مش هتشوفها."
+                },
+                action = if (filter == TaskFilter.OPEN) ({
+                    CwButton("ضيف أول مهمة", { showAdd = true }, icon = Icons.Filled.Add)
+                }) else null
             )
+            return@Column
         }
 
         LazyColumn(
             Modifier.weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)
+            contentPadding = PaddingValues(
+                start = Space.screen, end = Space.screen,
+                top = Space.md, bottom = Space.bottomInset
+            ),
+            verticalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
-            items(filtered, key = { it.id }) { task ->
-                TaskRow(
+            items(shown, key = { it.id }) { task ->
+                TaskCard(
                     task = task,
-                    overdue = !task.done && (task.dueDate ?: Long.MAX_VALUE) < now,
+                    overdue = isOverdue(task),
                     onToggle = { vm.toggleTaskDone(task) },
                     onEdit = { editTask = task },
-                    onDelete = { vm.deleteTask(task.id) }
+                    onDelete = { confirmDelete = task }
                 )
             }
             if (filter == TaskFilter.DONE && doneCount > 0) {
-                item {
-                    TextButton(onClick = { vm.deleteCompletedTasks() }) {
-                        Text("مسح كل المنجز", color = MaterialTheme.colorScheme.error)
-                    }
+                item(key = "clear-done") {
+                    Spacer(Modifier.height(Space.sm))
+                    CwButton(
+                        "امسح كل المنجز ($doneCount)",
+                        { confirmClearDone = true },
+                        style = CwButtonStyle.Secondary,
+                        icon = Icons.Filled.Delete,
+                        fillWidth = true
+                    )
                 }
             }
         }
     }
 
     if (showAdd) {
-        TaskEditDialog(
-            vm = vm,
-            task = null,
-            defaultLevel = level,
-            onDismiss = { showAdd = false }
-        )
+        TaskEditDialog(vm = vm, task = null, defaultLevel = level, onDismiss = { showAdd = false })
     }
     editTask?.let { task ->
-        TaskEditDialog(
-            vm = vm,
-            task = task,
-            defaultLevel = level,
-            onDismiss = { editTask = null }
+        TaskEditDialog(vm = vm, task = task, defaultLevel = level, onDismiss = { editTask = null })
+    }
+
+    // الحذف بقى بيسأل. قبل كده كانت ضغطة واحدة بتمسح من غير رجعة.
+    confirmDelete?.let { task ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("تمسح المهمة دي؟") },
+            text = { Text("\"${task.title}\" هتتشال نهائي ومفيش تراجع.") },
+            confirmButton = {
+                TextButton(onClick = { vm.deleteTask(task.id); confirmDelete = null }) {
+                    Text("امسح", color = c.danger.fg)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = null }) { Text("سيبها") }
+            }
+        )
+    }
+
+    if (confirmClearDone) {
+        AlertDialog(
+            onDismissRequest = { confirmClearDone = false },
+            title = { Text("تمسح كل المهام المنجزة؟") },
+            text = { Text("$doneCount مهمة هتتشال نهائي من دور $level.") },
+            confirmButton = {
+                TextButton(onClick = { vm.deleteCompletedTasks(); confirmClearDone = false }) {
+                    Text("امسح الكل", color = c.danger.fg)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearDone = false }) { Text("سيبها") }
+            }
         )
     }
 }
 
 @Composable
-private fun TaskRow(
+private fun TaskCard(
     task: TaskEntity,
     overdue: Boolean,
     onToggle: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    val c = LocalCwColors.current
+    val tone = priorityTone(task.priority)
+
+    CwCard(
+        style = if (task.done) CwCardStyle.Plain else CwCardStyle.Accent,
+        accent = tone.semantic().solid,
+        contentPadding = PaddingValues(
+            start = Space.sm, end = Space.sm,
+            top = Space.sm, bottom = Space.sm
+        )
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .width(4.dp)
-                    .height(64.dp)
-                    .background(priorityColor(task.priority))
+            Checkbox(
+                checked = task.done,
+                onCheckedChange = { onToggle() },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = c.success.solid,
+                    uncheckedColor = c.outline,
+                    checkmarkColor = c.success.onSolid
+                )
             )
-            Checkbox(checked = task.done, onCheckedChange = { onToggle() })
-            Column(
-                Modifier
-                    .weight(1f)
-                    .padding(vertical = 8.dp)
-            ) {
+            Column(Modifier.weight(1f)) {
                 Text(
                     task.title,
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
                     textDecoration = if (task.done) TextDecoration.LineThrough else null,
-                    color = if (task.done) MaterialTheme.colorScheme.onSurfaceVariant
-                    else MaterialTheme.colorScheme.onSurface
+                    color = if (task.done) c.textTertiary else c.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (task.notes.isNotBlank()) {
+                    Spacer(Modifier.height(Space.xxs))
                     Text(
                         task.notes,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = c.textTertiary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        priorityLabel(task.priority),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = priorityColor(task.priority),
-                        fontWeight = FontWeight.Bold
-                    )
-                    task.dueDate?.let {
-                        Text(
-                            "⏰ ${dueFormat.format(Date(it))}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (overdue) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = if (overdue) FontWeight.Bold else FontWeight.Normal
+                Spacer(Modifier.height(Space.xs))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    if (task.priority > 0) {
+                        CwStatusBadge(priorityLabel(task.priority), tone, compact = true)
+                    }
+                    task.dueDate?.let { due ->
+                        CwStatusBadge(
+                            label = (if (overdue) "متأخرة · " else "") + dueFormat.format(Date(due)),
+                            tone = if (overdue) CwTone.Danger else CwTone.Neutral,
+                            compact = true
                         )
                     }
                 }
             }
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Filled.Edit, contentDescription = "تعديل", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            CwIconButton(Icons.Filled.Edit, "تعديل المهمة", onEdit)
+            CwIconButton(Icons.Filled.Delete, "حذف المهمة", onDelete)
         }
     }
 }
@@ -277,16 +338,16 @@ private fun TaskEditDialog(
                     label = { Text("المهمة") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(Space.sm))
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
                     label = { Text("ملاحظات (اختياري)") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Text("الأولوية:", style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     (0..2).forEach { p ->
                         FilterChip(
                             selected = priority == p,
@@ -295,8 +356,8 @@ private fun TaskEditDialog(
                         )
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Spacer(Modifier.height(Space.sm))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     FilterChip(
                         selected = dueDate != null,
                         onClick = { showDatePicker = true },

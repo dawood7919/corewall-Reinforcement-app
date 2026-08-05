@@ -1,148 +1,145 @@
 package com.corewall.qaqc.ui.appscreens
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
-import com.corewall.qaqc.ui.theme.LocalAppGradients
-import com.corewall.qaqc.ui.theme.LocalSrtColors
-import com.corewall.qaqc.ui.theme.SrtGroupedList
-import com.corewall.qaqc.ui.theme.SrtRow
-import com.corewall.qaqc.ui.theme.SrtToggle
+import com.corewall.qaqc.ui.design.CwBanner
+import com.corewall.qaqc.ui.design.CwButton
+import com.corewall.qaqc.ui.design.CwCard
+import com.corewall.qaqc.ui.design.CwLeadingIcon
+import com.corewall.qaqc.ui.design.CwListItem
+import com.corewall.qaqc.ui.design.CwSectionHeader
+import com.corewall.qaqc.ui.design.CwText
+import com.corewall.qaqc.ui.design.CwTone
+import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.Space
+import com.corewall.qaqc.ui.nav.Dest
 
+/**
+ * حالة البيانات.
+ *
+ * الشاشة دي كانت اسمها "المزامنة" وكانت بتقول **"كل البيانات محدثة"**
+ * وتحتها "آخر مزامنة: اليوم 09:35 صباحًا" — التوقيت ده كان مكتوب ثابت في
+ * الكود، وزرار "مزامنة الآن" كان بيقلب boolean محلي ومش بيعمل أي حاجة،
+ * ومفيش سيرفر أصلاً في التطبيق.
+ *
+ * في أداة جودة ده مش مجرد زحمة — ده خطر: مهندس يفتكر إن فحوصاته متخزّنة
+ * على سيرفر وهي موجودة على تليفونه بس، وأول ما التليفون يضيع تضيع معاه.
+ *
+ * فالشاشة بقت بتقول الحقيقة: البيانات محلية، وده عدد اللي متسجّل فعلاً،
+ * والطريقة الوحيدة لتأمينها هي التصدير.
+ */
 @Composable
 fun SyncScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
-    val srt = LocalSrtColors.current
-    val gradient = LocalAppGradients.current.header
+    val c = LocalCwColors.current
+    val level by vm.currentLevel.collectAsStateWithLifecycle()
     val notes by vm.notes.collectAsStateWithLifecycle()
     val daily by vm.dailyAttendance.collectAsStateWithLifecycle()
+    val photos by vm.sitePhotos.collectAsStateWithLifecycle()
+    val barCounts by vm.barCounts.collectAsStateWithLifecycle()
+    val inspections by vm.inspections.collectAsStateWithLifecycle()
 
-    var syncing by remember { mutableStateOf(false) }
-    var autoWifi by remember { mutableStateOf(true) }
-
-    val elementCount = vm.planData.elements.size
-    val wallCount = vm.planData.elements.count { it.cat == com.corewall.qaqc.data.model.ElementCategory.WALL }
-    val pendingNotes = notes.count { it.updatedAt > 0 }.coerceAtMost(3)
-
-    val transition = rememberInfiniteTransition(label = "spin")
-    val angle by transition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)), label = "angle"
-    )
-
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    LazyColumn(
+        modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = Space.screen, end = Space.screen,
+            top = Space.md, bottom = Space.bottomInset
+        ),
+        verticalArrangement = Arrangement.spacedBy(Space.stack)
     ) {
-        // Hero status
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .background(Brush.verticalGradient(gradient))
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                Modifier.size(100.dp).clip(CircleShape).background(Color.White),
-                contentAlignment = Alignment.Center
-            ) {
-                if (syncing) Icon(Icons.Filled.Sync, contentDescription = null, tint = srt.blue, modifier = Modifier.size(48.dp).rotate(angle))
-                else Icon(Icons.Filled.Check, contentDescription = null, tint = srt.green, modifier = Modifier.size(56.dp))
+        item(key = "truth") {
+            CwBanner(
+                title = "البيانات كلها محلية على الجهاز",
+                detail = "مفيش سيرفر ولا مزامنة تلقائية. لو التليفون ضاع أو التطبيق " +
+                    "اتمسح، البيانات بتضيع معاه. التصدير هو النسخة الاحتياطية الوحيدة.",
+                tone = CwTone.Warning
+            )
+        }
+
+        item(key = "backup") {
+            CwCard {
+                Text("خُد نسخة", style = MaterialTheme.typography.titleSmall, color = c.textPrimary)
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    "التصدير بيطلّع ملف JSON فيه كل الأسماء والحالات والملاحظات " +
+                        "وتعديلات الجدول — ينفع للنقل لتليفون تاني أو للأرشيف.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.textTertiary
+                )
+                Spacer(Modifier.height(Space.md))
+                CwButton(
+                    "روح لتصدير البيانات",
+                    { vm.go(Dest.Settings) },
+                    icon = Icons.Filled.Settings,
+                    fillWidth = true
+                )
             }
-            Spacer(Modifier.height(16.dp))
-            Text(
-                if (syncing) "جاري المزامنة…" else "كل البيانات محدثة",
-                style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(4.dp))
-            Text("آخر مزامنة: اليوم 09:35 صباحًا", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f))
         }
 
-        Button(
-            onClick = { syncing = !syncing },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = srt.blue)
-        ) { Text(if (syncing) "إيقاف" else "مزامنة الآن", fontWeight = FontWeight.SemiBold) }
+        item(key = "counts-header") { CwSectionHeader("اللي متسجّل دلوقتي") }
 
-        Text("حالة البيانات", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = srt.text3)
-        SrtGroupedList {
-            DataStatusRow("بيانات التسليح (المسقط)", "$elementCount عنصر", srt.green)
-            DataStatusRow("عدد الكانات", "$wallCount جدار", srt.green)
-            DataStatusRow("الحضور اليومي", "${daily.size} سجل", srt.green)
-            DataStatusRow(
-                "الملاحظات والمرفقات",
-                if (pendingNotes > 0) "$pendingNotes بانتظار الرفع" else "محدث",
-                if (pendingNotes > 0) srt.orange else srt.green
-            )
-            DataStatusRow("التقارير", "محدث", srt.green, showDivider = false)
+        item(key = "counts") {
+            CwCard(contentPadding = PaddingValues(vertical = Space.xs)) {
+                DataRow(
+                    Icons.Filled.Assignment,
+                    "عناصر المسقط",
+                    "${vm.planData.elements.size} عنصر · ثابتة مع المشروع"
+                )
+                DataRow(
+                    Icons.Filled.Straighten,
+                    "فحوصات مسجّلة",
+                    "${inspections.size} فحص عبر كل الأدوار"
+                )
+                DataRow(
+                    Icons.Filled.Straighten,
+                    "أعداد الحديد",
+                    "${barCounts.size} سطر · ${barCounts.count { it.level == level }} في دور $level"
+                )
+                DataRow(
+                    Icons.Filled.EditNote,
+                    "ملاحظات",
+                    "${notes.size} ملاحظة · ${notes.count { it.level == level }} في دور $level"
+                )
+                DataRow(
+                    Icons.Filled.PhotoCamera,
+                    "صور الموقع",
+                    "${photos.size} صورة · ${photos.count { it.level == level }} في دور $level"
+                )
+                DataRow(
+                    Icons.Filled.Groups,
+                    "سجلات الحضور",
+                    "${daily.size} سجل يومي"
+                )
+            }
         }
-
-        SrtGroupedList {
-            SrtRow(
-                "المزامنة التلقائية عبر Wi-Fi فقط",
-                trailing = { SrtToggle(autoWifi, { autoWifi = it }) },
-                showDivider = false
-            )
-        }
-        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
-private fun DataStatusRow(title: String, value: String, dot: Color, showDivider: Boolean = true) {
-    SrtRow(
+private fun DataRow(icon: ImageVector, title: String, detail: String) {
+    CwListItem(
         title = title,
-        showDivider = showDivider,
-        trailing = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.size(8.dp))
-                Box(Modifier.size(9.dp).clip(CircleShape).background(dot))
-            }
-        }
+        subtitle = detail,
+        leading = { CwLeadingIcon(icon, tone = CwTone.Neutral) }
     )
 }
