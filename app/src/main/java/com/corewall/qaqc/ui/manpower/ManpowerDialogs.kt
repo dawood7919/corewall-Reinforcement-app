@@ -228,7 +228,7 @@ fun AddDailyDialog(
                     Weather.entries.forEach { w ->
                         Surface(
                             onClick = { weather = w },
-                            shape = androidx.compose.foundation.shape.Radius.shapeMd,
+                            shape = Radius.shapeMd,
                             color = if (weather == w) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Text("${w.emoji} ${w.label}", Modifier.padding(horizontal = Space.md, vertical = Space.sm), style = MaterialTheme.typography.labelMedium)
