@@ -260,6 +260,17 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE id = :id LIMIT 1")
     suspend fun byId(id: Long): DocumentEntity?
 
+    /**
+     * مستندات الدور **بالإضافة** لمكتبة المشروع المشتركة.
+     * العزل بين الأدوار مطلق: الدور 10 عمره ما يشوف ملفات الدور 9.
+     * اللي بيتشارك هو اللي المستخدم حطّه صراحة في "معرفة المشروع".
+     */
+    @Query(
+        "SELECT * FROM documents WHERE level = :level OR level = :globalLevel " +
+            "ORDER BY createdAt DESC"
+    )
+    suspend fun inScope(level: String, globalLevel: String): List<DocumentEntity>
+
     @Query("SELECT * FROM documents WHERE status = 'PENDING' ORDER BY createdAt ASC LIMIT :limit")
     suspend fun pending(limit: Int): List<DocumentEntity>
 
@@ -284,8 +295,18 @@ interface DocFactDao {
     @Query("SELECT * FROM doc_facts WHERE documentId = :docId")
     suspend fun forDocument(docId: Long): List<DocFactEntity>
 
-    @Query("SELECT * FROM doc_facts WHERE key LIKE '%' || :q || '%' OR value LIKE '%' || :q || '%' LIMIT :limit")
-    suspend fun search(q: String, limit: Int): List<DocFactEntity>
+    /**
+     * بحث **مقيّد بالنطاق**. النسخة القديمة كانت بتدوّر في كل الأدوار،
+     * فحقائق دور 9 كانت بتظهر وإنت في دور 10 — كسر لعزل الأدوار.
+     */
+    @Query(
+        "SELECT * FROM doc_facts WHERE (level = :level OR level = :globalLevel) " +
+            "AND (key LIKE '%' || :q || '%' OR value LIKE '%' || :q || '%') LIMIT :limit"
+    )
+    suspend fun searchInScope(q: String, level: String, globalLevel: String, limit: Int): List<DocFactEntity>
+
+    @Query("SELECT * FROM doc_facts WHERE level = :level OR level = :globalLevel")
+    suspend fun inScope(level: String, globalLevel: String): List<DocFactEntity>
 
     @Query("SELECT * FROM doc_facts")
     suspend fun getAll(): List<DocFactEntity>

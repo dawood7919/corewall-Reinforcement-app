@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Summarize
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.ViewInAr
@@ -164,9 +165,14 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
             onClick = { go { vm.openAppScreen(AppScreen.AI_REPORTS) } }
         )
         DrawerItem(
-            icon = Icons.Filled.Storage, title = "ذاكرة المشروع", subtitle = "الملفات اللي الـAI حلّلها",
+            icon = Icons.Filled.Storage, title = "ذاكرة الدور", subtitle = "ملفات الدور الحالي بس — معزولة",
             selected = false,
             onClick = { go { vm.openAppScreen(AppScreen.AI_KNOWLEDGE) } }
+        )
+        DrawerItem(
+            icon = Icons.Filled.Hub, title = "معرفة", subtitle = "مكتبة مشتركة بين كل الأدوار",
+            selected = false,
+            onClick = { go { vm.openAppScreen(AppScreen.AI_PROJECT_KNOWLEDGE) } }
         )
         DrawerItem(
             icon = Icons.Filled.Forum, title = "المساعد الهندسي", subtitle = "اسأل عن المشروع بالعربي",

@@ -22,6 +22,14 @@ class FilesManager(private val context: Context) {
     fun levelDir(level: String): File =
         File(root, "levels/${sanitize(level)}").apply { mkdirs() }
 
+    /**
+     * مجلد المكتبة المشتركة بين كل الأدوار.
+     * منفصل عن مجلدات الأدوار عن قصد — الفصل على القرص بيخلّي النطاق
+     * واضح، ومايحصلش خلط بين ملف دور وملف مشترك.
+     */
+    fun projectKnowledgeDir(): File =
+        File(root, "project-knowledge").apply { mkdirs() }
+
     /** مجلد مرفقات عنصر في دور (قسم "بلان فيل"). */
     fun attachmentsDir(level: String, elementId: String): File =
         File(root, "attachments/${sanitize(level)}/${sanitize(elementId)}").apply { mkdirs() }

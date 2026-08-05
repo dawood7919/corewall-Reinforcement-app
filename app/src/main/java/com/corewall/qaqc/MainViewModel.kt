@@ -47,7 +47,7 @@ enum class Section(val title: String) {
 
 enum class AppScreen {
     NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, POUR_READINESS,
-    AI_ANALYSIS, AI_SETTINGS, AI_CHAT, AI_KNOWLEDGE, AI_REPORTS
+    AI_ANALYSIS, AI_SETTINGS, AI_CHAT, AI_KNOWLEDGE, AI_PROJECT_KNOWLEDGE, AI_REPORTS
 }
 
 const val FLOOR_NOTE_ID = "__FLOOR__"
@@ -529,6 +529,112 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------- معرفة المشروع (مشتركة)
+
+    private val _projectDocuments =
+        MutableStateFlow<List<com.corewall.qaqc.data.db.DocumentEntity>>(emptyList())
+    val projectDocuments: StateFlow<List<com.corewall.qaqc.data.db.DocumentEntity>> = _projectDocuments
+
+    fun loadProjectKnowledge() {
+        viewModelScope.launch {
+            _projectDocuments.value = runCatching { aiEngine.projectDocuments() }.getOrDefault(emptyList())
+        }
+    }
+
+    /**
+     * بيستورد ملفات للمكتبة المشتركة.
+     * بتتخزّن في مجلد منفصل وبتتسجّل بنطاق المشروع، فالمساعد بيشوفها
+     * في كل الأدوار — وده الفرق الوحيد المسموح بيه عن عزل الأدوار.
+     */
+    fun importProjectKnowledge(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val copied = withContext(Dispatchers.IO) {
+                files.importUris(uris, files.projectKnowledgeDir())
+            }
+            copied.forEach { f ->
+                runCatching { aiEngine.register(f, com.corewall.qaqc.ai.KnowledgeScope.PROJECT) }
+            }
+            loadProjectKnowledge()
+            autoAnalyze()
+        }
+    }
+
+    /** تحليل ملف بعينه من قائمة الملفات (زرار "تحليل" في قائمة الملف). */
+    fun analyzeFile(file: java.io.File, onDone: (String) -> Unit = {}) {
+        val cfg = settingsStore.aiConfig.value
+        if (!cfg.isConfigured) { onDone("ضيف مفتاح API من إعدادات المساعد الذكي الأول."); return }
+        viewModelScope.launch {
+            _analyzing.value = _analyzing.value + 1
+            val id = runCatching { aiEngine.register(file, _currentLevel.value) }.getOrNull()
+            if (id == null) { _analyzing.value = 0; onDone("تعذّر تسجيل الملف."); return@launch }
+            // موجود قبل كده؟ رجّعه لقائمة الانتظار عشان يتحلّل من أول وجديد
+            runCatching { aiEngine.reset(id) }
+            val result = runCatching { aiEngine.analyze(cfg, id, levels) }.getOrNull()
+            _analyzing.value = 0
+            loadKnowledge()
+            loadProjectKnowledge()
+            refreshSuggestions()
+            onDone(
+                when (result?.status) {
+                    "DONE" -> "اتحلّل: " + result.title.ifBlank { file.name }
+                    "UNSUPPORTED" -> result.error.ifBlank { "نوع الملف مش مدعوم" }
+                    "PENDING" -> "مستني الشبكة — هيتحلّل لوحده"
+                    null -> "تعذّر التحليل"
+                    else -> result.error.ifBlank { "فشل التحليل" }
+                }
+            )
+        }
+    }
+
+    /** بينسخ ملف دور للمكتبة المشتركة ويحلّله بنطاق المشروع. */
+    fun addFileToProjectKnowledge(file: java.io.File, onDone: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            val copied = withContext(Dispatchers.IO) {
+                runCatching {
+                    val dir = files.projectKnowledgeDir()
+                    if (files.copyInto(file, dir)) java.io.File(dir, file.name) else null
+                }.getOrNull()
+            }
+            if (copied == null || !copied.exists()) { onDone("تعذّر نسخ الملف للمكتبة."); return@launch }
+            runCatching { aiEngine.register(copied, com.corewall.qaqc.ai.KnowledgeScope.PROJECT) }
+            loadProjectKnowledge()
+            autoAnalyze()
+            onDone("اتضاف لمعرفة المشروع — هيبقى متاح في كل الأدوار")
+        }
+    }
+
+    // ------------------------------------------------- مرفقات الشات
+
+    private val _chatAttachments = MutableStateFlow<List<java.io.File>>(emptyList())
+    val chatAttachments: StateFlow<List<java.io.File>> = _chatAttachments
+
+    /**
+     * بيستورد مرفقات للسؤال الجاي.
+     * بتتسجّل في ذاكرة الدور وبتتحلّل، فالمساعد بيقدر يستخدم محتواها
+     * في الإجابة بدل ما يبقى عارف اسمها بس.
+     */
+    fun attachToChat(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val level = _currentLevel.value
+            val copied = withContext(Dispatchers.IO) {
+                files.importUris(uris, files.levelDir(level))
+            }
+            if (copied.isEmpty()) return@launch
+            _chatAttachments.value = _chatAttachments.value + copied
+            copied.forEach { runCatching { aiEngine.register(it, level) } }
+            loadKnowledge()
+            autoAnalyze()
+        }
+    }
+
+    fun removeChatAttachment(file: java.io.File) {
+        _chatAttachments.value = _chatAttachments.value.filterNot { it.absolutePath == file.absolutePath }
+    }
+
+    fun clearChatAttachments() { _chatAttachments.value = emptyList() }
+
     /** بيحلّل أي مستند معلّق — بينادى تلقائي عند الرفع، عند فتح التطبيق، وعند إضافة المفتاح. */
     private var autoJob: kotlinx.coroutines.Job? = null
     private fun autoAnalyze() {
@@ -632,11 +738,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     agentHost, files, _documents.value, currentScreenName()
                 )
             }
+            // المرفقات بتدخل السؤال كسياق صريح — الوكيل بيقدر يقراها بأداة
+            val attached = _chatAttachments.value
+            val question = if (attached.isEmpty()) q else buildString {
+                appendLine(q)
+                appendLine()
+                appendLine("### ملفات مرفقة مع السؤال (اتسجّلت في ذاكرة الدور)")
+                attached.forEach { appendLine("- ${it.name} — ${it.absolutePath}") }
+            }
+            _chatAttachments.value = emptyList()
+
             val knowledge = runCatching { aiEngine.knowledgeFor(level, q) }.getOrDefault("")
             val history = runCatching { aiEngine.historyDigest(level) }.getOrDefault("")
 
             runCatching {
-                agentEngine.ask(cfg, q, appState, knowledge, history) { thought ->
+                agentEngine.ask(cfg, question, appState, knowledge, history) { thought ->
                     _agentStatus.value = thought
                 }
             }.onSuccess { run ->
@@ -845,6 +961,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             "PHOTOS" -> openAppScreen(AppScreen.SITE_PHOTOS)
             "POUR", "POUR_READINESS" -> openAppScreen(AppScreen.POUR_READINESS)
             "KNOWLEDGE" -> openAppScreen(AppScreen.AI_KNOWLEDGE)
+            "PROJECT_KNOWLEDGE", "LIBRARY" -> openAppScreen(AppScreen.AI_PROJECT_KNOWLEDGE)
             "REPORTS" -> openAppScreen(AppScreen.AI_REPORTS)
             "CHAT" -> openAppScreen(AppScreen.AI_CHAT)
             "SETTINGS" -> openAppScreen(AppScreen.SETTINGS)

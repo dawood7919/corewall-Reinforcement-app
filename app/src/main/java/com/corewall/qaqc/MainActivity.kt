@@ -206,7 +206,8 @@ fun MainScreen(vm: MainViewModel) {
             AppScreen.POUR_READINESS -> "جاهزية الصبّ" to { vm.closeAppScreen() }
             AppScreen.AI_ANALYSIS -> "التحليل الذكي" to { vm.closeAppScreen() }
             AppScreen.AI_CHAT -> "المساعد الهندسي" to { vm.closeAppScreen() }
-            AppScreen.AI_KNOWLEDGE -> "ذاكرة المشروع" to { vm.closeAppScreen() }
+            AppScreen.AI_KNOWLEDGE -> "ذاكرة الدور" to { vm.closeAppScreen() }
+            AppScreen.AI_PROJECT_KNOWLEDGE -> "معرفة" to { vm.closeAppScreen() }
             AppScreen.AI_REPORTS -> "توليد المستندات" to { vm.closeAppScreen() }
             AppScreen.AI_SETTINGS -> "المساعد الذكي" to { vm.closeAppScreen() }
             AppScreen.ABOUT -> "عن التطبيق" to { vm.openAppScreen(AppScreen.SETTINGS) }
@@ -222,6 +223,7 @@ fun MainScreen(vm: MainViewModel) {
                 AppScreen.AI_ANALYSIS -> AiAnalysisScreen(vm, inner)
                 AppScreen.AI_CHAT -> AiChatScreen(vm, inner)
                 AppScreen.AI_KNOWLEDGE -> KnowledgeScreen(vm, inner)
+                AppScreen.AI_PROJECT_KNOWLEDGE -> com.corewall.qaqc.ui.ai.ProjectKnowledgeScreen(vm, inner)
                 AppScreen.AI_REPORTS -> AiReportScreen(vm, inner)
                 AppScreen.AI_SETTINGS -> AiSettingsScreen(vm, inner)
                 AppScreen.ABOUT -> AboutScreen(inner)

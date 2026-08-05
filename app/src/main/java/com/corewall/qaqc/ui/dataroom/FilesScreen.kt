@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -289,7 +291,18 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             onCopyFloor = { actionTarget = null; floorPick = f to false },
             onMoveFloor = { actionTarget = null; floorPick = f to true },
             onDetails = { actionTarget = null; detailTarget = f },
-            onDelete = { actionTarget = null; deleteTarget = f }
+            onDelete = { actionTarget = null; deleteTarget = f },
+            onAnalyze = {
+                actionTarget = null
+                Toast.makeText(context, "بيحلّل ${f.name}…", Toast.LENGTH_SHORT).show()
+                vm.analyzeFile(f) { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
+            },
+            onShare2Project = {
+                actionTarget = null
+                vm.addFileToProjectKnowledge(f) { msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                }
+            }
         )
     }
 
@@ -651,7 +664,8 @@ private fun Chip(text: String, color: Color) {
 private fun FileActionSheet(
     file: File, onDismiss: () -> Unit, onOpen: () -> Unit, onShare: () -> Unit,
     onRename: () -> Unit, onDuplicate: () -> Unit, onCopyFloor: () -> Unit,
-    onMoveFloor: () -> Unit, onDetails: () -> Unit, onDelete: () -> Unit
+    onMoveFloor: () -> Unit, onDetails: () -> Unit, onDelete: () -> Unit,
+    onAnalyze: () -> Unit, onShare2Project: () -> Unit
 ) {
     val srt = LocalSrtColors.current
     val isDir = file.isDirectory
@@ -671,6 +685,16 @@ private fun FileActionSheet(
             androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp), color = srt.divider)
 
             ActionRow(Icons.Filled.OpenInNew, "فتح", if (isDir) "افتح المجلد" else "افتح الملف", srt.blue, onOpen)
+            if (!isDir) {
+                ActionRow(
+                    Icons.Filled.AutoAwesome, "تحليل بالذكاء الاصطناعي",
+                    "اقرا الملف واستخرج بياناته لذاكرة الدور", srt.blue, onAnalyze
+                )
+                ActionRow(
+                    Icons.Filled.Hub, "ضيفه لمعرفة المشروع",
+                    "يبقى متاح للمساعد في كل الأدوار", srt.purple, onShare2Project
+                )
+            }
             ActionRow(Icons.Filled.DriveFileRenameOutline, "إعادة تسمية", "غيّر اسم ${if (isDir) "المجلد" else "الملف"}", srt.orange, onRename)
             if (!isDir) ActionRow(Icons.Filled.Share, "مشاركة", "أرسل لتطبيق تاني", srt.green, onShare)
             ActionRow(Icons.Filled.ContentCopy, "تكرار", "اعمل نسخة في نفس المكان", srt.purple, onDuplicate)

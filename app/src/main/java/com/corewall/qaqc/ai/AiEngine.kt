@@ -14,6 +14,23 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 
+/**
+ * نطاق المعرفة.
+ *
+ * الأدوار **معزولة عزل مطلق** — دور 10 عمره ما يشوف بيانات دور 9.
+ * الاستثناء الوحيد هو المكتبة المشتركة: ملفات المستخدم بيحطّها صراحة
+ * في شاشة "معرفة المشروع" عشان تبقى متاحة في كل الأدوار (مواصفات،
+ * أكواد، جداول عامة). الاشتراك هنا **قرار صريح من المستخدم**، مش تسريب.
+ *
+ * بنستخدم قيمة حارسة في عمود `level` بدل عمود جديد — كده مفيش
+ * ترحيل لقاعدة البيانات، ومفيش مخاطرة كسر المخطط.
+ */
+object KnowledgeScope {
+    const val PROJECT = "__PROJECT__"
+    const val PROJECT_LABEL = "معرفة المشروع"
+    fun isProject(level: String) = level == PROJECT
+}
+
 /** نتيجة تحليل مستند — الموديل بيرجّعها JSON. */
 @Serializable
 data class DocExtraction(
@@ -137,9 +154,12 @@ class AiEngine(
             return save(doc.copy(status = "FAILED", error = msg, analyzedAt = System.currentTimeMillis()))
         }
 
-        // ربط تلقائي بالدور: لو المستند نفسه بيقول دور معروف، نستخدمه
+        // ربط تلقائي بالدور: لو المستند نفسه بيقول دور معروف، نستخدمه.
+        // بس ملفات مكتبة المشروع بتفضل مشتركة مهما قال المستند — المستخدم
+        // حطّها هناك عن قصد، والموديل مالوش حق ينقلها لدور واحد.
         val detected = extraction.level.trim()
-        val finalLevel = knownLevels.firstOrNull { it.equals(detected, ignoreCase = true) }
+        val finalLevel = if (KnowledgeScope.isProject(doc.level)) KnowledgeScope.PROJECT
+        else knownLevels.firstOrNull { it.equals(detected, ignoreCase = true) }
             ?: knownLevels.firstOrNull { detected.isNotBlank() && it.contains(detected, ignoreCase = true) }
             ?: doc.level
 
@@ -251,9 +271,19 @@ class AiEngine(
     suspend fun documentsFor(level: String): List<DocumentEntity> =
         withContext(Dispatchers.IO) { documentDao.forLevel(level) }
 
-    /** بحث في الحقائق المستخرجة — بيستخدمه الوكيل. */
-    suspend fun searchFacts(query: String, limit: Int = 30): List<DocFactEntity> =
-        withContext(Dispatchers.IO) { factDao.search(query, limit) }
+    /** بحث في الحقائق — **مقيّد بالدور ومكتبة المشروع**، مش كل الأدوار. */
+    suspend fun searchFacts(query: String, level: String, limit: Int = 30): List<DocFactEntity> =
+        withContext(Dispatchers.IO) {
+            factDao.searchInScope(query, level, KnowledgeScope.PROJECT, limit)
+        }
+
+    /** مستندات الدور + مكتبة المشروع. */
+    suspend fun documentsInScope(level: String): List<DocumentEntity> =
+        withContext(Dispatchers.IO) { documentDao.inScope(level, KnowledgeScope.PROJECT) }
+
+    /** مستندات مكتبة المشروع بس. */
+    suspend fun projectDocuments(): List<DocumentEntity> =
+        withContext(Dispatchers.IO) { documentDao.forLevel(KnowledgeScope.PROJECT) }
 
     suspend fun clearChat(level: String) = withContext(Dispatchers.IO) { chatDao.clearLevel(level) }
 
@@ -350,27 +380,28 @@ class AiEngine(
             .distinct()
             .take(12)
 
+        // كل الاستعلامات مقيّدة بـ(الدور الحالي + مكتبة المشروع).
+        // من غير التقييد ده كانت حقائق دور تاني بتتسرّب في الإجابة.
         val hits = LinkedHashMap<Long, MutableList<DocFactEntity>>()
         terms.forEach { t ->
-            factDao.search(t, 60).forEach { f ->
+            factDao.searchInScope(t, level, KnowledgeScope.PROJECT, 60).forEach { f ->
                 hits.getOrPut(f.documentId) { mutableListOf() }.add(f)
             }
         }
-        // لو مفيش تطابق، هات حقائق الدور الحالي كسياق عام
         if (hits.isEmpty()) {
-            factDao.forLevel(level).take(80).forEach { f ->
+            factDao.inScope(level, KnowledgeScope.PROJECT).take(80).forEach { f ->
                 hits.getOrPut(f.documentId) { mutableListOf() }.add(f)
             }
         }
 
-        val docs = documentDao.getAll().associateBy { it.id }
+        val docs = documentDao.inScope(level, KnowledgeScope.PROJECT).associateBy { it.id }
         buildString {
-            // كل المستندات المعروفة (عشان أسئلة زي "إيه الرسومات الموجودة")
-            val known = documentDao.forLevel(level).take(30)
+            val known = documentDao.inScope(level, KnowledgeScope.PROJECT).take(30)
             if (known.isNotEmpty()) {
-                appendLine("مستندات دور $level:")
+                appendLine("المستندات المتاحة (دور $level + معرفة المشروع):")
                 known.forEach {
-                    appendLine("- ${it.fileName} [${it.docType}] ${it.drawingNumber} ${it.revision} — ${it.summary.take(160)}")
+                    val tag = if (KnowledgeScope.isProject(it.level)) "[معرفة المشروع]" else "[دور $level]"
+                    appendLine("- $tag ${it.fileName} [${it.docType}] ${it.drawingNumber} ${it.revision} — ${it.summary.take(160)}")
                 }
                 appendLine()
             }
@@ -467,9 +498,9 @@ class AiEngine(
 
     /** ملخّص كل معرفة الدور — بيتحطّ في سياق الداشبورد والتقارير. */
     private suspend fun knowledgeDigest(level: String): String = withContext(Dispatchers.IO) {
-        val docs = documentDao.forLevel(level)
+        val docs = documentDao.inScope(level, KnowledgeScope.PROJECT)
         if (docs.isEmpty()) return@withContext ""
-        val facts = factDao.forLevel(level)
+        val facts = factDao.inScope(level, KnowledgeScope.PROJECT)
         buildString {
             docs.take(25).forEach { d ->
                 append("- ${d.fileName} [${d.docType}]")

@@ -1,5 +1,16 @@
 package com.corewall.qaqc.ui.ai
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,11 +22,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -27,6 +41,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Source
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -96,9 +114,17 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val cfg by vm.aiConfig.collectAsStateWithLifecycle()
     val status by vm.agentStatus.collectAsStateWithLifecycle()
     val pending by vm.pendingActions.collectAsStateWithLifecycle()
+    val attachments by vm.chatAttachments.collectAsStateWithLifecycle()
 
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> vm.attachToChat(uris) }
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> vm.attachToChat(uris) }
 
     LaunchedEffect(level) { vm.loadKnowledge() }
     LaunchedEffect(messages.size, busy) {
@@ -106,23 +132,15 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     }
 
     Column(modifier.fillMaxSize().imePadding()) {
-        Surface(color = srt.blueTint, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = srt.blue, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "دور $level · ${docs.count { it.status == "DONE" }} مستند في الذاكرة" +
-                        (docs.count { it.status == "PENDING" }.takeIf { it > 0 }?.let { " · $it بانتظار التحليل" } ?: ""),
-                    style = MaterialTheme.typography.labelMedium, color = srt.blue, modifier = Modifier.weight(1f)
-                )
-                if (messages.isNotEmpty()) {
-                    Icon(
-                        Icons.Filled.DeleteSweep, contentDescription = "مسح المحادثة", tint = srt.blue,
-                        modifier = Modifier.size(18.dp).clip(CircleShape).clickable { vm.clearChat() }
-                    )
-                }
-            }
-        }
+        ChatHeader(
+            level = level,
+            analyzed = docs.count { it.status == "DONE" },
+            pendingDocs = docs.count { it.status == "PENDING" },
+            busy = busy,
+            canClear = messages.isNotEmpty(),
+            onClear = { vm.clearChat() },
+            onLibrary = { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_PROJECT_KNOWLEDGE) }
+        )
 
         Box(Modifier.weight(1f)) {
             if (messages.isEmpty()) {
@@ -167,7 +185,14 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
+            Column {
+            AttachmentStrip(attachments, onRemove = { vm.removeChatAttachment(it) })
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Bottom) {
+                AttachButtons(
+                    onFiles = { filePicker.launch(arrayOf("*/*")) },
+                    onImages = { imagePicker.launch(arrayOf("image/*")) }
+                )
+                Spacer(Modifier.width(6.dp))
                 Surface(
                     shape = RoundedCornerShape(22.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -208,6 +233,7 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     }
                 }
             }
+            }
         }
     }
 }
@@ -246,25 +272,7 @@ private fun AnswerCard(
     var showSources by remember(m.id) { mutableStateOf(false) }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (answer.headline.isNotBlank()) {
-            Row(verticalAlignment = Alignment.Top) {
-                Box(
-                    Modifier.size(26.dp).clip(CircleShape).background(srt.blueTint),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.AutoAwesome, contentDescription = null,
-                        tint = srt.blue, modifier = Modifier.size(15.dp))
-                }
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    answer.headline,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
+        if (answer.headline.isNotBlank()) HeadlineCard(answer.headline)
 
         answer.blocks.take(6).forEachIndexed { i, b -> AnswerBlockCard(b, i, onOpenFile) }
 
@@ -353,6 +361,215 @@ private fun EmptyChat(configured: Boolean, onPick: (String) -> Unit) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * ترويسة المحادثة — بتقول للمستخدم المساعد شايف إيه دلوقتي.
+ *
+ * النطاق مكتوب صراحة (دور + مكتبة مشتركة) عشان محدّش يفتكر إن المساعد
+ * بيشوف كل الأدوار. الأدوار معزولة، والوضوح هنا جزء من العزل.
+ */
+@Composable
+private fun ChatHeader(
+    level: String,
+    analyzed: Int,
+    pendingDocs: Int,
+    busy: Boolean,
+    canClear: Boolean,
+    onClear: () -> Unit,
+    onLibrary: () -> Unit
+) {
+    val srt = LocalSrtColors.current
+    val pulse = rememberInfiniteTransition(label = "hdr")
+    val glow by pulse.animateFloat(
+        initialValue = 0.35f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "glow"
+    )
+
+    Surface(color = srt.blueTint, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size(30.dp).clip(CircleShape)
+                    .background(srt.blue.copy(alpha = if (busy) glow * 0.30f else 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.AutoAwesome, contentDescription = null,
+                    tint = srt.blue, modifier = Modifier.size(16.dp)
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (busy) "بيشتغل…" else "المساعد الهندسي",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold, color = srt.blue
+                )
+                Text(
+                    buildString {
+                        append("دور $level · $analyzed مستند")
+                        if (pendingDocs > 0) append(" · $pendingDocs مستني")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = srt.blue.copy(alpha = 0.75f)
+                )
+            }
+            Icon(
+                Icons.Filled.Hub, contentDescription = "معرفة المشروع", tint = srt.purple,
+                modifier = Modifier.size(19.dp).clip(CircleShape).clickable(onClick = onLibrary)
+            )
+            if (canClear) {
+                Spacer(Modifier.width(14.dp))
+                Icon(
+                    Icons.Filled.DeleteSweep, contentDescription = "مسح المحادثة", tint = srt.blue,
+                    modifier = Modifier.size(19.dp).clip(CircleShape).clickable(onClick = onClear)
+                )
+            }
+        }
+    }
+}
+
+/** أزرار الإرفاق — ملفات وصور. */
+@Composable
+private fun AttachButtons(onFiles: () -> Unit, onImages: () -> Unit) {
+    val srt = LocalSrtColors.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            onClick = onImages, shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(40.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.PhotoLibrary, contentDescription = "أرفق صور",
+                    tint = srt.purple, modifier = Modifier.size(18.dp))
+            }
+        }
+        Spacer(Modifier.width(6.dp))
+        Surface(
+            onClick = onFiles, shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(40.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.AttachFile, contentDescription = "أرفق ملفات",
+                    tint = srt.blue, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+/**
+ * شريط المرفقات المستنية الإرسال.
+ * بيوضّح إن الملف اتسجّل واتحلّل بالفعل — مش مجرد اسم متعلّق بالرسالة.
+ */
+@Composable
+private fun AttachmentStrip(files: List<java.io.File>, onRemove: (java.io.File) -> Unit) {
+    val srt = LocalSrtColors.current
+    AnimatedVisibility(
+        visible = files.isNotEmpty(),
+        enter = fadeIn() + expandVertically(),
+        exit = shrinkVertically()
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(
+                "${files.size} مرفق مع السؤال الجاي — اتسجّلوا في ذاكرة الدور",
+                style = MaterialTheme.typography.labelSmall, color = srt.text3
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                files.forEach { f ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = srt.blueTint,
+                        border = BorderStroke(1.dp, srt.blue.copy(alpha = 0.25f))
+                    ) {
+                        Row(
+                            Modifier.padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.AttachFile, contentDescription = null,
+                                tint = srt.blue, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                f.name, style = MaterialTheme.typography.labelSmall,
+                                color = srt.blue, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 150.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.Filled.Close, contentDescription = "شيل",
+                                tint = srt.text3,
+                                modifier = Modifier.size(15.dp).clip(CircleShape)
+                                    .clickable { onRemove(f) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+/**
+ * الخلاصة — أهم سطر في الرد، فبياخد أوضح معالجة بصرية.
+ *
+ * شريط لوني على الحافة بدل إطار كامل: بيدّي وزن بصري من غير ما يزوّد
+ * حبر حوالين النص. الخلفية متدرّجة خفيفة عشان يتميّز عن الكروت اللي تحته.
+ */
+@Composable
+private fun HeadlineCard(text: String) {
+    val srt = LocalSrtColors.current
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = androidx.compose.ui.graphics.Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(18.dp))
+                .background(
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(srt.blue.copy(alpha = 0.14f), srt.blue.copy(alpha = 0.04f))
+                    )
+                )
+                .fillMaxWidth()
+        ) {
+            // شريط الحافة — بيثبّت العين على بداية السطر
+            Box(
+                Modifier.width(4.dp).heightIn(min = 52.dp).fillMaxHeight()
+                    .background(srt.blue)
+            )
+            Row(
+                Modifier.padding(14.dp).weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(30.dp).clip(CircleShape).background(srt.blue),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.AutoAwesome, contentDescription = null,
+                        tint = Color.White, modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }

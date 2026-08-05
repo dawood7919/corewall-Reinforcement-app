@@ -337,12 +337,13 @@ class AgentExecutor(
     }
 
     private suspend fun listDocuments(level: String): ToolOutcome {
-        val docs = aiEngine.documentsFor(level)
+        val docs = aiEngine.documentsInScope(level)
         if (docs.isEmpty()) return ok("list_documents", "مفيش مستندات مسجّلة في دور $level")
         val text = buildString {
-            appendLine("مستندات دور $level (${docs.size}):")
+            appendLine("المستندات المتاحة (دور $level + معرفة المشروع) — ${docs.size}:")
             docs.forEach { d ->
-                append("#${d.id} ${d.fileName} [${d.docType}] حالة=${d.status}")
+                val scope = if (com.corewall.qaqc.ai.KnowledgeScope.isProject(d.level)) "مشترك" else "دور ${d.level}"
+                append("#${d.id} [$scope] ${d.fileName} [${d.docType}] حالة=${d.status}")
                 if (d.drawingNumber.isNotBlank()) append(" رسمة=${d.drawingNumber}")
                 if (d.revision.isNotBlank()) append(" مراجعة=${d.revision}")
                 appendLine()
@@ -394,13 +395,16 @@ class AgentExecutor(
             .take(10).forEach { hits += "كود عنصر: $it" }
 
         runCatching {
-            aiEngine.documentsFor(level).filter {
+            aiEngine.documentsInScope(level).filter {
                 it.fileName.contains(q, true) || it.summary.contains(q, true) ||
                     it.drawingNumber.contains(q, true)
             }.take(10).forEach { hits += "مستند #${it.id}: ${it.fileName}" }
         }
         runCatching {
-            aiEngine.searchFacts(q, 20).forEach { hits += "حقيقة (${it.kind}): ${it.key} = ${it.value} ${it.unit}".trimEnd() }
+            aiEngine.searchFacts(q, level, 20).forEach {
+                val tag = if (com.corewall.qaqc.ai.KnowledgeScope.isProject(it.level)) "معرفة المشروع" else it.kind
+                hits += "حقيقة ($tag): ${it.key} = ${it.value} ${it.unit}".trimEnd()
+            }
         }
         runCatching {
             files.list(files.levelDir(level)).filter { it.name.contains(q, true) }
