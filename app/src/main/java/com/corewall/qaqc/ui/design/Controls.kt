@@ -327,7 +327,9 @@ fun CwField(
     trailing: (@Composable () -> Unit)? = null,
     minLines: Int = 1,
     keyboardOptions: androidx.compose.foundation.text.KeyboardOptions =
-        androidx.compose.foundation.text.KeyboardOptions.Default
+        androidx.compose.foundation.text.KeyboardOptions.Default,
+    /** لإخفاء المحتوى (مفاتيح الـAPI). null = عرض عادي. */
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation? = null
 ) {
     val c = LocalCwColors.current
     androidx.compose.foundation.layout.Column(modifier.fillMaxWidth()) {
@@ -351,6 +353,8 @@ fun CwField(
             trailingIcon = trailing,
             shape = Radius.shapeMd,
             keyboardOptions = keyboardOptions,
+            visualTransformation = visualTransformation
+                ?: androidx.compose.ui.text.input.VisualTransformation.None,
             textStyle = MaterialTheme.typography.bodyLarge,
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = c.surface,
