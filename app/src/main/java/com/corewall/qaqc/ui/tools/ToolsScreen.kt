@@ -1,20 +1,19 @@
 package com.corewall.qaqc.ui.tools
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,215 +23,248 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.corewall.qaqc.Lens
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.model.InspectionStatus
+import com.corewall.qaqc.domain.CalloutResult
 import com.corewall.qaqc.domain.SteelCalculator
-import com.corewall.qaqc.ui.ColorDot
-import com.corewall.qaqc.ui.theme.StatusColors
+import com.corewall.qaqc.ui.design.CwCard
+import com.corewall.qaqc.ui.design.CwCardStyle
+import com.corewall.qaqc.ui.design.CwField
+import com.corewall.qaqc.ui.design.CwKeyValue
+import com.corewall.qaqc.ui.design.CwKeyValueList
+import com.corewall.qaqc.ui.design.CwListItem
+import com.corewall.qaqc.ui.design.CwSectionHeader
+import com.corewall.qaqc.ui.design.CwStatusBadge
+import com.corewall.qaqc.ui.design.CwText
+import com.corewall.qaqc.ui.design.CwTone
+import com.corewall.qaqc.ui.design.IconSize
+import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.Space
 
+/**
+ * أدوات التحليل — شاشة تالتة كانت مبنيّة ومحدش يقدر يوصلها.
+ *
+ * فيها تلات أدوات مالهمش علاقة ببعض غير إنهم كلهم "حسابات": بحث بالكود،
+ * حاسبة مساحة حديد، وملخّص جدول الدور. اتساب مكانهم زي ما هو لأنهم شغّالين
+ * فعلاً — اللي اتغيّر إن كل واحدة بقت كارت له عنوان، بدل ما يكونوا تلات
+ * كتل نص ورا بعض بعناوين إيموچي.
+ */
 @Composable
 fun ToolsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+    LazyColumn(
+        modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = Space.screen, end = Space.screen,
+            top = Space.md, bottom = Space.bottomInset
+        ),
+        verticalArrangement = Arrangement.spacedBy(Space.stack)
     ) {
-        SearchSection(vm)
-        Spacer(Modifier.height(20.dp))
-        CalculatorSection()
-        Spacer(Modifier.height(20.dp))
-        LevelSummarySection(vm)
+        item(key = "search-header") { CwSectionHeader("دوّر بالكود") }
+        item(key = "search") { SearchSection(vm) }
+
+        item(key = "calc-header") { CwSectionHeader("حاسبة مساحة الحديد") }
+        item(key = "calc") { CalculatorSection() }
+
+        item(key = "summary-header") { CwSectionHeader("ملخّص جدول الدور") }
+        item(key = "summary") { LevelSummarySection(vm) }
     }
 }
 
-// ---------------------------------------------------------------- البحث
+// ────────────────────────────────────────────────────────────── البحث
 
 @Composable
 private fun SearchSection(vm: MainViewModel) {
-    var query by remember { mutableStateOf("") }
-    val names by vm.names.collectAsStateWithLifecycle()
+    val c = LocalCwColors.current
+    var query by rememberSaveable { mutableStateOf("") }
 
-    Text("🔍 البحث بالاسم", style = MaterialTheme.typography.titleMedium)
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = query,
-        onValueChange = { query = it },
-        label = { Text("T1-W… / T1-CB…") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth()
-    )
-    if (query.isNotBlank()) {
-        val results = vm.repo.baseSchedule.allMarks
+    val results = remember(query) {
+        if (query.isBlank()) emptyList()
+        else vm.repo.baseSchedule.allMarks
             .filter { it.contains(query.trim(), ignoreCase = true) }
             .take(15)
-        results.forEach { mark ->
-            val element = vm.elementForMark(mark)
-            Surface(
-                onClick = {
-                    if (element != null) {
-                        vm.selectElement(element.id)
-                        vm.goToLens(com.corewall.qaqc.Lens.REINF)
-                    }
-                },
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(mark, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (element != null) "→ على المسقط" else "مش متسمّي على المسقط لسه",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (element != null) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    CwCard {
+        CwField(
+            value = query,
+            onValueChange = { query = it },
+            label = "كود العنصر",
+            placeholder = "T1-W… أو T1-CB…",
+            helper = "الدوس على نتيجة بيفتح العنصر على المسقط"
+        )
+        if (query.isNotBlank()) {
+            Spacer(Modifier.height(Space.sm))
+            if (results.isEmpty()) {
+                Text(
+                    "مفيش كود بيطابق \"$query\" في الجدول",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.textTertiary
+                )
+            } else {
+                results.forEach { mark ->
+                    val element = vm.elementForMark(mark)
+                    CwListItem(
+                        title = mark,
+                        subtitle = if (element != null) null else "مش متسمّي على المسقط لسه",
+                        trailing = {
+                            if (element != null) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBackIos,
+                                    contentDescription = null,
+                                    tint = c.textTertiary,
+                                    modifier = Modifier.size(IconSize.sm)
+                                )
+                            } else {
+                                CwStatusBadge("بدون شكل", CwTone.Warning, compact = true)
+                            }
+                        },
+                        onClick = if (element != null) ({
+                            vm.selectElement(element.id)
+                            vm.goToLens(Lens.REINF)
+                        }) else null
                     )
                 }
             }
-            HorizontalDivider()
-        }
-        if (results.isEmpty()) {
-            Text(
-                "مفيش نتايج",
-                Modifier.padding(8.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
 
-// ---------------------------------------------------------------- الحاسبة
+// ────────────────────────────────────────────────────────────── الحاسبة
 
 @Composable
 private fun CalculatorSection() {
+    val c = LocalCwColors.current
     var input by rememberSaveable { mutableStateOf("T25-200") }
+    val results = remember(input) { SteelCalculator.parseList(input) }
 
-    Text("🧮 حاسبة مساحة الحديد", style = MaterialTheme.typography.titleMedium)
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = input,
-        onValueChange = { input = it },
-        label = { Text("كولاوت: T25-200 أو 6T32 أو T10-200,T10-200") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth()
-    )
-    Spacer(Modifier.height(8.dp))
-    val results = SteelCalculator.parseList(input)
-    if (results == null) {
-        if (input.isNotBlank()) {
-            Text("الكولاوت مش مفهوم", color = MaterialTheme.colorScheme.error)
-        }
-    } else {
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp)) {
-                results.forEach { r ->
-                    when (r) {
-                        is com.corewall.qaqc.domain.CalloutResult.Spaced -> {
-                            Text(
-                                "T${r.diaMm}-${r.spacingMm}: قطر ${r.diaMm}mm كل ${r.spacingMm}mm",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                r.totalDescription,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        is com.corewall.qaqc.domain.CalloutResult.Counted -> {
-                            Text(
-                                "${r.count}T${r.diaMm}: ${r.count} أسياخ قطر ${r.diaMm}mm",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                r.totalDescription,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
+    CwCard {
+        CwField(
+            value = input,
+            onValueChange = { input = it },
+            label = "الكولاوت",
+            placeholder = "T25-200",
+            helper = "يقبل T25-200 أو 6T32 أو أكتر من واحد مفصولين بفاصلة",
+            error = if (results == null && input.isNotBlank()) "الكولاوت مش مفهوم" else null
+        )
+
+        if (results != null && results.isNotEmpty()) {
+            Spacer(Modifier.height(Space.md))
+            results.forEach { r ->
+                val (line, total) = when (r) {
+                    is CalloutResult.Spaced ->
+                        "قطر ${r.diaMm}mm كل ${r.spacingMm}mm" to r.totalDescription
+                    is CalloutResult.Counted ->
+                        "${r.count} سيخ قطر ${r.diaMm}mm" to r.totalDescription
                 }
-                val spaced = results.filterIsInstance<com.corewall.qaqc.domain.CalloutResult.Spaced>()
-                if (spaced.size > 1) {
-                    HorizontalDivider()
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "الإجمالي: %.0f mm²/m".format(spaced.sumOf { it.areaPerMeterMm2 }),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+                Text(line, style = MaterialTheme.typography.bodySmall, color = c.textTertiary)
+                Text(total, style = CwText.code, color = c.textPrimary)
+                Spacer(Modifier.height(Space.sm))
+            }
+
+            val spaced = results.filterIsInstance<CalloutResult.Spaced>()
+            if (spaced.size > 1) {
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    "الإجمالي %.0f mm²/m".format(spaced.sumOf { it.areaPerMeterMm2 }),
+                    style = CwText.metricSmall,
+                    color = c.accent
+                )
             }
         }
     }
 }
 
-// ---------------------------------------------------------------- ملخص الدور
+// ────────────────────────────────────────────────────────── ملخّص الدور
 
 @Composable
 private fun LevelSummarySection(vm: MainViewModel) {
+    val c = LocalCwColors.current
     val level by vm.currentLevel.collectAsStateWithLifecycle()
     val schedule by vm.schedule.collectAsStateWithLifecycle()
     val names by vm.names.collectAsStateWithLifecycle()
     val inspections by vm.inspections.collectAsStateWithLifecycle()
 
     val levelIdx = vm.logic.idx(level)
-
-    Text("📋 ملخص دور $level", style = MaterialTheme.typography.titleMedium)
-    Spacer(Modifier.height(8.dp))
-
-    if (levelIdx == null) return
-
-    val activeWalls = schedule.walls.filter { (_, rows) ->
-        vm.logic.activeWallRow(rows, levelIdx) != null
+    if (levelIdx == null) {
+        CwCard {
+            Text(
+                "الدور $level مش موجود في الجدول.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = c.textTertiary
+            )
+        }
+        return
     }
-    val activeBeams = schedule.beams.filter { (_, rows) ->
-        vm.logic.activeBeamRow(rows, levelIdx) != null
-    }
+
+    val activeWalls = schedule.walls.count { (_, rows) -> vm.logic.activeWallRow(rows, levelIdx) != null }
+    val activeBeams = schedule.beams.count { (_, rows) -> vm.logic.activeBeamRow(rows, levelIdx) != null }
     val gapWalls = schedule.walls.filter { (_, rows) -> vm.logic.wallGapAt(rows, levelIdx) }.keys
     val gapBeams = schedule.beams.filter { (_, rows) -> vm.logic.beamGapAt(rows, levelIdx) }.keys
+    val gaps = gapWalls + gapBeams
 
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Text("حوائط نشطة: ${activeWalls.size} — كمرات نشطة: ${activeBeams.size}")
-            val gaps = gapWalls + gapBeams
-            if (gaps.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "⚠️ فجوات بيانات في الدور ده: ${gaps.joinToString("، ")}",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
-                )
+    val statusCounts = InspectionStatus.entries
+        .filter { it != InspectionStatus.NONE }
+        .associateWith { status ->
+            vm.planData.elements.count { el ->
+                InspectionStatus.from(inspections[el.id to level]) == status
             }
-            Spacer(Modifier.height(6.dp))
-            val named = names.size
-            val total = vm.planData.elements.size
-            Text("عناصر متسمّية على المسقط: $named / $total")
+        }
 
-            Spacer(Modifier.height(10.dp))
-            Text("حالات الفحص في الدور:", style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(4.dp))
-            val statusCounts = InspectionStatus.entries.associateWith { status ->
-                vm.planData.elements.count { el ->
-                    InspectionStatus.from(inspections[el.id to level]) == status &&
-                        (status != InspectionStatus.NONE)
-                }
-            }
-            InspectionStatus.entries.filter { it != InspectionStatus.NONE }.forEach { status ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
-                    ColorDot(StatusColors.of(status))
-                    Spacer(Modifier.width(6.dp))
-                    Text("${status.label}: ${statusCounts[status] ?: 0}", style = MaterialTheme.typography.bodySmall)
+    CwCard(
+        style = if (gaps.isEmpty()) CwCardStyle.Plain else CwCardStyle.Accent,
+        accent = c.warning.solid
+    ) {
+        CwKeyValueList(
+            listOf(
+                CwKeyValue("حوائط في الجدول", "$activeWalls"),
+                CwKeyValue("كمرات في الجدول", "$activeBeams"),
+                CwKeyValue("عناصر مسمّية على المسقط", "${names.size} من ${vm.planData.elements.size}")
+            )
+        )
+
+        if (gaps.isNotEmpty()) {
+            Spacer(Modifier.height(Space.md))
+            Text(
+                "فجوات في دور $level",
+                style = CwText.sectionLabel,
+                color = c.textTertiary
+            )
+            Spacer(Modifier.height(Space.xs))
+            Text(
+                gaps.joinToString("، "),
+                style = CwText.codeSmall,
+                color = c.warning.fg,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(Modifier.height(Space.md))
+        Text("حالات الفحص", style = CwText.sectionLabel, color = c.textTertiary)
+        Spacer(Modifier.height(Space.sm))
+        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            statusCounts.forEach { (status, count) ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    CwStatusBadge(status.label, toneOf(status), compact = true)
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "$count",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (count == 0) c.textTertiary else c.textPrimary
+                    )
                 }
             }
         }
     }
+}
+
+private fun toneOf(status: InspectionStatus): CwTone = when (status) {
+    InspectionStatus.APPROVED -> CwTone.Success
+    InspectionStatus.CAST -> CwTone.Info
+    InspectionStatus.WIR_SUBMITTED -> CwTone.Pending
+    InspectionStatus.REJECTED -> CwTone.Danger
+    InspectionStatus.NONE -> CwTone.Neutral
 }
