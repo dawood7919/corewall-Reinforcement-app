@@ -55,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -116,7 +117,7 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val pending by vm.pendingActions.collectAsStateWithLifecycle()
     val attachments by vm.chatAttachments.collectAsStateWithLifecycle()
 
-    var input by remember { mutableStateOf("") }
+    var input by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
 
     val filePicker = rememberLauncherForActivityResult(
@@ -421,17 +422,8 @@ private fun ChatHeader(
                     color = srt.blue.copy(alpha = 0.75f)
                 )
             }
-            Icon(
-                Icons.Filled.Hub, contentDescription = "معرفة المشروع", tint = srt.purple,
-                modifier = Modifier.size(19.dp).clip(CircleShape).clickable(onClick = onLibrary)
-            )
-            if (canClear) {
-                Spacer(Modifier.width(14.dp))
-                Icon(
-                    Icons.Filled.DeleteSweep, contentDescription = "مسح المحادثة", tint = srt.blue,
-                    modifier = Modifier.size(19.dp).clip(CircleShape).clickable(onClick = onClear)
-                )
-            }
+            TapTarget(Icons.Filled.Hub, "معرفة المشروع", srt.purple, onLibrary)
+            if (canClear) TapTarget(Icons.Filled.DeleteSweep, "مسح المحادثة", srt.blue, onClear)
         }
     }
 }
@@ -572,5 +564,28 @@ private fun HeadlineCard(text: String) {
                 )
             }
         }
+    }
+}
+
+
+/**
+ * أيقونة قابلة للضغط بمساحة لمس حقيقية.
+ *
+ * الأيقونة بتفضل صغيرة بصرياً، لكن منطقة اللمس 44dp — الحد الأدنى
+ * المتعارف عليه. أيقونة 19dp معناها إنك لازم تصيبها في نصّها بالظبط،
+ * وده شبه مستحيل بجوانتي في الموقع.
+ */
+@Composable
+private fun TapTarget(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(19.dp))
     }
 }

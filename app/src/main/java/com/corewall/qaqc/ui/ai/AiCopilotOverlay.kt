@@ -199,18 +199,11 @@ private fun CopilotPanel(
                         style = MaterialTheme.typography.labelSmall, color = srt.text3
                     )
                 }
-                Icon(
-                    Icons.Filled.History,
-                    contentDescription = "سجل الإجراءات",
-                    tint = if (showLog) srt.blue else srt.text3,
-                    modifier = Modifier.size(20.dp).clip(CircleShape)
-                        .clickable { showLog = !showLog }
-                )
-                Spacer(Modifier.width(12.dp))
-                Icon(
-                    Icons.Filled.Close, contentDescription = "إغلاق", tint = srt.text3,
-                    modifier = Modifier.size(20.dp).clip(CircleShape).clickable { onClose() }
-                )
+                TapTarget(
+                    Icons.Filled.History, "سجل الإجراءات",
+                    if (showLog) srt.blue else srt.text3
+                ) { showLog = !showLog }
+                TapTarget(Icons.Filled.Close, "إغلاق", srt.text3, onClose)
             }
 
             Spacer(Modifier.height(14.dp))
@@ -311,5 +304,22 @@ private fun SuggestionRow(s: Suggestion, onClick: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+
+/** أيقونة بمساحة لمس 44dp — الأيقونة صغيرة، الهدف مش صغير. */
+@Composable
+private fun TapTarget(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
     }
 }
