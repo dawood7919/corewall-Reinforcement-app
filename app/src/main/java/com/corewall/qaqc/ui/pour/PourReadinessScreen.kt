@@ -305,7 +305,7 @@ private fun FindingCard(f: PourReadiness.Finding, vm: MainViewModel) {
                             vm.elementForMark(mark)?.let {
                                 vm.goToLens(com.corewall.qaqc.Lens.REINF)
                                 vm.selectElement(it.id)
-                                vm.closeAppScreen()
+                                vm.back()
                             }
                         }
                     }

@@ -86,7 +86,7 @@ import com.corewall.qaqc.ui.theme.TowerNumberStyle
  * بيبدّل الأدوار بسحبة إبهام، Command bar للبحث، وFAB ذكي حسب العدسة.
  */
 @Composable
-fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
+fun PlanScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val lens by vm.lens.collectAsStateWithLifecycle()
     val level by vm.currentLevel.collectAsStateWithLifecycle()
     val names by vm.names.collectAsStateWithLifecycle()
@@ -99,10 +99,11 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val selectedId by vm.selectedElementId.collectAsStateWithLifecycle()
 
     val catColors = LocalCategoryColors.current
+    val cw = com.corewall.qaqc.ui.design.LocalCwColors.current
     val labelColor = MaterialTheme.colorScheme.onBackground
-    val gapColor = Color(0xFFFF9F0A)
-    val matchColor = Color(0xFF34C759)
-    val mismatchColor = Color(0xFFFF453A)
+    val gapColor = cw.warning.fg
+    val matchColor = cw.success.fg
+    val mismatchColor = cw.danger.fg
     val dimColor = MaterialTheme.colorScheme.onSurfaceVariant
     val accent = MaterialTheme.colorScheme.primary
 
@@ -135,7 +136,7 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                             names[el.id]?.let { inspections[el.id to level] }
                         )
                         val fill = if (settings.showStatuses && status != InspectionStatus.NONE)
-                            StatusColors.of(status) else catColors.of(el.cat)
+                            StatusColors.of(status, cw) else catColors.of(el.cat)
                         fill.copy(
                             alpha = if (activeByElement[el.id] is ActiveRangeResult.OutOfRange) 0.18f else 1f
                         )
@@ -268,7 +269,7 @@ fun HomeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     text = { Text("تصدير العدّ") }
                 )
                 Lens.DATA -> ExtendedFloatingActionButton(
-                    onClick = { vm.setTabIndex(2) },
+                    onClick = { vm.goToData(com.corewall.qaqc.ui.nav.DataSection.FILES) },
                     icon = { Icon(Icons.Filled.Folder, contentDescription = null) },
                     text = { Text("ملفات الدور") }
                 )

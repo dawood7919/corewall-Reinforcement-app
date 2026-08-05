@@ -75,7 +75,7 @@ private fun SearchSection(vm: MainViewModel) {
                 onClick = {
                     if (element != null) {
                         vm.selectElement(element.id)
-                        vm.setTabIndex(0)
+                        vm.goToLens(com.corewall.qaqc.Lens.REINF)
                     }
                 },
                 color = MaterialTheme.colorScheme.surface,

@@ -140,7 +140,7 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             busy = busy,
             canClear = messages.isNotEmpty(),
             onClear = { vm.clearChat() },
-            onLibrary = { vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_PROJECT_KNOWLEDGE) }
+            onLibrary = { vm.go(com.corewall.qaqc.ui.nav.Dest.ProjectKnowledge) }
         )
 
         Box(Modifier.weight(1f)) {

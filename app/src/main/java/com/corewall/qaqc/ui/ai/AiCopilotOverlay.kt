@@ -95,8 +95,8 @@ fun AiCopilotOverlay(vm: MainViewModel, modifier: Modifier = Modifier) {
                 suggestions = suggestions,
                 log = log,
                 busy = busy,
-                onAsk = { vm.askAi(it); vm.setCopilotOpen(false); vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_CHAT) },
-                onOpenChat = { vm.setCopilotOpen(false); vm.openAppScreen(com.corewall.qaqc.AppScreen.AI_CHAT) },
+                onAsk = { vm.askAi(it); vm.setCopilotOpen(false); vm.selectTab(com.corewall.qaqc.ui.nav.Dest.Assistant) },
+                onOpenChat = { vm.setCopilotOpen(false); vm.selectTab(com.corewall.qaqc.ui.nav.Dest.Assistant) },
                 onClose = { vm.setCopilotOpen(false) }
             )
         }

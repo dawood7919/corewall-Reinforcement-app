@@ -3,33 +3,43 @@ package com.corewall.qaqc.ui.settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.AppTheme
+import com.corewall.qaqc.ui.design.CwButton
+import com.corewall.qaqc.ui.design.CwButtonStyle
+import com.corewall.qaqc.ui.design.CwCard
+import com.corewall.qaqc.ui.design.CwChip
+import com.corewall.qaqc.ui.design.CwLeadingIcon
+import com.corewall.qaqc.ui.design.CwListItem
+import com.corewall.qaqc.ui.design.CwSectionHeader
+import com.corewall.qaqc.ui.design.CwSwitchRow
+import com.corewall.qaqc.ui.design.CwTone
+import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.Space
+import com.corewall.qaqc.ui.nav.Dest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,8 +47,21 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * الإعدادات — **شاشة واحدة**.
+ *
+ * قبل كده كان فيه شاشتين مختلفتين اسمهم "الإعدادات": واحدة تبويب في الشريط
+ * السفلي وواحدة في الدرج، وكانوا كودين مختلفين خالص. المستخدم مكانش يقدر
+ * يعرف أي واحدة فيها الإعداد اللي بيدوّر عليه.
+ *
+ * كمان: الشاشة القديمة كانت مليانة صفوف شكلها شغّال وهي مش عاملة حاجة —
+ * "الإشعارات الفورية" و"المزامنة التلقائية" و"قفل التطبيق" كانوا مربوطين
+ * بحالة محلية بتضيع أول ما تقفل الشاشة، و٧ صفوف `onClick = {}` فاضية.
+ * كنترول بيدّعي إنه شغّال أسوأ من كنترول مش موجود، فاتشالوا.
+ */
 @Composable
 fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
+    val c = LocalCwColors.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -57,7 +80,8 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
             Toast.makeText(
                 context,
-                if (result.isSuccess) "تم تصدير النسخة الاحتياطية ✓" else "فشل التصدير: ${result.exceptionOrNull()?.message}",
+                if (result.isSuccess) "اتصدّرت النسخة الاحتياطية ✓"
+                else "فشل التصدير: ${result.exceptionOrNull()?.message}",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -69,7 +93,8 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         if (uri != null) scope.launch {
             val message = runCatching {
                 val content = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    context.contentResolver.openInputStream(uri)
+                        ?.use { it.readBytes().toString(Charsets.UTF_8) }
                         ?: error("مقدرناش نقرا الملف")
                 }
                 vm.repo.importBackupJson(content).getOrThrow()
@@ -78,80 +103,110 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+    LazyColumn(
+        modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = Space.screen, end = Space.screen,
+            top = Space.md, bottom = Space.bottomInset
+        ),
+        verticalArrangement = Arrangement.spacedBy(Space.stack)
     ) {
-        Text("الثيم", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        AppTheme.entries.forEach { theme ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RadioButton(
-                    selected = settings.theme == theme,
-                    onClick = { vm.updateSettings { it.copy(theme = theme) } }
-                )
-                Text(theme.label)
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-        Text("العرض", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Switch(
-                checked = settings.showNames,
-                onCheckedChange = { checked -> vm.updateSettings { it.copy(showNames = checked) } }
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("إظهار الأسماء على المسقط")
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Switch(
-                checked = settings.showStatuses,
-                onCheckedChange = { checked -> vm.updateSettings { it.copy(showStatuses = checked) } }
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("تلوين العناصر بحالة الفحص")
-        }
-
-        Spacer(Modifier.height(16.dp))
-        Text("النسخة الاحتياطية", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp)) {
-                Text(
-                    "كل البيانات (الأسماء، الحالات، الكومنتات، تعديلات القيم) متخزنة تلقائي في " +
-                        "قاعدة بيانات محلية (Room) وبتفضل موجودة بعد قفل التطبيق. " +
-                        "التصدير هنا لنسخة JSON احتياطية أو للنقل لموبايل تاني.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(10.dp))
-                Row {
-                    Button(onClick = {
-                        val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.ENGLISH).format(Date())
-                        exportLauncher.launch("corewall-backup-$stamp.json")
-                    }) { Text("تصدير JSON") }
-                    Spacer(Modifier.width(8.dp))
-                    OutlinedButton(onClick = {
-                        importLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
-                    }) { Text("استيراد JSON") }
+        item(key = "appearance-header") { CwSectionHeader("المظهر") }
+        item(key = "theme") {
+            CwCard {
+                Text("الثيم", style = MaterialTheme.typography.titleSmall, color = c.textPrimary)
+                Spacer(Modifier.height(Space.md))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    AppTheme.entries.forEach { theme ->
+                        CwChip(
+                            label = theme.label,
+                            selected = settings.theme == theme,
+                            onClick = { vm.updateSettings { it.copy(theme = theme) } }
+                        )
+                    }
                 }
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "Core Wall QA/QC — نسخة أندرويد Native (Kotlin + Jetpack Compose + Room)",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        item(key = "plan-header") { CwSectionHeader("عرض المسقط") }
+        item(key = "plan") {
+            CwCard(contentPadding = PaddingValues(vertical = Space.xs)) {
+                CwSwitchRow(
+                    title = "إظهار الأكواد على المسقط",
+                    subtitle = "كود كل عنصر يبان جوّه الشكل",
+                    checked = settings.showNames,
+                    onCheckedChange = { v -> vm.updateSettings { it.copy(showNames = v) } },
+                    leading = { CwLeadingIcon(Icons.Filled.Label, tone = CwTone.Info) }
+                )
+                CwSwitchRow(
+                    title = "تلوين العناصر بحالة الفحص",
+                    subtitle = "لمّا يتقفل، العناصر بتتلوّن بفئتها (حائط/كمرة)",
+                    checked = settings.showStatuses,
+                    onCheckedChange = { v -> vm.updateSettings { it.copy(showStatuses = v) } },
+                    leading = { CwLeadingIcon(Icons.Filled.Palette, tone = CwTone.Info) }
+                )
+            }
+        }
+
+        item(key = "assistant-header") { CwSectionHeader("المساعد") }
+        item(key = "assistant") {
+            CwCard(contentPadding = PaddingValues(vertical = Space.xs)) {
+                CwListItem(
+                    title = "إعدادات المساعد الذكي",
+                    subtitle = "المزوّد والموديل ومفتاح الـAPI",
+                    leading = { CwLeadingIcon(Icons.Filled.AutoAwesome, tone = CwTone.Info) },
+                    onClick = { vm.go(Dest.AiSettings) }
+                )
+            }
+        }
+
+        item(key = "data-header") { CwSectionHeader("البيانات") }
+        item(key = "backup") {
+            CwCard {
+                Text("نسخة احتياطية", style = MaterialTheme.typography.titleSmall, color = c.textPrimary)
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    "كل البيانات متخزّنة محلياً على الجهاز وبتفضل بعد قفل التطبيق. " +
+                        "التصدير هنا لنسخة JSON للنقل أو للأمان.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.textTertiary
+                )
+                Spacer(Modifier.height(Space.md))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    CwButton(
+                        "تصدير",
+                        {
+                            val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.ENGLISH).format(Date())
+                            exportLauncher.launch("corewall-backup-$stamp.json")
+                        },
+                        icon = Icons.Filled.Download,
+                        modifier = Modifier.weight(1f)
+                    )
+                    CwButton(
+                        "استيراد",
+                        { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
+                        style = CwButtonStyle.Secondary,
+                        icon = Icons.Filled.Upload,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+        item(key = "system") {
+            CwCard(contentPadding = PaddingValues(vertical = Space.xs)) {
+                CwListItem(
+                    title = "مزامنة البيانات",
+                    subtitle = "حالة المزامنة وآخر مرّة اتعملت",
+                    leading = { CwLeadingIcon(Icons.Filled.CloudSync, tone = CwTone.Info) },
+                    onClick = { vm.go(Dest.Sync) }
+                )
+                CwListItem(
+                    title = "عن التطبيق",
+                    subtitle = "الإصدار والترخيص",
+                    leading = { CwLeadingIcon(Icons.Filled.Info, tone = CwTone.Neutral) },
+                    onClick = { vm.go(Dest.About) }
+                )
+            }
+        }
     }
 }

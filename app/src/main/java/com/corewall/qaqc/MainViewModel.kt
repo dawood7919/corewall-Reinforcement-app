@@ -24,6 +24,9 @@ import com.corewall.qaqc.data.model.PlanElement
 import com.corewall.qaqc.data.model.ScheduleData
 import com.corewall.qaqc.domain.AttentionDiff
 import com.corewall.qaqc.domain.AttentionItem
+import com.corewall.qaqc.domain.FloorSummary
+import com.corewall.qaqc.domain.startOfDay
+import com.corewall.qaqc.domain.startOfToday
 import com.corewall.qaqc.domain.PourReadiness
 import com.corewall.qaqc.domain.ScheduleLogic
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +36,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.corewall.qaqc.ui.nav.DataSection
+import com.corewall.qaqc.ui.nav.Dest
+import com.corewall.qaqc.ui.nav.ManpowerSection
+import com.corewall.qaqc.ui.nav.NavState
+import com.corewall.qaqc.ui.nav.Navigator
 
 enum class Lens(val label: String) {
     REINF("التسليح"),
@@ -40,15 +48,6 @@ enum class Lens(val label: String) {
     DATA("الداتا")
 }
 
-enum class Section(val title: String) {
-    COREWALL("Corewall"),
-    MANPOWER("Manpower")
-}
-
-enum class AppScreen {
-    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, POUR_READINESS,
-    AI_ANALYSIS, AI_SETTINGS, AI_CHAT, AI_KNOWLEDGE, AI_PROJECT_KNOWLEDGE, AI_REPORTS
-}
 
 const val FLOOR_NOTE_ID = "__FLOOR__"
 
@@ -81,26 +80,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val settings: StateFlow<AppSettings> = settingsStore.settings
 
-    private val _section = MutableStateFlow(Section.COREWALL)
-    val section: StateFlow<Section> = _section
-
-    fun setSection(s: Section) {
-        if (_section.value == s) return
-        _section.value = s
-        _tabIndex.value = 0
-        _selectedElementId.value = null
-        _openAttendanceFileId.value = null
-    }
+    /**
+     * الملّاح — المصدر الوحيد لسؤال "أنا فين". بديل الـ٦ آليات تنقّل القديمة.
+     */
+    val navigator = Navigator(Dest.Today)
+    val navState: StateFlow<NavState> = navigator.state
 
     private val _lens = MutableStateFlow(Lens.REINF)
     val lens: StateFlow<Lens> = _lens
 
-    private val _tabIndex = MutableStateFlow(0)
-    val tabIndex: StateFlow<Int> = _tabIndex
+    /** القسم المختار جوّه شاشة الداتا — تبويب داخلي مش تبويب تنقّل. */
+    private val _dataSection = MutableStateFlow(DataSection.FILES)
+    val dataSection: StateFlow<DataSection> = _dataSection
+    fun setDataSection(s: DataSection) { _dataSection.value = s }
 
-    private val tabHistory = ArrayDeque<Int>()
-    private val _canGoBack = MutableStateFlow(false)
-    val canGoBack: StateFlow<Boolean> = _canGoBack
+    /** القسم المختار جوّه شاشة العمالة. */
+    private val _manpowerSection = MutableStateFlow(ManpowerSection.ATTENDANCE)
+    val manpowerSection: StateFlow<ManpowerSection> = _manpowerSection
+    fun setManpowerSection(s: ManpowerSection) { _manpowerSection.value = s }
 
     private val _currentLevel = MutableStateFlow(
         settingsStore.getLastLevel()?.takeIf { it in levels } ?: levels.firstOrNull() ?: "GROUND"
@@ -135,36 +132,54 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (lens != Lens.REINF) _namingMode.value = false
     }
 
+    // ───────────────────────────────────────────────────── التنقّل
+
+    /** فتح وجهة. الشاشات بتنده دي بس — عمرها ما بتلمس المكدّس بنفسها. */
+    fun go(dest: Dest) {
+        if (dest is Dest.Root) selectTab(dest) else navigator.push(dest)
+    }
+
+    fun selectTab(root: Dest.Root) {
+        navigator.selectTab(root)
+        _selectedElementId.value = null
+    }
+
+    /** فتح المسقط على عدسة معيّنة. */
     fun goToLens(lens: Lens) {
-        setSection(Section.COREWALL)
         setLens(lens)
-        setTabIndex(1)
+        selectTab(Dest.Plan)
     }
 
-    fun goToManpower() {
-        setSection(Section.MANPOWER)
-        setTabIndex(0)
+    /** فتح الداتا على قسم معيّن. */
+    fun goToData(section: DataSection) {
+        _dataSection.value = section
+        selectTab(Dest.Data)
     }
 
-    fun goToCorewallTab(index: Int) {
-        setSection(Section.COREWALL)
-        setTabIndex(index)
+    fun goToManpower(section: ManpowerSection = ManpowerSection.ATTENDANCE) {
+        _manpowerSection.value = section
+        navigator.push(Dest.Manpower)
     }
 
-    fun setTabIndex(index: Int) {
-        if (index == _tabIndex.value) return
-        tabHistory.addLast(_tabIndex.value)
-        if (tabHistory.size > 24) tabHistory.removeFirst()
-        _tabIndex.value = index
-        _canGoBack.value = true
+    /**
+     * الرجوع — قاعدة واحدة بدل الـcascade القديم بـ٩ فروع.
+     * بتنضّف بيانات الوجهة اللي اتقفلت عشان ما تفضلش معلّقة.
+     */
+    fun back(): Boolean = when (val r = navigator.pop()) {
+        is Navigator.PopResult.Popped -> { onDestClosed(r.dest); true }
+        is Navigator.PopResult.SwitchedTab -> true
+        Navigator.PopResult.Exhausted -> false
     }
 
-    fun popTab(): Boolean {
-        val prev = tabHistory.removeLastOrNull() ?: return false
-        _tabIndex.value = prev
-        _canGoBack.value = tabHistory.isNotEmpty()
-        return true
+    /** قفل الوجهة الحالية (زرار الرجوع في الشريط العلوي). */
+    fun closeCurrent() { back() }
+
+    private fun onDestClosed(dest: Dest) {
+        if (dest is Dest.NoteEditor) _editingNote.value = null
     }
+
+    /** هل زرار الرجوع هيعمل حاجة جوّه التطبيق؟ */
+    val canGoBack: StateFlow<Boolean> = navigator.canGoBack
 
     fun setLevel(level: String) {
         if (level in levels) {
@@ -322,7 +337,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun closeNoteEditor() { _editingNote.value = null }
+    fun closeNoteEditor() { navigator.dismiss(Dest.NoteEditor); _editingNote.value = null }
 
     fun saveNote(note: NoteEntity) {
         viewModelScope.launch {
@@ -347,8 +362,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _viewingImage = MutableStateFlow<String?>(null)
     val viewingImage: StateFlow<String?> = _viewingImage
-    fun openImage(path: String) { _viewingImage.value = path }
-    fun closeImage() { _viewingImage.value = null }
+    fun openImage(path: String) { navigator.push(Dest.ImageViewer(path)) }
+    fun closeImage() { back() }
 
     // -------- Site Photos --------
 
@@ -929,44 +944,54 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** اسم الشاشة المفتوحة — بيتبعت للوكيل عشان يعرف إنت فين. */
-    private fun currentScreenName(): String = when (val s = _appScreen.value) {
-        null -> when (_section.value) {
-            Section.COREWALL -> when (_tabIndex.value) {
-                0 -> "الرئيسية (Mission Control)"
-                1 -> "المسقط — عدسة ${_lens.value.label}"
-                2 -> "الملفات"
-                3 -> "المهام"
-                else -> "الإعدادات"
-            }
-            Section.MANPOWER -> when (_tabIndex.value) {
-                0 -> "العمالة — الحضور"
-                1 -> "العمالة — التقارير"
-                2 -> "العمالة — الإحصائيات"
-                else -> "الإعدادات"
-            }
+    private fun currentScreenName(): String {
+        val st = navState.value
+        val base = when (st.tab) {
+            Dest.Plan -> "المسقط — عدسة ${_lens.value.label}"
+            Dest.Data -> "الداتا — ${_dataSection.value.label}"
+            else -> st.tab.title
         }
-        else -> "شاشة ${s.name}"
+        val top = st.stack.lastOrNull() ?: return base
+        val detail = if (top == Dest.Manpower) "العمالة — ${_manpowerSection.value.label}" else top.title
+        return "$base › $detail"
     }
 
-    /** بيفتح شاشة بالاسم — الأسماء دي هي اللي الوكيل بيعرفها. */
+    /**
+     * بيفتح وجهة بالاسم — دي الأسماء اللي الوكيل بيعرفها.
+     *
+     * قبل كده الوكيل كان يقدر يوصل ١٣ وجهة بس من أصل ٣٥، فنموذج التنقّل نفسه
+     * كان هو السقف على قدرته. دلوقتي كل وجهة متاحة.
+     */
     private fun navigateTo(screen: String): Boolean {
-        when (screen.trim().uppercase()) {
-            "HOME", "DASHBOARD" -> { setSection(Section.COREWALL); setTabIndex(0) }
-            "PLAN", "SCHEDULE", "ATTENTION" -> goToLens(Lens.REINF)
-            "COUNTING" -> goToLens(Lens.COUNT)
-            "FILES" -> { setSection(Section.COREWALL); setTabIndex(2) }
-            "TASKS" -> { setSection(Section.COREWALL); setTabIndex(3) }
-            "MANPOWER" -> goToManpower()
-            "NOTES" -> openAppScreen(AppScreen.FLOOR_NOTES)
-            "PHOTOS" -> openAppScreen(AppScreen.SITE_PHOTOS)
-            "POUR", "POUR_READINESS" -> openAppScreen(AppScreen.POUR_READINESS)
-            "KNOWLEDGE" -> openAppScreen(AppScreen.AI_KNOWLEDGE)
-            "PROJECT_KNOWLEDGE", "LIBRARY" -> openAppScreen(AppScreen.AI_PROJECT_KNOWLEDGE)
-            "REPORTS" -> openAppScreen(AppScreen.AI_REPORTS)
-            "CHAT" -> openAppScreen(AppScreen.AI_CHAT)
-            "SETTINGS" -> openAppScreen(AppScreen.SETTINGS)
+        val dest: Dest = when (screen.trim().uppercase()) {
+            "HOME", "DASHBOARD", "TODAY" -> Dest.Today
+            "PLAN", "SCHEDULE" -> { goToLens(Lens.REINF); return true }
+            "COUNTING" -> { goToLens(Lens.COUNT); return true }
+            "FILES" -> { goToData(DataSection.FILES); return true }
+            "TASKS" -> { goToData(DataSection.TASKS); return true }
+            "NOTES" -> { goToData(DataSection.NOTES); return true }
+            "PHOTOS" -> { goToData(DataSection.PHOTOS); return true }
+            "MANPOWER" -> { goToManpower(); return true }
+            "CHECKS", "ANALYSIS" -> Dest.Checks
+            "ATTENTION", "GAPS" -> Dest.Gaps
+            "COUNTING_REPORT" -> Dest.CountingReport
+            "TOOLS" -> Dest.Tools
+            "FLOOR_ANALYSIS", "AI_ANALYSIS" -> Dest.FloorAnalysis
+            "POUR", "POUR_READINESS" -> Dest.PourReadiness
+            "KNOWLEDGE" -> Dest.FloorKnowledge
+            "PROJECT_KNOWLEDGE", "LIBRARY" -> Dest.ProjectKnowledge
+            "REPORTS", "DOCUMENTS" -> Dest.DocumentGen
+            "CHAT", "ASSISTANT" -> Dest.Assistant
+            "AI_SETTINGS" -> Dest.AiSettings
+            "NOTIFICATIONS" -> Dest.Notifications
+            "SETTINGS" -> Dest.Settings
+            "SYNC" -> Dest.Sync
+            "ABOUT" -> Dest.About
+            "FLOOR_NOTES" -> Dest.FloorNotes
+            "SITE_PHOTOS" -> Dest.SitePhotos
             else -> return false
         }
+        go(dest)
         return true
     }
 
@@ -1112,10 +1137,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settingsStore.switchAiProvider(provider)
 
     /** شاشة ملء-الشاشة الحالية (إشعارات/إعدادات/مزامنة/عن) — من القائمة الجانبية. */
-    private val _appScreen = MutableStateFlow<AppScreen?>(null)
-    val appScreen: StateFlow<AppScreen?> = _appScreen
-    fun openAppScreen(screen: AppScreen) { _appScreen.value = screen }
-    fun closeAppScreen() { _appScreen.value = null }
+
 
     private val _unreadNotifications = MutableStateFlow(0)
     val unreadNotifications: StateFlow<Int> = _unreadNotifications
@@ -1131,10 +1153,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val dailyAttendance: StateFlow<List<DailyAttendanceEntity>> = repo.dailyAttendance
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    private val _openAttendanceFileId = MutableStateFlow<Long?>(null)
-    val openAttendanceFileId: StateFlow<Long?> = _openAttendanceFileId
-    fun openAttendanceFile(id: Long) { _openAttendanceFileId.value = id }
-    fun closeAttendanceFile() { _openAttendanceFileId.value = null }
+    fun openAttendanceFile(id: Long) { navigator.push(Dest.AttendanceFile(id)) }
+    fun closeAttendanceFile() { back() }
 
     fun saveAttendanceFile(file: AttendanceFileEntity) {
         val bound = if (file.id == 0L) file.copy(level = _currentLevel.value) else file
@@ -1144,7 +1164,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteAttendanceFile(id: Long) {
         viewModelScope.launch {
             repo.deleteAttendanceFile(id)
-            if (_openAttendanceFileId.value == id) _openAttendanceFileId.value = null
+            if ((navigator.current as? Dest.AttendanceFile)?.id == id) back()
         }
     }
 
@@ -1158,11 +1178,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // -------- عارض PDF الداخلي --------
 
-    private val _openPdfPath = MutableStateFlow<String?>(null)
-    val openPdfPath: StateFlow<String?> = _openPdfPath
 
-    fun openPdf(path: String) { _openPdfPath.value = path }
-    fun closePdf() { _openPdfPath.value = null }
+    fun openPdf(path: String) { navigator.push(Dest.PdfViewer(path)) }
+    fun closePdf() { back() }
 
     val pdfAnnotations: StateFlow<List<PdfAnnotationEntity>> = repo.pdfAnnotations
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -1181,13 +1199,69 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // -------- عارض CAD (DXF/DWG قياس) --------
 
-    private val _openCadPath = MutableStateFlow<String?>(null)
-    val openCadPath: StateFlow<String?> = _openCadPath
 
-    fun openCad(path: String) { _openCadPath.value = path }
-    fun closeCad() { _openCadPath.value = null }
+    fun openCad(path: String) { navigator.push(Dest.CadViewer(path)) }
+    fun closeCad() { back() }
 
     // ---------- Derived ----------
+
+    // ------------------------------------------------------- ملخّص الدور
+
+    private data class FloorCore(
+        val level: String,
+        val names: Map<String, String>,
+        val inspections: Map<Pair<String, String>, String>,
+        val schedule: ScheduleData
+    )
+
+    private data class FloorWork(val openTasks: Int, val doneTasks: Int, val notes: Int, val photos: Int)
+
+    private data class Crew(val workers: Int, val foremen: Int, val engineers: Int)
+
+    /**
+     * ملخّص الدور — محسوب هنا مرّة واحدة وكل الشاشات بتقراه.
+     * القاعدة: احسب في الـViewModel، الشاشة تعرض بس.
+     */
+    val floorSummary: StateFlow<FloorSummary> = run {
+        val core = combine(_currentLevel, names, inspections, schedule) { l, n, i, s ->
+            FloorCore(l, n, i, s)
+        }
+        val work = combine(_currentLevel, tasks, notes, sitePhotos) { l, t, n, p ->
+            FloorWork(
+                openTasks = t.count { it.level == l && !it.done },
+                doneTasks = t.count { it.level == l && it.done },
+                notes = n.count { it.level == l },
+                photos = p.count { it.level == l }
+            )
+        }
+        val crew = combine(dailyAttendance, attendanceFiles) { daily, files ->
+            val ids = files.map { it.id }.toSet()
+            val today = startOfToday()
+            val rows = daily.filter { it.fileId in ids && startOfDay(it.date) == today }
+            Crew(
+                workers = rows.sumOf { it.workers },
+                foremen = rows.sumOf { it.foremen },
+                engineers = rows.sumOf { it.engineers }
+            )
+        }
+        combine(core, work, crew) { c, w, k ->
+            FloorSummary.compute(
+                level = c.level,
+                elements = planData.elements,
+                names = c.names,
+                inspections = c.inspections,
+                schedule = c.schedule,
+                logic = logic,
+                openTasks = w.openTasks,
+                doneTasks = w.doneTasks,
+                notes = w.notes,
+                photos = w.photos,
+                workers = k.workers,
+                foremen = k.foremen,
+                engineers = k.engineers
+            )
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, FloorSummary.EMPTY)
+    }
 
     // ---------------------------------------------------------------- جاهزية الصبّ
 
