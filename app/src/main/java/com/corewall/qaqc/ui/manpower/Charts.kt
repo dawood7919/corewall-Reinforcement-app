@@ -26,17 +26,24 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlin.math.min
+import com.corewall.qaqc.ui.design.LocalCwColors
 
-/** ألوان ثابتة لعناصر الرسوم (متناسقة مع الموك أب). */
-val CHART_COLORS = listOf(
-    Color(0xFF5B66D6), Color(0xFF37B98A), Color(0xFFE8890C), Color(0xFFE53935),
-    Color(0xFF8E44AD), Color(0xFF2980B9), Color(0xFF16A085), Color(0xFFD64545)
-)
+/**
+ * ألوان السلاسل — من اللوحة، مش قايمة مستقلة.
+ *
+ * دي كانت آخر مجموعة ألوان موازية في التطبيق: ٨ درجات متختارة عشان تطابق
+ * موك أب، من غير أي فحص لعمى الألوان ولا للتباين على الأسطح الغامقة.
+ * سلسلة اللوحة اتفحصت بمحاكاة protan/deutan/tritan على الأسطح التلاتة،
+ * وترتيبها جزء من الفحص — عشان كده بنقراها زي ما هي.
+ */
+@Composable
+fun chartColors(): List<Color> = LocalCwColors.current.series
 
 /** رسم دائري (Donut) بنِسَب + مفتاح (Legend). */
 @Composable
 fun DonutChart(data: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
     val total = data.sumOf { it.second }.coerceAtLeast(1)
+    val colors = chartColors()
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Canvas(Modifier.size(130.dp).padding(6.dp)) {
             var start = -90f
@@ -45,7 +52,7 @@ fun DonutChart(data: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
             data.forEachIndexed { i, (_, v) ->
                 val sweep = 360f * v / total
                 drawArc(
-                    color = CHART_COLORS[i % CHART_COLORS.size],
+                    color = colors[i % colors.size],
                     startAngle = start,
                     sweepAngle = sweep - 2f,
                     useCenter = false,
@@ -60,7 +67,7 @@ fun DonutChart(data: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
         Column {
             data.forEachIndexed { i, (label, v) ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
-                    Box(Modifier.size(10.dp).background(CHART_COLORS[i % CHART_COLORS.size], CircleShape))
+                    Box(Modifier.size(10.dp).background(colors[i % colors.size], CircleShape))
                     Spacer(Modifier.width(6.dp))
                     Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(90.dp), maxLines = 1)
                     Text("${(v * 100 / total)}%", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)

@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.data.db.AttendanceFileEntity
 import com.corewall.qaqc.data.db.DailyAttendanceEntity
 import com.corewall.qaqc.ui.EmptyState
@@ -196,10 +197,10 @@ private fun DailyCard(
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Metric("👷", "${rec.workers}", "عمال", MaterialTheme.colorScheme.primary)
-                Metric("🦺", "${rec.foremen}", "مشرفين", Color(0xFFE8890C))
-                if (rec.engineers > 0) Metric("👨‍💼", "${rec.engineers}", "مهندسين", Color(0xFF2980B9))
-                if (rec.supervisors > 0) Metric("🔎", "${rec.supervisors}", "مراقبين", Color(0xFF8E44AD))
-                if (rec.overtimeHours > 0) Metric("🕒", "${rec.overtimeHours}", "س. إضافي", Color(0xFF37B98A))
+                Metric("🦺", "${rec.foremen}", "مشرفين", LocalCwColors.current.series(1))
+                if (rec.engineers > 0) Metric("👨‍💼", "${rec.engineers}", "مهندسين", LocalCwColors.current.series(5))
+                if (rec.supervisors > 0) Metric("🔎", "${rec.supervisors}", "مراقبين", LocalCwColors.current.series(6))
+                if (rec.overtimeHours > 0) Metric("🕒", "${rec.overtimeHours}", "س. إضافي", LocalCwColors.current.series(2))
             }
             if (rec.remarks.isNotBlank()) {
                 Spacer(Modifier.height(10.dp))

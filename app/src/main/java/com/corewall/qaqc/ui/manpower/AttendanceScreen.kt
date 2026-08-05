@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.data.db.AttendanceFileEntity
 import com.corewall.qaqc.ui.EmptyState
 
@@ -120,14 +121,17 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             ) {
                 if (files.isNotEmpty()) {
                     item(key = "__health__") {
+                        // الألوان من سلسلة اللوحة بالترتيب — كانت ٦ قيم مكتوبة
+                        // بالإيد ومالهاش علاقة بأي نظام، وتلاتة منهم ساقطين تباين.
+                        val cw = LocalCwColors.current
                         HealthGrid(
                             listOf(
-                                HealthMetric("العمال", workersToday, Icons.Filled.Groups, Color(0xFF3A6EF0)),
-                                HealthMetric("الفورمان", foremenToday, Icons.Filled.Badge, Color(0xFFFF9500)),
-                                HealthMetric("المهندسين", engineersToday, Icons.Filled.Engineering, Color(0xFF34C759)),
-                                HealthMetric("المساعدين", helpersToday, Icons.Filled.People, Color(0xFFAF52DE)),
-                                HealthMetric("إجمالي العمالة", totalLaborToday, Icons.Filled.Groups, Color(0xFF2980B9)),
-                                HealthMetric("الشركات", companiesActive, Icons.Filled.Apartment, Color(0xFFE53935))
+                                HealthMetric("العمال", workersToday, Icons.Filled.Groups, cw.series(0)),
+                                HealthMetric("الفورمان", foremenToday, Icons.Filled.Badge, cw.series(1)),
+                                HealthMetric("المهندسين", engineersToday, Icons.Filled.Engineering, cw.series(2)),
+                                HealthMetric("المساعدين", helpersToday, Icons.Filled.People, cw.series(6)),
+                                HealthMetric("إجمالي العمالة", totalLaborToday, Icons.Filled.Groups, cw.series(5)),
+                                HealthMetric("الشركات", companiesActive, Icons.Filled.Apartment, cw.series(7))
                             )
                         )
                         Spacer(Modifier.height(4.dp))
@@ -280,7 +284,7 @@ private fun AttendanceFileCard(
                         Text("عامل النهاردة", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Column {
-                        Text("$foremenToday", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFFE8890C))
+                        Text("$foremenToday", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = LocalCwColors.current.warning.fg)
                         Text("مشرف", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Spacer(Modifier.weight(1f))

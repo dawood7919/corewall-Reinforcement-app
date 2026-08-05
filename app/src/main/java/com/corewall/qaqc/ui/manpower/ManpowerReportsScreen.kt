@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.EmptyState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -103,14 +104,14 @@ fun ManpowerReportsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatCard("إجمالي العمال", "$totalWorkers", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                StatCard("إجمالي المشرفين", "$totalForemen", Color(0xFFE8890C), Modifier.weight(1f))
+                StatCard("إجمالي المشرفين", "$totalForemen", LocalCwColors.current.series(1), Modifier.weight(1f))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatCard("متوسط/يوم", "%.0f".format(avg), Color(0xFF37B98A), Modifier.weight(1f))
-                StatCard("أعلى", "$maxW", Color(0xFF2980B9), Modifier.weight(1f))
-                StatCard("أقل", "$minW", Color(0xFF8E44AD), Modifier.weight(1f))
+                StatCard("متوسط/يوم", "%.0f".format(avg), LocalCwColors.current.series(2), Modifier.weight(1f))
+                StatCard("أعلى", "$maxW", LocalCwColors.current.series(5), Modifier.weight(1f))
+                StatCard("أقل", "$minW", LocalCwColors.current.series(6), Modifier.weight(1f))
             }
         }
         item {

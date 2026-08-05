@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.EmptyState
 
 @Composable
@@ -83,8 +84,8 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MiniStat("ذروة العمالة", "$peak", Color(0xFFE53935), Modifier.weight(1f))
-                MiniStat("متوسط العمالة", "%.0f".format(avg), Color(0xFF37B98A), Modifier.weight(1f))
+                MiniStat("ذروة العمالة", "$peak", LocalCwColors.current.danger.fg, Modifier.weight(1f))
+                MiniStat("متوسط العمالة", "%.0f".format(avg), LocalCwColors.current.success.fg, Modifier.weight(1f))
             }
         }
         item {
@@ -118,6 +119,7 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         if (topCompanies.isNotEmpty()) {
             item {
                 ChartCard("أعلى 5 شركات") {
+                    val colors = chartColors()
                     Column {
                         topCompanies.forEachIndexed { i, (company, workers) ->
                             Row(
@@ -126,7 +128,7 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                             ) {
                                 Box(
                                     Modifier.size(26.dp).background(
-                                        CHART_COLORS[i % CHART_COLORS.size].copy(alpha = 0.15f),
+                                        colors[i % colors.size].copy(alpha = 0.15f),
                                         RoundedCornerShape(8.dp)
                                     ),
                                     contentAlignment = androidx.compose.ui.Alignment.Center
@@ -135,7 +137,7 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                                         "${i + 1}",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = CHART_COLORS[i % CHART_COLORS.size]
+                                        color = colors[i % colors.size]
                                     )
                                 }
                                 Spacer(Modifier.width(10.dp))

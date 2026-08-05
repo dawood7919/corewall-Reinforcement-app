@@ -36,6 +36,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.corewall.qaqc.ui.design.CwTone
+import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.semantic
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -52,7 +55,7 @@ fun rememberInlineColors(): InlineColors {
     return InlineColors(
         code = cs.primary,
         codeBg = cs.surfaceVariant,
-        highlight = Color(0xFFFFE9A8),
+        highlight = LocalCwColors.current.warning.container,
         tag = cs.primary,
         tagBg = cs.primaryContainer,
         mention = cs.tertiary,
@@ -161,34 +164,48 @@ fun NoteContent(
     }
 }
 
-private fun calloutStyle(kind: CalloutKind): Triple<Color, Color, ImageVector> = when (kind) {
-    CalloutKind.INFO -> Triple(Color(0xFF2F80ED), Color(0x142F80ED), Icons.Filled.Info)
-    CalloutKind.WARNING -> Triple(Color(0xFFE8890C), Color(0x14E8890C), Icons.Filled.Warning)
-    CalloutKind.DANGER -> Triple(Color(0xFFE53935), Color(0x14E53935), Icons.Filled.Dangerous)
-    CalloutKind.INSPECTION -> Triple(Color(0xFF8E44AD), Color(0x148E44AD), Icons.Filled.Search)
-    CalloutKind.APPROVED -> Triple(Color(0xFF2E9E5B), Color(0x142E9E5B), Icons.Filled.CheckCircle)
-    CalloutKind.REJECTED -> Triple(Color(0xFFD64545), Color(0x14D64545), Icons.Filled.Dangerous)
+/**
+ * نبرة الكولاوت. كانت ٦ ألوان مكتوبة بالإيد بخلفية alpha 8% — والخلفية
+ * الشفافة دي كانت بتخلّي التباين يتغيّر حسب اللي وراها. دلوقتي كل نوع
+ * بياخد نبرة من اللوحة بحاوية مصمتة متفحوصة.
+ */
+private fun toneOfCallout(kind: CalloutKind): CwTone = when (kind) {
+    CalloutKind.INFO -> CwTone.Info
+    CalloutKind.WARNING -> CwTone.Warning
+    CalloutKind.DANGER -> CwTone.Danger
+    CalloutKind.INSPECTION -> CwTone.Pending
+    CalloutKind.APPROVED -> CwTone.Success
+    CalloutKind.REJECTED -> CwTone.Danger
+}
+
+private fun iconOfCallout(kind: CalloutKind): ImageVector = when (kind) {
+    CalloutKind.INFO -> Icons.Filled.Info
+    CalloutKind.WARNING -> Icons.Filled.Warning
+    CalloutKind.DANGER -> Icons.Filled.Dangerous
+    CalloutKind.INSPECTION -> Icons.Filled.Search
+    CalloutKind.APPROVED -> Icons.Filled.CheckCircle
+    CalloutKind.REJECTED -> Icons.Filled.Dangerous
 }
 
 @Composable
 private fun CalloutCard(b: NoteBlock.Callout, ic: InlineColors) {
-    val (accent, bg, icon) = calloutStyle(b.kind)
+    val tone = toneOfCallout(b.kind)
+    val s = tone.semantic()
+    val icon = iconOfCallout(b.kind)
     Surface(
-        color = bg,
+        color = s.container,
         shape = RoundedCornerShape(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(Modifier.padding(12.dp)) {
-            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = null, tint = s.onContainer, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             Column {
                 Text(
                     b.title.ifBlank { b.kind.label },
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = accent
+                    color = s.onContainer
                 )
                 b.body.forEach {
                     if (it.isNotBlank()) Text(inlineAnnotated(it, ic), style = MaterialTheme.typography.bodyMedium)
@@ -284,7 +301,7 @@ fun FileAttachmentCard(path: String, onOpen: () -> Unit) {
                         Icon(
                             if (isPdf) Icons.Filled.PictureAsPdf else Icons.Filled.InsertDriveFile,
                             contentDescription = null,
-                            tint = if (isPdf) Color(0xFFE53935) else MaterialTheme.colorScheme.primary
+                            tint = if (isPdf) LocalCwColors.current.danger.fg else MaterialTheme.colorScheme.primary
                         )
                     }
                 }
