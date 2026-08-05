@@ -193,9 +193,9 @@ object SuggestionEngine {
             out += Suggestion(
                 id = "readiness",
                 title = "الدور جاهز للصبّة؟",
-                detail = "مراجعة الفحوصات والفجوات والعناصر الناقصة.",
+                detail = "افتح شاشة الجاهزية — الحكم محسوب بالكامل.",
                 severity = Suggestion.Severity.IDEA,
-                prompt = "هل دور $level جاهز للصبّة؟ راجع كل حاجة ناقصة."
+                prompt = "هل دور $level جاهز للصبّة؟"
             )
         }
 

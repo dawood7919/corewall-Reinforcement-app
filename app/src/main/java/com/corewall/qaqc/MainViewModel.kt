@@ -24,6 +24,7 @@ import com.corewall.qaqc.data.model.PlanElement
 import com.corewall.qaqc.data.model.ScheduleData
 import com.corewall.qaqc.domain.AttentionDiff
 import com.corewall.qaqc.domain.AttentionItem
+import com.corewall.qaqc.domain.PourReadiness
 import com.corewall.qaqc.domain.ScheduleLogic
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,10 +46,24 @@ enum class Section(val title: String) {
 }
 
 enum class AppScreen {
-    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, AI_ANALYSIS, AI_SETTINGS, AI_CHAT, AI_KNOWLEDGE, AI_REPORTS
+    NOTIFICATIONS, SETTINGS, SYNC, ABOUT, FLOOR_NOTES, SITE_PHOTOS, POUR_READINESS,
+    AI_ANALYSIS, AI_SETTINGS, AI_CHAT, AI_KNOWLEDGE, AI_REPORTS
 }
 
 const val FLOOR_NOTE_ID = "__FLOOR__"
+
+/**
+ * مدخلات حساب جاهزية الصبّ.
+ * `combine` بياخد 5 تدفّقات كحد أقصى في الـoverload المكتوب النوع،
+ * فبنلمّهم في حاجة واحدة بدل ما نلجأ لنسخة الـArray غير الآمنة نوعياً.
+ */
+private data class PourReadinessInputs(
+    val level: String,
+    val inspections: Map<Pair<String, String>, String>,
+    val names: Map<String, String>,
+    val schedule: ScheduleData,
+    val barCounts: List<BarCountEntity>
+)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -828,6 +843,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             "MANPOWER" -> goToManpower()
             "NOTES" -> openAppScreen(AppScreen.FLOOR_NOTES)
             "PHOTOS" -> openAppScreen(AppScreen.SITE_PHOTOS)
+            "POUR", "POUR_READINESS" -> openAppScreen(AppScreen.POUR_READINESS)
             "KNOWLEDGE" -> openAppScreen(AppScreen.AI_KNOWLEDGE)
             "REPORTS" -> openAppScreen(AppScreen.AI_REPORTS)
             "CHAT" -> openAppScreen(AppScreen.AI_CHAT)
@@ -1055,6 +1071,52 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun closeCad() { _openCadPath.value = null }
 
     // ---------- Derived ----------
+
+    // ---------------------------------------------------------------- جاهزية الصبّ
+
+    /**
+     * جاهزية الدور للصبّ — محسوبة من كل مصادر البيانات مع بعض.
+     * بتتحدّث لوحدها مع أي تغيير في الفحوصات أو العدّ أو الصور أو المهام،
+     * فالحكم اللي على الشاشة عمره ما يكون قديم.
+     */
+    val pourReadiness: StateFlow<PourReadiness.Result> =
+        combine(
+            _currentLevel, inspections, names, schedule, barCounts
+        ) { level, insp, nm, sched, counts ->
+            PourReadinessInputs(level, insp, nm, sched, counts)
+        }.combine(sitePhotos) { a, photos -> a to photos }
+            .combine(tasks) { (a, photos), tsk ->
+                PourReadiness.evaluate(
+                    level = a.level,
+                    elements = planData.elements,
+                    names = a.names,
+                    inspections = a.inspections,
+                    schedule = a.schedule,
+                    logic = logic,
+                    barCounts = a.barCounts,
+                    photoCount = photos.count { it.level == a.level },
+                    openTasks = tsk.count { it.level == a.level && !it.done }
+                )
+            }
+            .stateIn(
+                viewModelScope, SharingStarted.Eagerly,
+                PourReadiness.Result(_currentLevel.value, 0, 0, 0, emptyList())
+            )
+
+    /** بيحفظ ملخّص الجاهزية كملف نصّي ويشاركه. */
+    fun sharePourReadiness() {
+        viewModelScope.launch {
+            val r = pourReadiness.value
+            val file = withContext(Dispatchers.IO) {
+                runCatching {
+                    val dir = files.levelDir(r.level)
+                    java.io.File(dir, "جاهزية-الصب-${r.level}-${System.currentTimeMillis()}.txt")
+                        .apply { writeText(PourReadiness.summarize(r)) }
+                }.getOrNull()
+            }
+            file?.let { files.share(it) }
+        }
+    }
 
     fun attentionFor(level: String): List<AttentionItem> =
         AttentionDiff.attentionFor(schedule.value, logic, level)

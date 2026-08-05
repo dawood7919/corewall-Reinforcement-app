@@ -89,6 +89,12 @@ object AgentTools {
             listOf(arg("callout", "string", "نص الكولاوت", required = true))
         ),
         AgentTool(
+            "pour_readiness", ToolRisk.READ,
+            "هل الدور جاهز للصبّ؟ بيرجّع الحكم مع الموانع والتحذيرات والعناصر المعنية. " +
+                "استخدمها لأي سؤال عن الجاهزية أو \"ينفع نصبّ؟\" — متجمّعش الإجابة بنفسك من أدوات تانية.",
+            listOf(arg("level", "string", "الدور"))
+        ),
+        AgentTool(
             "get_bar_counts", ToolRisk.READ,
             "عدّ الأسياخ المسجّل من الموقع في دور، ومقارنته بالرسمة.",
             listOf(arg("level", "string", "الدور"))
@@ -151,7 +157,7 @@ object AgentTools {
         AgentTool(
             "open_screen", ToolRisk.NAVIGATE,
             "فتح شاشة للمستخدم. القيم: HOME|PLAN|SCHEDULE|ATTENTION|COUNTING|FILES|TASKS|NOTES|" +
-                "PHOTOS|MANPOWER|KNOWLEDGE|REPORTS|DASHBOARD|SETTINGS",
+                "PHOTOS|POUR|MANPOWER|KNOWLEDGE|REPORTS|DASHBOARD|SETTINGS",
             listOf(arg("screen", "string", "اسم الشاشة", required = true))
         ),
         AgentTool(

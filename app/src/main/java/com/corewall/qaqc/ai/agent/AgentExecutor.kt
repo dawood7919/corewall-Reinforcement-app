@@ -43,6 +43,7 @@ class AgentExecutor(
                 "get_plan_geometry" -> planGeometry(level(action))
                 "steel_quantity" -> steelQuantity(action.str("callout"))
                 "get_bar_counts" -> barCounts(level(action))
+                "pour_readiness" -> pourReadiness(level(action))
 
                 "list_files" -> listFiles(level(action), action.str("path"))
                 "read_file" -> readFile(action.str("path"))
@@ -267,6 +268,26 @@ class AgentExecutor(
             }
         }
         return ok("get_bar_counts", text)
+    }
+
+    /**
+     * الجاهزية بتتحسب بنفس الدالة اللي الشاشة بتعرضها — مصدر حقيقة واحد.
+     * لو الوكيل جمّع الإجابة من أدوات منفصلة، ممكن يخالف الشاشة، والمهندس
+     * يشوف حكمين مختلفين لنفس الدور.
+     */
+    private fun pourReadiness(level: String): ToolOutcome {
+        val r = com.corewall.qaqc.domain.PourReadiness.evaluate(
+            level = level,
+            elements = host.planData.elements,
+            names = host.names,
+            inspections = host.inspections,
+            schedule = host.schedule,
+            logic = host.logic,
+            barCounts = host.barCounts,
+            photoCount = host.sitePhotos.count { it.level == level },
+            openTasks = host.tasks.count { it.level == level && !it.done }
+        )
+        return ok("pour_readiness", com.corewall.qaqc.domain.PourReadiness.summarize(r))
     }
 
     // ------------------------------------------------------------ الملفات والمعرفة

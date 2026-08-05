@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.UploadFile
@@ -226,6 +227,7 @@ fun MissionControlScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         SectionTitle("إجراءات سريعة")
         Spacer(Modifier.height(8.dp))
         QuickActions(
+            onPour = { vm.openAppScreen(com.corewall.qaqc.AppScreen.POUR_READINESS) },
             onPlan = { vm.setLens(Lens.REINF); vm.setTabIndex(1) },
             onNote = { vm.openAppScreen(com.corewall.qaqc.AppScreen.FLOOR_NOTES) },
             onAttendance = { vm.goToManpower() },
@@ -637,6 +639,7 @@ private fun Badge(text: String, icon: ImageVector) {
 
 @Composable
 private fun QuickActions(
+    onPour: () -> Unit,
     onPlan: () -> Unit,
     onNote: () -> Unit,
     onAttendance: () -> Unit,
@@ -645,6 +648,8 @@ private fun QuickActions(
 ) {
     val srt = LocalSrtColors.current
     val actions = listOf(
+        // الأول عن قصد — ده أهم سؤال في اليوم
+        QA("جاهز للصبّ؟", Icons.Filled.Verified, srt.green, onPour),
         QA("المسقط", Icons.Filled.Map, srt.blue, onPlan),
         QA("ملاحظة", Icons.Filled.NoteAdd, srt.green, onNote),
         QA("حضور", Icons.Filled.Groups, srt.orange, onAttendance),

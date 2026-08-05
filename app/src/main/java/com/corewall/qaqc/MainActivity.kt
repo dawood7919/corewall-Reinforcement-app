@@ -203,6 +203,7 @@ fun MainScreen(vm: MainViewModel) {
             AppScreen.SYNC -> "مزامنة البيانات" to { vm.closeAppScreen() }
             AppScreen.FLOOR_NOTES -> "ملاحظات الدور" to { vm.closeAppScreen() }
             AppScreen.SITE_PHOTOS -> "Site Photos · ${vm.currentLevel.value}" to { vm.closeAppScreen() }
+            AppScreen.POUR_READINESS -> "جاهزية الصبّ" to { vm.closeAppScreen() }
             AppScreen.AI_ANALYSIS -> "التحليل الذكي" to { vm.closeAppScreen() }
             AppScreen.AI_CHAT -> "المساعد الهندسي" to { vm.closeAppScreen() }
             AppScreen.AI_KNOWLEDGE -> "ذاكرة المشروع" to { vm.closeAppScreen() }
@@ -217,6 +218,7 @@ fun MainScreen(vm: MainViewModel) {
                 AppScreen.SYNC -> SyncScreen(vm, inner)
                 AppScreen.FLOOR_NOTES -> FloorNotesScreen(vm, inner)
                 AppScreen.SITE_PHOTOS -> SitePhotosScreen(vm, inner)
+                AppScreen.POUR_READINESS -> com.corewall.qaqc.ui.pour.PourReadinessScreen(vm, inner)
                 AppScreen.AI_ANALYSIS -> AiAnalysisScreen(vm, inner)
                 AppScreen.AI_CHAT -> AiChatScreen(vm, inner)
                 AppScreen.AI_KNOWLEDGE -> KnowledgeScreen(vm, inner)
