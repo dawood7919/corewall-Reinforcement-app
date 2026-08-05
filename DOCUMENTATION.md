@@ -1,7 +1,7 @@
 # Core Wall QA/QC — الدليل الكامل
 
 > تطبيق أندرويد أصلي لمتابعة تنفيذ الكور وول في الأبراج العالية.
-> **الإصدار 7.0 (Build 27)** · مشروع BHR Tower 1 — Baccarat Hotel & Residences
+> **الإصدار 7.1 (Build 28)** · مشروع BHR Tower 1 — Baccarat Hotel & Residences
 > · تنفيذ Arabian Construction Co.
 
 ---
@@ -280,12 +280,13 @@ Barlow Condensed (أرقام البرج).
 
 ### 6.1 المزوّدون
 
-| المزوّد | الافتراضي |
-|---|---|
-| **OpenRouter** (الافتراضي) | `anthropic/claude-sonnet-4.5` |
-| OpenAI | `gpt-4o` |
-| Anthropic | `claude-sonnet-4-5` |
-| Google Gemini | `gemini-2.0-flash` |
+| المزوّد | نقطة النهاية | الموديل الافتراضي |
+|---|---|---|
+| **OpenRouter** (الافتراضي) | `openrouter.ai/api/v1` | `anthropic/claude-sonnet-4.5` |
+| **TokenRouter** | `api.tokenrouter.io/v1` | `auto:balance` — بتوجّه لوحدها |
+| OpenAI | `api.openai.com/v1` | `gpt-4o` |
+| Anthropic | `api.anthropic.com/v1` | `claude-sonnet-4-5` |
+| Google Gemini | `generativelanguage.googleapis.com/v1beta` | `gemini-2.0-flash` |
 
 المفتاح **بيتكتب من المستخدم** في الإعدادات. **مفيش مفتاح متحطوط في
 الكود ولا في الـAPK**، والتطبيق بيعمل **صفر اتصالات شبكة من غير مفتاح**.
@@ -618,6 +619,7 @@ corewall-files/
 
 | الإصدار | أهم حاجة |
 |---|---|
+| **7.1** | إضافة TokenRouter كمزوّد |
 | **7.0** | **الوكيل**: برومبت دائم بيشرح التطبيق، لقطة حيّة، 27 أداة، مقارنة الأدوار، عرض الملفات والصور في الشات، نافذة المساعد على كل شاشة |
 | 6.4 | انقطاع الشبكة بقى "مستني" مش "فشل" + إعادة محاولة تلقائية |
 | 6.3 | ردود المحادثة بقت كروت ورسوم متحرّكة بدل JSON خام |
@@ -634,4 +636,4 @@ corewall-files/
 
 ---
 
-*آخر تحديث: الإصدار 7.0 (Build 27)*
+*آخر تحديث: الإصدار 7.1 (Build 28)*

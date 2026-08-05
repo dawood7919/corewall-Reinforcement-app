@@ -116,6 +116,10 @@ fun AiSettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         Text(
             when (cfg.provider) {
                 AiProviderId.OPENROUTER -> "اعمل مفتاح من openrouter.ai/keys — مفتاح واحد بيديك موديلات كتير."
+                AiProviderId.TOKENROUTER ->
+                    "اعمل مفتاح من tokenrouter.io — بتوجّه كل طلب لأنسب مزوّد لوحدها. " +
+                        "سيب الموديل auto:balance عشان توازن بين التكلفة والجودة، " +
+                        "أو اكتب اسم موديل محدّد لو عايز تقفل عليه."
                 AiProviderId.OPENAI -> "اعمل مفتاح من platform.openai.com/api-keys"
                 AiProviderId.ANTHROPIC -> "اعمل مفتاح من console.anthropic.com"
                 AiProviderId.GEMINI -> "اعمل مفتاح من aistudio.google.com/apikey"

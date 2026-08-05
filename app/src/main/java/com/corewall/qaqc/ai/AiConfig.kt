@@ -7,6 +7,16 @@ enum class AiProviderId(val label: String, val defaultBaseUrl: String, val defau
         defaultBaseUrl = "https://openrouter.ai/api/v1",
         defaultModel = "anthropic/claude-sonnet-4.5"
     ),
+    /**
+     * TokenRouter — منصّة توجيه متوافقة مع OpenAI، بتختار المزوّد المناسب
+     * لكل طلب. الموديل الافتراضي `auto:balance` بيخلّيها هي اللي تقرّر
+     * بدل ما تقفل على موديل واحد.
+     */
+    TOKENROUTER(
+        label = "TokenRouter",
+        defaultBaseUrl = "https://api.tokenrouter.io/v1",
+        defaultModel = "auto:balance"
+    ),
     OPENAI(
         label = "OpenAI",
         defaultBaseUrl = "https://api.openai.com/v1",

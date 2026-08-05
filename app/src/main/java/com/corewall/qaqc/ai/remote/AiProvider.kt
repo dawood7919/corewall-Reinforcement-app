@@ -51,7 +51,9 @@ private val lenientJson = Json { ignoreUnknownKeys = true; isLenient = true }
 private const val MAX_TOKENS = 8000
 
 fun providerFor(id: AiProviderId): AiProvider = when (id) {
-    AiProviderId.OPENROUTER, AiProviderId.OPENAI -> OpenAiCompatProvider
+    // TokenRouter بتتكلم نفس صيغة OpenAI (/chat/completions + Bearer)،
+    // فبتمشي على نفس المزوّد من غير كود مخصوص.
+    AiProviderId.OPENROUTER, AiProviderId.OPENAI, AiProviderId.TOKENROUTER -> OpenAiCompatProvider
     AiProviderId.ANTHROPIC -> AnthropicProvider
     AiProviderId.GEMINI -> GeminiProvider
 }
