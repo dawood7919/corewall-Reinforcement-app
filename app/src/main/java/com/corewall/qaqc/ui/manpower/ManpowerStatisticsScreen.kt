@@ -35,6 +35,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.EmptyState
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 @Composable
 fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
@@ -70,9 +72,9 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         .mapValues { (_, fs) -> windowRecords.filter { r -> fs.any { it.id == r.fileId } }.sumOf { it.workers } }
         .filterValues { it > 0 }.toList().sortedByDescending { it.second }.take(5)
 
-    LazyColumn(modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(Space.md)) {
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 listOf("أسبوع", "شهر", "3 أشهر").forEachIndexed { i, label ->
                     androidx.compose.material3.FilterChip(
                         selected = period == i,
@@ -83,7 +85,7 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 MiniStat("ذروة العمالة", "$peak", LocalCwColors.current.danger.fg, Modifier.weight(1f))
                 MiniStat("متوسط العمالة", "%.0f".format(avg), LocalCwColors.current.success.fg, Modifier.weight(1f))
             }
@@ -98,18 +100,18 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 Column {
                     val max = (byTrade.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
                     byTrade.forEach { (t, v) ->
-                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.padding(vertical = Space.xxs)) {
                             Text(t.label, Modifier.width(96.dp), style = MaterialTheme.typography.bodySmall, maxLines = 1)
                             Box(
-                                Modifier.weight(1f).height(16.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                Modifier.weight(1f).height(Space.lg)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant, Radius.shapeSm)
                             ) {
                                 Box(
-                                    Modifier.fillMaxWidth(v.toFloat() / max).height(16.dp)
-                                        .background(MaterialTheme.colorScheme.tertiary, RoundedCornerShape(8.dp))
+                                    Modifier.fillMaxWidth(v.toFloat() / max).height(Space.lg)
+                                        .background(MaterialTheme.colorScheme.tertiary, Radius.shapeSm)
                                 )
                             }
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(Space.sm))
                             Text("$v", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -124,12 +126,12 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         topCompanies.forEachIndexed { i, (company, workers) ->
                             Row(
                                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                                modifier = Modifier.padding(vertical = 5.dp)
+                                modifier = Modifier.padding(vertical = Space.xs)
                             ) {
                                 Box(
                                     Modifier.size(26.dp).background(
                                         colors[i % colors.size].copy(alpha = 0.15f),
-                                        RoundedCornerShape(8.dp)
+                                        Radius.shapeSm
                                     ),
                                     contentAlignment = androidx.compose.ui.Alignment.Center
                                 ) {
@@ -140,7 +142,7 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                                         color = colors[i % colors.size]
                                     )
                                 }
-                                Spacer(Modifier.width(10.dp))
+                                Spacer(Modifier.width(Space.md))
                                 Text(company, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
                                 Text(
                                     "$workers عامل",
@@ -159,8 +161,8 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
 @Composable
 private fun MiniStat(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
-    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = modifier) {
-        Column(Modifier.padding(16.dp)) {
+    Surface(shape = Radius.shapeLg, color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = modifier) {
+        Column(Modifier.padding(Space.lg)) {
             Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = accent)
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -169,10 +171,10 @@ private fun MiniStat(label: String, value: String, accent: Color, modifier: Modi
 
 @Composable
 private fun ChartCard(title: String, content: @Composable () -> Unit) {
-    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
+    Surface(shape = Radius.shapeLg, color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(Space.lg)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Space.md))
             content()
         }
     }

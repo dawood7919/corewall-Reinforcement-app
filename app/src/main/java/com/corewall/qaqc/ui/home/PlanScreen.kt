@@ -79,6 +79,8 @@ import com.corewall.qaqc.ui.plan.PlanStroke
 import com.corewall.qaqc.ui.theme.LocalCategoryColors
 import com.corewall.qaqc.ui.theme.StatusColors
 import com.corewall.qaqc.ui.theme.TowerNumberStyle
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 /**
  * الشاشة الرئيسية "البرج هو الواجهة":
@@ -208,20 +210,20 @@ fun PlanScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 2.dp,
             shadowElevation = 6.dp,
-            shape = RoundedCornerShape(22.dp),
+            shape = Radius.shapeXl,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 12.dp, top = 10.dp)
+                .padding(start = Space.md, end = Space.md, top = Space.md)
         ) {
             Column(
-                Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                Modifier.padding(horizontal = Space.md, vertical = Space.sm)
             ) {
                 CommandBar(vm)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 LensSelector(lens = lens, onSelect = { vm.setLens(it) })
                 if (lens == Lens.REINF && namingMode) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(Space.sm))
                     val total = vm.planData.elements.size
                     val named = names.size
                     Text(
@@ -233,7 +235,7 @@ fun PlanScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         progress = { if (total == 0) 0f else named.toFloat() / total },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 4.dp)
+                            .padding(top = Space.xs)
                     )
                 }
             }
@@ -243,7 +245,7 @@ fun PlanScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         Column(
             Modifier
                 .align(Alignment.BottomEnd)
-                .padding(16.dp),
+                .padding(Space.lg),
             horizontalAlignment = Alignment.End
         ) {
             if (lens == Lens.REINF) {
@@ -253,7 +255,7 @@ fun PlanScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 ) {
                     Icon(Icons.Filled.IosShare, contentDescription = "تصدير")
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
             }
             when (lens) {
                 Lens.REINF -> ExtendedFloatingActionButton(
@@ -280,15 +282,15 @@ fun PlanScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         Surface(
             Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 12.dp, bottom = 16.dp),
+                .padding(start = Space.md, bottom = Space.lg),
             shape = MaterialTheme.shapes.small,
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
         ) {
             Row(
                 Modifier
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    .padding(horizontal = Space.md, vertical = Space.sm),
+                horizontalArrangement = Arrangement.spacedBy(Space.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 when (lens) {
@@ -339,7 +341,7 @@ private fun LensSelector(lens: Lens, onSelect: (Lens) -> Unit) {
 private fun LegendItem(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         ColorDot(color, 8)
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(Space.xs))
         Text(label, style = MaterialTheme.typography.labelSmall)
     }
 }
@@ -360,7 +362,7 @@ private fun CommandBar(vm: MainViewModel) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    .padding(horizontal = Space.md, vertical = Space.xs),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -368,7 +370,7 @@ private fun CommandBar(vm: MainViewModel) {
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(Space.sm))
                 BasicTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -378,7 +380,7 @@ private fun CommandBar(vm: MainViewModel) {
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     decorationBox = { inner ->
-                        Box(Modifier.padding(vertical = 10.dp)) {
+                        Box(Modifier.padding(vertical = Space.md)) {
                             if (query.isEmpty()) {
                                 Text(
                                     "ابحث عن عنصر أو دور…",
@@ -412,7 +414,7 @@ private fun CommandBar(vm: MainViewModel) {
                 tonalElevation = 4.dp,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp)
+                    .padding(top = Space.xs)
             ) {
                 LazyColumn(Modifier.height(((markResults.size + levelResults.size).coerceAtMost(6) * 48).dp)) {
                     items(levelResults) { lvl ->
@@ -423,7 +425,7 @@ private fun CommandBar(vm: MainViewModel) {
                         ) {
                             Text(
                                 "⬆ روح لدور $lvl",
-                                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                Modifier.padding(horizontal = Space.lg, vertical = Space.md),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium
                             )
@@ -442,11 +444,11 @@ private fun CommandBar(vm: MainViewModel) {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                Modifier.padding(horizontal = Space.lg, vertical = Space.md),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(mark, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(Modifier.width(Space.sm))
                                 Text(
                                     if (element != null) "→ فتح" else "مش متسمّي لسه",
                                     style = MaterialTheme.typography.labelSmall,

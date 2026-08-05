@@ -40,6 +40,8 @@ import com.corewall.qaqc.ai.model.AiItem
 import com.corewall.qaqc.ai.model.AiUiState
 import com.corewall.qaqc.ui.EmptyState
 import com.corewall.qaqc.ui.theme.LocalSrtColors
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 /** شاشة التحليل الكامل — كل النتائج والتحذيرات والتوصيات والكميات. */
 @Composable
@@ -69,16 +71,16 @@ fun AiAnalysisScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     LazyColumn(
         modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(Space.md)
     ) {
         item {
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                shape = Radius.shapeXl,
                 color = MaterialTheme.colorScheme.surface,
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(Modifier.padding(18.dp)) {
+                Column(Modifier.padding(Space.lg)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             Modifier.size(64.dp).clip(CircleShape).background(statusColor.copy(alpha = 0.14f)),
@@ -86,14 +88,14 @@ fun AiAnalysisScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         ) {
                             Text("${a.healthScore}", style = MaterialTheme.typography.headlineSmall, color = statusColor, fontWeight = FontWeight.Bold)
                         }
-                        Spacer(Modifier.width(14.dp))
+                        Spacer(Modifier.width(Space.lg))
                         Column {
                             Text("دور ${ready.level}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text("مؤشّر الصحة · ${a.status}", style = MaterialTheme.typography.labelSmall, color = srt.text3)
                         }
                     }
                     if (a.summary.isNotBlank()) {
-                        Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(Space.lg))
                         Text(a.summary, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
@@ -107,7 +109,7 @@ fun AiAnalysisScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         notesGroup("ملاحظات هندسية", a.engineeringNotes, Icons.Filled.AutoAwesome, srt.blue)
 
         item {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(Space.xs))
             Text(
                 "تحليل مولّد بالذكاء الاصطناعي (${ready.model}) — للاسترشاد فقط، " +
                     "والمرجع النهائي دايماً هو الرسومات المعتمدة والمواصفات.",
@@ -124,18 +126,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.group(
     if (items.isEmpty()) return
     item {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = Radius.shapeXl,
             color = MaterialTheme.colorScheme.surface,
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(Space.lg)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(Space.sm))
                     Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = accent)
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 items.forEach { AiItemRow(it) }
             }
         }
@@ -148,22 +150,22 @@ private fun androidx.compose.foundation.lazy.LazyListScope.notesGroup(
     if (notes.isEmpty()) return
     item {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = Radius.shapeXl,
             color = MaterialTheme.colorScheme.surface,
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(Space.lg)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(Space.sm))
                     Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = accent)
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 notes.forEach {
-                    Row(Modifier.padding(vertical = 4.dp)) {
+                    Row(Modifier.padding(vertical = Space.xs)) {
                         Text("•", color = accent)
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(Space.sm))
                         Text(it, style = MaterialTheme.typography.bodySmall)
                     }
                 }

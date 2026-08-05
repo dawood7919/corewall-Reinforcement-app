@@ -90,6 +90,8 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 private val dateFormat = SimpleDateFormat("dd/MM/yyyy · hh:mm a", Locale.ENGLISH)
 
@@ -218,8 +220,8 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         columns = GridCells.Fixed(2),
         modifier = modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
+        verticalArrangement = Arrangement.spacedBy(Space.md)
     ) {
         // ---- الهيدر ----
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -381,25 +383,25 @@ private fun HeaderCard(
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
+            .clip(Radius.shapeXl)
             .background(Brush.verticalGradient(gradient))
-            .padding(20.dp)
+            .padding(Space.xl)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (subPath.isNotEmpty()) {
-                Surface(onClick = onBack, shape = RoundedCornerShape(10.dp), color = Color.White.copy(alpha = 0.2f)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBackIos, contentDescription = "رجوع", tint = Color.White, modifier = Modifier.padding(8.dp).size(16.dp))
+                Surface(onClick = onBack, shape = Radius.shapeMd, color = Color.White.copy(alpha = 0.2f)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBackIos, contentDescription = "رجوع", tint = Color.White, modifier = Modifier.padding(Space.sm).size(16.dp))
                 }
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(Space.md))
             }
             Column {
                 Text("مركز الوثائق", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.85f))
                 Text(if (subPath.isEmpty()) level else subPath.substringAfterLast('/'), style = TowerNumberStyle.copy(fontSize = 34.sp), color = Color.White)
             }
         }
-        Spacer(Modifier.height(16.dp))
-        Surface(color = Color.White.copy(alpha = 0.14f), shape = RoundedCornerShape(16.dp)) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Spacer(Modifier.height(Space.lg))
+        Surface(color = Color.White.copy(alpha = 0.14f), shape = Radius.shapeLg) {
+            Row(Modifier.fillMaxWidth().padding(vertical = Space.md)) {
                 HeaderStat("$folders", "مجلدات", Modifier.weight(1f))
                 HeaderDivider()
                 HeaderStat("$files", "ملفات", Modifier.weight(1f))
@@ -422,7 +424,7 @@ private fun HeaderStat(value: String, label: String, modifier: Modifier = Modifi
 
 @Composable
 private fun HeaderDivider() {
-    Box(Modifier.width(1.dp).height(30.dp).background(Color.White.copy(alpha = 0.25f)))
+    Box(Modifier.width(Space.xxs).height(Space.xxl).background(Color.White.copy(alpha = 0.25f)))
 }
 
 // ---------------------------------------------------------------- إجراءات سريعة
@@ -430,7 +432,7 @@ private fun HeaderDivider() {
 @Composable
 private fun QuickActionsRow(onNewFolder: () -> Unit, onUpload: () -> Unit, onCamera: () -> Unit, onRecent: () -> Unit) {
     val srt = LocalSrtColors.current
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
         QuickAction("مجلد جديد", Icons.Filled.CreateNewFolder, srt.blue, Modifier.weight(1f), onNewFolder)
         QuickAction("رفع ملف", Icons.Filled.UploadFile, srt.green, Modifier.weight(1f), onUpload)
         QuickAction("تصوير", Icons.Filled.PhotoCamera, srt.orange, Modifier.weight(1f), onCamera)
@@ -441,16 +443,16 @@ private fun QuickActionsRow(onNewFolder: () -> Unit, onUpload: () -> Unit, onCam
 @Composable
 private fun QuickAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, accent: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
-        onClick = onClick, shape = RoundedCornerShape(18.dp),
+        onClick = onClick, shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = modifier
     ) {
-        Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+        Column(Modifier.padding(vertical = Space.md), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(40.dp).clip(Radius.shapeMd).background(accent.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp))
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Space.sm))
             Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
     }
@@ -466,7 +468,7 @@ private fun Toolbar(
     Column {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             ToolIcon(Icons.Filled.Search, "بحث", active = searchActive, onClick = onToggleSearch)
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(Space.sm))
             var sortOpen by remember { mutableStateOf(false) }
             Box {
                 ToolIcon(Icons.Filled.Sort, "فرز", active = false, onClick = { sortOpen = true })
@@ -481,18 +483,18 @@ private fun Toolbar(
         }
         AnimatedVisibility(visible = searchActive) {
             Surface(
-                shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                shape = Radius.shapeLg, color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             ) {
-                Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = Space.md), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(Space.sm))
                     BasicTextField(
                         value = query, onValueChange = onQuery, singleLine = true,
                         textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                         cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                         decorationBox = { inner ->
-                            Box(Modifier.padding(vertical = 12.dp)) {
+                            Box(Modifier.padding(vertical = Space.md)) {
                                 if (query.isEmpty()) Text("ابحث باسم الملف…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 inner()
                             }
@@ -509,18 +511,18 @@ private fun Toolbar(
 private fun ToolIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, cd: String, active: Boolean, onClick: () -> Unit) {
     val srt = LocalSrtColors.current
     Surface(
-        onClick = onClick, shape = RoundedCornerShape(12.dp),
+        onClick = onClick, shape = Radius.shapeMd,
         color = if (active) srt.blueTint else MaterialTheme.colorScheme.surfaceVariant
     ) {
-        Icon(icon, contentDescription = cd, tint = if (active) srt.blue else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(9.dp).size(20.dp))
+        Icon(icon, contentDescription = cd, tint = if (active) srt.blue else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(Space.sm).size(20.dp))
     }
 }
 
 @Composable
 private fun SectionLabel(text: String, count: Int) {
-    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(top = Space.xs), verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(Space.sm))
         Text("$count", style = MaterialTheme.typography.labelMedium, color = LocalSrtColors.current.text3)
     }
 }
@@ -534,23 +536,23 @@ private fun FolderCard(f: File, vm: MainViewModel, onOpen: () -> Unit, onMenu: (
     val size = remember(f) { vm.files.sizeOf(f) }
     val accent = folderColor(f.name, srt)
     Surface(
-        onClick = onOpen, shape = RoundedCornerShape(20.dp),
+        onClick = onOpen, shape = Radius.shapeXl,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         shadowElevation = 1.dp
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.Top) {
-                Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(44.dp).clip(Radius.shapeLg).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
                     Icon(Icons.Filled.Folder, contentDescription = null, tint = accent, modifier = Modifier.size(26.dp))
                 }
                 Spacer(Modifier.weight(1f))
                 MenuDot(onMenu)
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Space.md))
             Text(f.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("مجلد مستندات", style = MaterialTheme.typography.labelSmall, color = srt.text3, maxLines = 1)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(Space.sm))
             Text("$count عنصر · ${sizeText(size)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -560,7 +562,7 @@ private fun FolderCard(f: File, vm: MainViewModel, onOpen: () -> Unit, onMenu: (
 private fun FileGridCard(f: File, onOpen: () -> Unit, onMenu: () -> Unit) {
     val srt = LocalSrtColors.current
     Surface(
-        onClick = onOpen, shape = RoundedCornerShape(20.dp),
+        onClick = onOpen, shape = Radius.shapeXl,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         shadowElevation = 1.dp
@@ -569,19 +571,19 @@ private fun FileGridCard(f: File, onOpen: () -> Unit, onMenu: () -> Unit) {
             Box(Modifier.fillMaxWidth().aspectRatio(1.15f).clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
                 FileThumbnail(f, Modifier.fillMaxSize())
                 // شارات هندسية
-                Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.padding(Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                     disciplineOf(f.name)?.let { Chip(it, disciplineColor(it)) }
                     revisionOf(f.name)?.let { Chip("$it · LATEST", srt.green) }
                 }
-                Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) {
-                    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), shape = RoundedCornerShape(10.dp)) {
+                Box(Modifier.align(Alignment.TopEnd).padding(Space.xs)) {
+                    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), shape = Radius.shapeMd) {
                         MenuDot(onMenu)
                     }
                 }
             }
-            Column(Modifier.padding(12.dp)) {
+            Column(Modifier.padding(Space.md)) {
                 Text(f.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(Space.xxs))
                 Text("${f.extension.uppercase().ifBlank { "FILE" }} · ${sizeText(f.length())}", style = MaterialTheme.typography.labelSmall, color = srt.text3)
             }
         }
@@ -592,20 +594,20 @@ private fun FileGridCard(f: File, onOpen: () -> Unit, onMenu: () -> Unit) {
 private fun FileListRow(f: File, onOpen: () -> Unit, onMenu: () -> Unit) {
     val srt = LocalSrtColors.current
     Surface(
-        onClick = onOpen, shape = RoundedCornerShape(16.dp),
+        onClick = onOpen, shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
-        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(52.dp).clip(Radius.shapeMd).background(MaterialTheme.colorScheme.surfaceVariant)) {
                 FileThumbnail(f, Modifier.fillMaxSize())
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(Space.md))
             Column(Modifier.weight(1f)) {
                 Text(f.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("${f.extension.uppercase()} · ${sizeText(f.length())}", style = MaterialTheme.typography.labelSmall, color = srt.text3)
-                    disciplineOf(f.name)?.let { Spacer(Modifier.width(6.dp)); Chip(it, disciplineColor(it)) }
+                    disciplineOf(f.name)?.let { Spacer(Modifier.width(Space.sm)); Chip(it, disciplineColor(it)) }
                 }
             }
             MenuDot(onMenu)
@@ -615,11 +617,11 @@ private fun FileListRow(f: File, onOpen: () -> Unit, onMenu: () -> Unit) {
 
 @Composable
 private fun MenuDot(onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(10.dp), color = Color.Transparent) {
+    Surface(onClick = onClick, shape = Radius.shapeMd, color = Color.Transparent) {
         Icon(
             Icons.Filled.MoreVert, contentDescription = "خيارات",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(6.dp).size(20.dp)
+            modifier = Modifier.padding(Space.sm).size(20.dp)
         )
     }
 }
@@ -652,8 +654,8 @@ private fun CenterIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, ti
 
 @Composable
 private fun Chip(text: String, color: Color) {
-    Surface(color = color, shape = RoundedCornerShape(6.dp)) {
-        Text(text, Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+    Surface(color = color, shape = Radius.shapeSm) {
+        Text(text, Modifier.padding(horizontal = Space.sm, vertical = Space.xxs), style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -670,19 +672,19 @@ private fun FileActionSheet(
     val srt = LocalSrtColors.current
     val isDir = file.isDirectory
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+        Column(Modifier.fillMaxWidth().padding(bottom = Space.xl)) {
             // رأس صغير بالملف
-            Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+            Row(Modifier.padding(horizontal = Space.xl, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(44.dp).clip(Radius.shapeMd).background(MaterialTheme.colorScheme.surfaceVariant)) {
                     if (isDir) CenterIcon(Icons.Filled.Folder, srt.blue) else FileThumbnail(file, Modifier.fillMaxSize())
                 }
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(Space.md))
                 Column(Modifier.weight(1f)) {
                     Text(file.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(if (isDir) "مجلد" else "${file.extension.uppercase()} · ${sizeText(file.length())}", style = MaterialTheme.typography.labelSmall, color = srt.text3)
                 }
             }
-            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp), color = srt.divider)
+            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = Space.xs), color = srt.divider)
 
             ActionRow(Icons.Filled.OpenInNew, "فتح", if (isDir) "افتح المجلد" else "افتح الملف", srt.blue, onOpen)
             if (!isDir) {
@@ -709,13 +711,13 @@ private fun FileActionSheet(
 @Composable
 private fun ActionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, accent: Color, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Space.xl, vertical = Space.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(accent.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(38.dp).clip(Radius.shapeMd).background(accent.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(Space.lg))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
             Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -733,15 +735,15 @@ private fun FileDetailSheet(
 ) {
     val srt = LocalSrtColors.current
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = Space.xl).padding(bottom = Space.xl)) {
             if (!file.isDirectory) {
-                Box(Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                Box(Modifier.fillMaxWidth().height(180.dp).clip(Radius.shapeLg).background(MaterialTheme.colorScheme.surfaceVariant)) {
                     FileThumbnail(file, Modifier.fillMaxSize())
                 }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(Space.lg))
             }
             Text(file.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Space.md))
             DetailRow("النوع", if (file.isDirectory) "مجلد" else file.extension.uppercase().ifBlank { "ملف" })
             if (!file.isDirectory) DetailRow("الحجم", sizeText(file.length()))
             else DetailRow("المحتوى", "${file.listFiles()?.size ?: 0} عنصر · ${sizeText(vm.files.sizeOf(file))}")
@@ -749,8 +751,8 @@ private fun FileDetailSheet(
             disciplineOf(file.name)?.let { DetailRow("التخصص", it) }
             revisionOf(file.name)?.let { DetailRow("المراجعة", "$it (الأحدث)") }
             DetailRow("المالك", "م. أحمد حسن")
-            Spacer(Modifier.height(18.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Spacer(Modifier.height(Space.lg))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 DetailAction("فتح", Icons.Filled.OpenInNew, srt.blue, Modifier.weight(1f), onOpen)
                 if (!file.isDirectory) DetailAction("مشاركة", Icons.Filled.Share, srt.green, Modifier.weight(1f), onShare)
                 DetailAction("تسمية", Icons.Filled.DriveFileRenameOutline, srt.orange, Modifier.weight(1f), onRename)
@@ -762,7 +764,7 @@ private fun FileDetailSheet(
 
 @Composable
 private fun DetailRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Row(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
         Text(label, Modifier.width(96.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
     }
@@ -770,10 +772,10 @@ private fun DetailRow(label: String, value: String) {
 
 @Composable
 private fun DetailAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, accent: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = accent.copy(alpha = 0.12f), modifier = modifier) {
-        Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Surface(onClick = onClick, shape = Radius.shapeLg, color = accent.copy(alpha = 0.12f), modifier = modifier) {
+        Column(Modifier.padding(vertical = Space.md), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(Space.xs))
             Text(label, style = MaterialTheme.typography.labelSmall, color = accent, fontWeight = FontWeight.Medium)
         }
     }
@@ -786,13 +788,13 @@ private fun DetailAction(label: String, icon: androidx.compose.ui.graphics.vecto
 private fun CreateFolderSheet(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = Space.xl).padding(bottom = Space.xl)) {
             Text("مجلد جديد", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Space.lg))
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("اسم المجلد") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Space.lg))
             Button(onClick = { if (name.isNotBlank()) onCreate(name) }, enabled = name.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp)) {
-                Icon(Icons.Filled.CreateNewFolder, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("إنشاء")
+                Icon(Icons.Filled.CreateNewFolder, contentDescription = null); Spacer(Modifier.width(Space.sm)); Text("إنشاء")
             }
         }
     }
@@ -803,16 +805,16 @@ private fun CreateFolderSheet(onDismiss: () -> Unit, onCreate: (String) -> Unit)
 @Composable
 private fun EmptyFiles(onUpload: () -> Unit, onNewFolder: () -> Unit) {
     val srt = LocalSrtColors.current
-    Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(96.dp).clip(RoundedCornerShape(28.dp)).background(srt.blueTint), contentAlignment = Alignment.Center) {
+    Column(Modifier.fillMaxWidth().padding(vertical = Space.xxl), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(96.dp).clip(Radius.shapeXl).background(srt.blueTint), contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.Folder, contentDescription = null, tint = srt.blue, modifier = Modifier.size(48.dp))
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.lg))
         Text("لسه مفيش ملفات", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text("ارفع شوب دروينج، BBS، دليفري نوت، أوتوكاد، صور…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.lg))
         Button(onClick = onUpload, modifier = Modifier.height(50.dp)) {
-            Icon(Icons.Filled.UploadFile, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("رفع ملفات")
+            Icon(Icons.Filled.UploadFile, contentDescription = null); Spacer(Modifier.width(Space.sm)); Text("رفع ملفات")
         }
     }
 }

@@ -84,6 +84,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
+import com.corewall.qaqc.ui.design.Space
 
 private enum class PdfTool(val toolName: String?) {
     PAN(null),
@@ -184,7 +185,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 4.dp),
+                    .padding(horizontal = Space.xs),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "إغلاق") }
@@ -250,9 +251,9 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                            .padding(horizontal = Space.sm, vertical = Space.xxs),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        horizontalArrangement = Arrangement.spacedBy(Space.xxs)
                     ) {
                         ToolButton(Icons.Filled.PanTool, "تحريك وزوم", tool == PdfTool.PAN) { tool = PdfTool.PAN }
                         ToolButton(Icons.Filled.Highlight, "هايلايت", tool == PdfTool.HIGHLIGHT) { tool = PdfTool.HIGHLIGHT }
@@ -260,11 +261,11 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         ToolButton(Icons.Filled.RadioButtonUnchecked, "دايرة", tool == PdfTool.CIRCLE) { tool = PdfTool.CIRCLE }
                         ToolButton(Icons.AutoMirrored.Filled.CallMade, "سهم", tool == PdfTool.ARROW) { tool = PdfTool.ARROW }
                         ToolButton(Icons.Filled.Draw, "رسم حر", tool == PdfTool.FREEHAND) { tool = PdfTool.FREEHAND }
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(Space.sm))
                         PALETTE.forEachIndexed { i, c ->
                             Box(
                                 Modifier
-                                    .padding(3.dp)
+                                    .padding(Space.xxs)
                                     .size(if (i == colorIdx) 30.dp else 24.dp)
                                     .background(Color(c), CircleShape)
                                     .pointerInput(i) { detectTapGestures { colorIdx = i } }
@@ -275,7 +276,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp),
+                                .padding(horizontal = Space.sm),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(onClick = { if (pageIndex > 0) pageIndex-- }, enabled = pageIndex > 0) {
@@ -291,7 +292,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                             Text(
                                 "${pageIndex + 1}/$pageCount",
                                 style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(horizontal = 6.dp)
+                                modifier = Modifier.padding(horizontal = Space.sm)
                             )
                             IconButton(
                                 onClick = { if (pageIndex < pageCount - 1) pageIndex++ },

@@ -51,6 +51,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.corewall.qaqc.ui.design.Space
 
 private val timeFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ENGLISH)
 
@@ -99,18 +100,18 @@ fun DataSheetContent(vm: MainViewModel, element: PlanElement) {
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(Space.lg))
 
         // -------- الملاحظات (كروت) --------
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("الملاحظات", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             Button(onClick = { vm.openNoteEditor(element.id) }) {
                 Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(Space.xs))
                 Text("ملاحظة جديدة")
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Space.sm))
         if (elementNotes.isEmpty()) {
             com.corewall.qaqc.ui.EmptyState(
                 icon = Icons.Filled.Description,
@@ -123,20 +124,20 @@ fun DataSheetContent(vm: MainViewModel, element: PlanElement) {
         }
 
         // -------- المرفقات (ملفات) --------
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Space.lg))
         Text("المرفقات", style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Space.sm))
         files.forEach { item ->
             AttachmentRow(vm, item)
             HorizontalDivider()
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Space.md))
         OutlinedButton(onClick = { pickFiles.launch(arrayOf("*/*")) }) {
             Icon(Icons.Filled.AttachFile, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(Space.sm))
             Text("أرفق ملفات (PDF، أوتوكاد…)")
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Space.sm))
     }
 }
 
@@ -152,13 +153,13 @@ private fun NoteCard(note: com.corewall.qaqc.data.db.NoteEntity, onClick: () -> 
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = Space.xs),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp,
         shadowElevation = 1.dp
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(Space.lg)) {
             Text(
                 note.title.ifBlank { "ملاحظة بدون عنوان" },
                 style = MaterialTheme.typography.titleSmall,
@@ -166,7 +167,7 @@ private fun NoteCard(note: com.corewall.qaqc.data.db.NoteEntity, onClick: () -> 
                 maxLines = 1
             )
             if (preview.isNotBlank()) {
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(Space.xxs))
                 Text(
                     preview,
                     style = MaterialTheme.typography.bodySmall,
@@ -174,8 +175,8 @@ private fun NoteCard(note: com.corewall.qaqc.data.db.NoteEntity, onClick: () -> 
                     maxLines = 2
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Spacer(Modifier.height(Space.sm))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 if (imgs > 0) MetaChip(Icons.Filled.Image, "$imgs")
                 if (fls > 0) MetaChip(Icons.Filled.AttachFile, "$fls")
                 if (total > 0) MetaChip(Icons.Filled.CheckCircle, "$done/$total")
@@ -194,7 +195,7 @@ private fun NoteCard(note: com.corewall.qaqc.data.db.NoteEntity, onClick: () -> 
 private fun MetaChip(icon: ImageVector, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(3.dp))
+        Spacer(Modifier.width(Space.xxs))
         Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
     }
 }
@@ -205,7 +206,7 @@ private fun AttachmentRow(vm: MainViewModel, item: ElementAttachmentEntity) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .padding(vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -214,7 +215,7 @@ private fun AttachmentRow(vm: MainViewModel, item: ElementAttachmentEntity) {
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary
         )
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(Space.md))
         Column(Modifier.weight(1f)) {
             Text(item.text, style = MaterialTheme.typography.bodyMedium)
             Text(

@@ -40,6 +40,8 @@ import java.io.File
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 private val CadBg = Color(0xFF0B1220)
 private val CadLine = Color(0xFFE8F1FF)
@@ -147,20 +149,20 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
     Surface(Modifier.fillMaxSize(), color = CadBg) {
         when {
             parseResult == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = CadAccent) }
-            parseResult!!.drawing == null -> Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            parseResult!!.drawing == null -> Column(Modifier.fillMaxSize().statusBarsPadding().padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Icon(Icons.Filled.Architecture, null, tint = CadAccent, modifier = Modifier.size(56.dp))
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(Space.md))
                 Text(file.name, color = CadLine, fontWeight = FontWeight.Bold)
                 Text(parseResult!!.error ?: "تعذّر الفتح", color = CadDim)
-                Spacer(Modifier.height(16.dp))
-                if (parseResult!!.isBinaryDwg) TextButton(onClick = { if (!files.openExternally(file)) Toast.makeText(context, "مفيش تطبيق CAD", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.OpenInNew, null); Spacer(Modifier.width(6.dp)); Text("فتح خارجي") }
+                Spacer(Modifier.height(Space.lg))
+                if (parseResult!!.isBinaryDwg) TextButton(onClick = { if (!files.openExternally(file)) Toast.makeText(context, "مفيش تطبيق CAD", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.OpenInNew, null); Spacer(Modifier.width(Space.sm)); Text("فتح خارجي") }
                 TextButton(onClick = onClose) { Text("إغلاق") }
             }
             else -> {
                 val base = parseResult!!.drawing!!
                 val drawing = remember(base, layers) { base.copy(layers = layers) }
                 Column(Modifier.fillMaxSize()) {
-                    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "إغلاق", tint = CadLine) }
                         Column(Modifier.weight(1f)) {
                             Text(file.name, color = CadLine, fontWeight = FontWeight.Bold, maxLines = 1, style = MaterialTheme.typography.titleSmall)
@@ -179,7 +181,7 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                         CadMeasureTool.RADIUS -> if (draftPoints.isEmpty()) "المركز" else "نقطة على المحيط"
                         CadMeasureTool.CALIBRATE -> if (draftPoints.isEmpty()) "طول معروف — نقطة 1" else "نقطة 2"
                     }
-                    Text(hint, color = CadDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().background(Color(0xFF0E1628)).padding(12.dp, 6.dp))
+                    Text(hint, color = CadDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().background(Color(0xFF0E1628)).padding(Space.md, 6.dp))
                     Box(Modifier.weight(1f).fillMaxWidth().onSizeChanged { if (!fitted) fitDrawing(drawing, it) }) {
                         Canvas(Modifier.fillMaxSize().pointerInput(tool, scale, offsetX, offsetY) {
                             detectTransformGestures { _, pan, zoom, _ -> scale = (scale * zoom).coerceIn(0.01f, 500f); offsetX += pan.x; offsetY += pan.y }
@@ -214,8 +216,8 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                                 draftPoints.forEach { drawCircle(CadMeasure, 5f, worldToScreen(it)) }
                             }
                         }
-                        if (showLayers) Surface(Modifier.align(Alignment.TopEnd).padding(8.dp).width(200.dp), color = Color(0xEE121A2A), shape = RoundedCornerShape(12.dp)) {
-                            Column(Modifier.padding(8.dp)) {
+                        if (showLayers) Surface(Modifier.align(Alignment.TopEnd).padding(Space.sm).width(200.dp), color = Color(0xEE121A2A), shape = Radius.shapeMd) {
+                            Column(Modifier.padding(Space.sm)) {
                                 Text("الطبقات", color = CadLine, fontWeight = FontWeight.Bold)
                                 LazyColumn(Modifier.height(160.dp)) {
                                     items(layers, key = { it.name }) { layer ->
@@ -227,17 +229,17 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                                 }
                             }
                         }
-                        if (measurements.isNotEmpty()) Surface(Modifier.align(Alignment.BottomStart).padding(8.dp).fillMaxWidth(0.55f).height(120.dp), color = Color(0xEE121A2A), shape = RoundedCornerShape(12.dp)) {
-                            LazyColumn(Modifier.padding(8.dp)) { items(measurements.asReversed(), key = { it.id }) { m -> Text(m.label(unit, unitsPerMeter.toDouble()), color = CadMeasure2, fontSize = 12.sp, modifier = Modifier.padding(vertical = 2.dp)) } }
+                        if (measurements.isNotEmpty()) Surface(Modifier.align(Alignment.BottomStart).padding(Space.sm).fillMaxWidth(0.55f).height(120.dp), color = Color(0xEE121A2A), shape = Radius.shapeMd) {
+                            LazyColumn(Modifier.padding(Space.sm)) { items(measurements.asReversed(), key = { it.id }) { m -> Text(m.label(unit, unitsPerMeter.toDouble()), color = CadMeasure2, fontSize = 12.sp, modifier = Modifier.padding(vertical = Space.xxs)) } }
                         }
                     }
                     Surface(color = Color(0xFF121A2A)) {
                         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Space.sm, vertical = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                                 @Composable fun chip(label: String, icon: ImageVector, t: CadMeasureTool) {
                                     val sel = tool == t
-                                    Row(Modifier.background(if (sel) CadAccent.copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(20.dp)).border(1.dp, if (sel) CadAccent else CadDim.copy(alpha = 0.4f), RoundedCornerShape(20.dp)).clickable { tool = t; draftPoints = emptyList() }.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(icon, null, tint = if (sel) CadAccent else CadLine, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(label, color = if (sel) CadAccent else CadLine, fontSize = 12.sp)
+                                    Row(Modifier.background(if (sel) CadAccent.copy(alpha = 0.25f) else Color.Transparent, Radius.shapeXl).border(1.dp, if (sel) CadAccent else CadDim.copy(alpha = 0.4f), Radius.shapeXl).clickable { tool = t; draftPoints = emptyList() }.padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(icon, null, tint = if (sel) CadAccent else CadLine, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(Space.xs)); Text(label, color = if (sel) CadAccent else CadLine, fontSize = 12.sp)
                                     }
                                 }
                                 chip("تحريك", Icons.Filled.PanTool, CadMeasureTool.PAN)
@@ -249,7 +251,7 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                                 chip("معايرة", Icons.Filled.Straighten, CadMeasureTool.CALIBRATE)
                                 if (tool == CadMeasureTool.CONTINUOUS || tool == CadMeasureTool.AREA) TextButton(onClick = { finishPoly() }) { Text("إنهاء", color = CadAccent) }
                             }
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xxs), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                                 Text("الوحدة:", color = CadDim, fontSize = 12.sp)
                                 MeasureUnit.entries.forEach { u -> FilterChip(selected = unit == u, onClick = { unit = u }, label = { Text(u.label, fontSize = 11.sp) }) }
                             }

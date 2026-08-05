@@ -58,6 +58,8 @@ import com.corewall.qaqc.data.db.AttendanceFileEntity
 import com.corewall.qaqc.data.db.DailyAttendanceEntity
 import com.corewall.qaqc.ui.EmptyState
 import java.util.Calendar
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -93,7 +95,7 @@ fun AttendanceFileDetailScreen(vm: MainViewModel, fileId: Long, onClose: () -> U
             // شريط علوي
             Surface(color = tag, contentColor = Color.White) {
                 Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Space.xs, vertical = Space.sm),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع", tint = Color.White) }
@@ -106,7 +108,7 @@ fun AttendanceFileDetailScreen(vm: MainViewModel, fileId: Long, onClose: () -> U
                 }
             }
 
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(16.dp)) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(Space.lg)) {
                 listOf("السجل اليومي", "التقويم").forEachIndexed { i, label ->
                     SegmentedButton(selected = view == i, onClick = { view = i }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
                 }
@@ -122,7 +124,7 @@ fun AttendanceFileDetailScreen(vm: MainViewModel, fileId: Long, onClose: () -> U
                 LazyColumn(
                     Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(Space.md)
                 ) {
                     items(records, key = { it.id }) { rec ->
                         DailyCard(
@@ -180,13 +182,13 @@ private fun DailyCard(
     onShare: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = Radius.shapeXl,
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp,
         shadowElevation = 2.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(dayName(rec.date), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -194,8 +196,8 @@ private fun DailyCard(
                 }
                 Text(Weather.from(rec.weather).let { "${it.emoji} ${it.label}" }, style = MaterialTheme.typography.labelMedium)
             }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Spacer(Modifier.height(Space.md))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
                 Metric("👷", "${rec.workers}", "عمال", MaterialTheme.colorScheme.primary)
                 Metric("🦺", "${rec.foremen}", "مشرفين", LocalCwColors.current.series(1))
                 if (rec.engineers > 0) Metric("👨‍💼", "${rec.engineers}", "مهندسين", LocalCwColors.current.series(5))
@@ -203,12 +205,12 @@ private fun DailyCard(
                 if (rec.overtimeHours > 0) Metric("🕒", "${rec.overtimeHours}", "س. إضافي", LocalCwColors.current.series(2))
             }
             if (rec.remarks.isNotBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    Text(rec.remarks, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(Space.md))
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = Radius.shapeMd, modifier = Modifier.fillMaxWidth()) {
+                    Text(rec.remarks, Modifier.padding(Space.md), style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Space.sm))
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = "تعديل", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                 IconButton(onClick = onDuplicate) { Icon(Icons.Filled.ContentCopy, contentDescription = "تكرار", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -241,13 +243,13 @@ private fun CalendarView(records: List<DailyAttendanceEntity>, tag: Color, onPic
     val firstDow = cal.get(Calendar.DAY_OF_WEEK) - 1 // 0=Sunday
     val recordedDays = records.map { dayStart(it.date) }.toSet()
 
-    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+    Column(Modifier.fillMaxWidth().padding(Space.lg)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { monthOffset-- }) { Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "السابق") }
             Text(monthName, Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             IconButton(onClick = { monthOffset++ }) { Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "التالي") }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Space.sm))
         Row {
             listOf("أحد", "إثن", "ثلا", "أرب", "خمي", "جمع", "سبت").forEach {
                 Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -265,7 +267,7 @@ private fun CalendarView(records: List<DailyAttendanceEntity>, tag: Color, onPic
                         val dayMillis = dayCal.timeInMillis
                         val has = dayStart(dayMillis) in recordedDays
                         Box(
-                            Modifier.weight(1f).aspectRatio(1f).padding(3.dp),
+                            Modifier.weight(1f).aspectRatio(1f).padding(Space.xxs),
                             contentAlignment = Alignment.Center
                         ) {
                             Surface(

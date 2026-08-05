@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.corewall.qaqc.ui.design.Space
 
 /** نقطة لون صغيرة (للفئات والحالات). */
 @Composable
@@ -56,7 +57,7 @@ fun EmptyState(
     androidx.compose.foundation.layout.Column(
         modifier
             .fillMaxWidth()
-            .padding(32.dp),
+            .padding(Space.xxl),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         androidx.compose.material3.Surface(
@@ -144,8 +145,8 @@ fun LevelPickerDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(340.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 items(levels) { level ->
                     val selected = level == current
@@ -157,7 +158,7 @@ fun LevelPickerDialog(
                         contentColor = if (selected) MaterialTheme.colorScheme.onPrimary
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     ) {
-                        Box(Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.padding(vertical = Space.md), contentAlignment = Alignment.Center) {
                             Text(
                                 level,
                                 Modifier.fillMaxWidth(),

@@ -77,6 +77,8 @@ import com.corewall.qaqc.ui.ai.blocks.Collapsible
 import com.corewall.qaqc.ui.ai.blocks.ThinkingRow
 import com.corewall.qaqc.ui.theme.LocalSrtColors
 import kotlinx.serialization.json.Json
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 /** أمثلة أسئلة بتظهر لما المحادثة تكون فاضية. */
 private val SUGGESTIONS = listOf(
@@ -150,7 +152,7 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 LazyColumn(
                     Modifier.fillMaxSize(), state = listState,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(Space.lg)
                 ) {
                     items(messages, key = { it.id.takeIf { id -> id != 0L } ?: it.createdAt }) { m ->
                         if (m.role == "user") UserBubble(m)
@@ -177,7 +179,7 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
         error?.let {
             Surface(color = srt.red.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth()) {
-                Text(it, Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall, color = srt.red)
+                Text(it, Modifier.padding(Space.lg), style = MaterialTheme.typography.bodySmall, color = srt.red)
             }
         }
 
@@ -188,14 +190,14 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         ) {
             Column {
             AttachmentStrip(attachments, onRemove = { vm.removeChatAttachment(it) })
-            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Bottom) {
+            Row(Modifier.padding(Space.md), verticalAlignment = Alignment.Bottom) {
                 AttachButtons(
                     onFiles = { filePicker.launch(arrayOf("*/*")) },
                     onImages = { imagePicker.launch(arrayOf("image/*")) }
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(Space.sm))
                 Surface(
-                    shape = RoundedCornerShape(22.dp),
+                    shape = Radius.shapeXl,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -206,7 +208,7 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         cursorBrush = SolidColor(srt.blue),
                         maxLines = 5,
                         decorationBox = { inner ->
-                            Box(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Box(Modifier.padding(horizontal = Space.lg, vertical = Space.md)) {
                                 if (input.isEmpty()) Text(
                                     "اسأل عن الدور، التسليح، المستندات…",
                                     style = MaterialTheme.typography.bodyMedium,
@@ -217,7 +219,7 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         }
                     )
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(Space.sm))
                 val canSend = input.isNotBlank() && !busy
                 Surface(
                     onClick = { if (canSend) { vm.askAi(input); input = "" } },
@@ -250,7 +252,7 @@ private fun UserBubble(m: ChatMessageEntity) {
         ) {
             Text(
                 m.content,
-                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                Modifier.padding(horizontal = Space.lg, vertical = Space.md),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White
             )
@@ -272,26 +274,26 @@ private fun AnswerCard(
     val answer = remember(m.id, m.content) { parseAnswer(m.content) }
     var showSources by remember(m.id) { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
         if (answer.headline.isNotBlank()) HeadlineCard(answer.headline)
 
         answer.blocks.take(6).forEachIndexed { i, b -> AnswerBlockCard(b, i, onOpenFile) }
 
         if (answer.sources.isNotEmpty()) {
             Row(
-                Modifier.clip(RoundedCornerShape(8.dp)).clickable { showSources = !showSources }
-                    .padding(vertical = 2.dp),
+                Modifier.clip(Radius.shapeSm).clickable { showSources = !showSources }
+                    .padding(vertical = Space.xxs),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Filled.Source, contentDescription = null, tint = srt.text3, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(Space.sm))
                 Text(
                     "المصادر (${answer.sources.size})",
                     style = MaterialTheme.typography.labelSmall, color = srt.text3
                 )
             }
             Collapsible(showSources) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     answer.sources.take(8).forEach {
                         Text("• $it", style = MaterialTheme.typography.labelSmall, color = srt.text3)
                     }
@@ -302,7 +304,7 @@ private fun AnswerCard(
         if (answer.followUps.isNotEmpty()) {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 answer.followUps.take(4).forEach { q ->
                     Surface(
@@ -312,7 +314,7 @@ private fun AnswerCard(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                     ) {
                         Text(
-                            q, Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            q, Modifier.padding(horizontal = Space.md, vertical = Space.sm),
                             style = MaterialTheme.typography.labelMedium,
                             color = srt.blue, maxLines = 1
                         )
@@ -327,7 +329,7 @@ private fun AnswerCard(
 private fun EmptyChat(configured: Boolean, onPick: (String) -> Unit) {
     val srt = LocalSrtColors.current
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
+        Modifier.fillMaxSize().padding(Space.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -335,9 +337,9 @@ private fun EmptyChat(configured: Boolean, onPick: (String) -> Unit) {
             Modifier.size(76.dp).clip(CircleShape).background(srt.blueTint),
             contentAlignment = Alignment.Center
         ) { Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = srt.blue, modifier = Modifier.size(38.dp)) }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(Space.lg))
         Text("المساعد الهندسي", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Space.sm))
         Text(
             if (configured) "اسأله عن أي حاجة، أو خلّيه ينفّذ — بيشوف الدور والملفات والجدول."
             else "ضيف مفتاح API من إعدادات المساعد الذكي عشان تبدأ.",
@@ -346,17 +348,17 @@ private fun EmptyChat(configured: Boolean, onPick: (String) -> Unit) {
             textAlign = TextAlign.Center
         )
         if (configured) {
-            Spacer(Modifier.height(18.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(Space.lg))
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 SUGGESTIONS.chunked(2).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         row.forEach { s ->
                             Surface(
                                 onClick = { onPick(s) },
                                 shape = RoundedCornerShape(999.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant
                             ) {
-                                Text(s, Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                Text(s, Modifier.padding(horizontal = Space.md, vertical = Space.sm),
                                     style = MaterialTheme.typography.labelMedium, maxLines = 1)
                             }
                         }
@@ -393,7 +395,7 @@ private fun ChatHeader(
 
     Surface(color = srt.blueTint, modifier = Modifier.fillMaxWidth()) {
         Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            Modifier.padding(horizontal = Space.lg, vertical = Space.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -406,7 +408,7 @@ private fun ChatHeader(
                     tint = srt.blue, modifier = Modifier.size(16.dp)
                 )
             }
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(Space.md))
             Column(Modifier.weight(1f)) {
                 Text(
                     if (busy) "بيشتغل…" else "المساعد الهندسي",
@@ -442,7 +444,7 @@ private fun AttachButtons(onFiles: () -> Unit, onImages: () -> Unit) {
                     tint = srt.purple, modifier = Modifier.size(18.dp))
             }
         }
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(Space.sm))
         Surface(
             onClick = onFiles, shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(40.dp)
@@ -467,36 +469,36 @@ private fun AttachmentStrip(files: List<java.io.File>, onRemove: (java.io.File) 
         enter = fadeIn() + expandVertically(),
         exit = shrinkVertically()
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)) {
             Text(
                 "${files.size} مرفق مع السؤال الجاي — اتسجّلوا في ذاكرة الدور",
                 style = MaterialTheme.typography.labelSmall, color = srt.text3
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Space.sm))
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 files.forEach { f ->
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = Radius.shapeMd,
                         color = srt.blueTint,
                         border = BorderStroke(1.dp, srt.blue.copy(alpha = 0.25f))
                     ) {
                         Row(
-                            Modifier.padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                            Modifier.padding(start = Space.md, end = Space.sm, top = Space.sm, bottom = Space.sm),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Filled.AttachFile, contentDescription = null,
                                 tint = srt.blue, modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(Space.sm))
                             Text(
                                 f.name, style = MaterialTheme.typography.labelSmall,
                                 color = srt.blue, maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 modifier = Modifier.widthIn(max = 150.dp)
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(Space.xs))
                             Icon(
                                 Icons.Filled.Close, contentDescription = "شيل",
                                 tint = srt.text3,
@@ -522,13 +524,13 @@ private fun AttachmentStrip(files: List<java.io.File>, onRemove: (java.io.File) 
 private fun HeadlineCard(text: String) {
     val srt = LocalSrtColors.current
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = Radius.shapeLg,
         color = androidx.compose.ui.graphics.Color.Transparent,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             Modifier
-                .clip(RoundedCornerShape(18.dp))
+                .clip(Radius.shapeLg)
                 .background(
                     androidx.compose.ui.graphics.Brush.horizontalGradient(
                         listOf(srt.blue.copy(alpha = 0.14f), srt.blue.copy(alpha = 0.04f))
@@ -538,11 +540,11 @@ private fun HeadlineCard(text: String) {
         ) {
             // شريط الحافة — بيثبّت العين على بداية السطر
             Box(
-                Modifier.width(4.dp).heightIn(min = 52.dp).fillMaxHeight()
+                Modifier.width(Space.xs).heightIn(min = 52.dp).fillMaxHeight()
                     .background(srt.blue)
             )
             Row(
-                Modifier.padding(14.dp).weight(1f),
+                Modifier.padding(Space.lg).weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
@@ -554,7 +556,7 @@ private fun HeadlineCard(text: String) {
                         tint = Color.White, modifier = Modifier.size(16.dp)
                     )
                 }
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(Space.md))
                 Text(
                     text,
                     style = MaterialTheme.typography.titleSmall,

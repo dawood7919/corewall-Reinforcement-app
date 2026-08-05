@@ -83,6 +83,8 @@ import com.corewall.qaqc.data.db.NoteEntity
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import java.io.File
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 private enum class Mode { EDIT, PREVIEW, SPLIT }
 
@@ -191,7 +193,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                            .padding(horizontal = Space.xs, vertical = Space.xs),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = { vm.saveNote(currentNote()); onClose() }) {
@@ -207,9 +209,9 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                         Surface(
                             onClick = { vm.saveNote(currentNote()); onClose() },
                             color = accent, contentColor = MaterialTheme.colorScheme.onPrimary,
-                            shape = RoundedCornerShape(12.dp)
+                            shape = Radius.shapeMd
                         ) {
-                            Text("حفظ", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontWeight = FontWeight.Bold)
+                            Text("حفظ", Modifier.padding(horizontal = Space.lg, vertical = Space.sm), fontWeight = FontWeight.Bold)
                         }
                         Box {
                             IconButton(onClick = { overflow = true }) {
@@ -230,7 +232,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                     SingleChoiceSegmentedButtonRow(
                         Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = Space.md, vertical = Space.sm)
                     ) {
                         val modes = listOf(Mode.EDIT to "تحرير", Mode.PREVIEW to "معاينة", Mode.SPLIT to "مقسّم")
                         modes.forEachIndexed { i, (m, label) ->
@@ -243,15 +245,15 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                         }
                     }
                     AnimatedVisibility(visible = showSearch) {
-                        Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(12.dp), shape = RoundedCornerShape(12.dp)) {
-                            Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(Space.md), shape = Radius.shapeMd) {
+                            Row(Modifier.padding(horizontal = Space.md), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Search, contentDescription = null, tint = muted)
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(Modifier.width(Space.sm))
                                 BasicTextField(
                                     value = query, onValueChange = { query = it }, singleLine = true,
                                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                                     cursorBrush = SolidColor(accent),
-                                    decorationBox = { inner -> Box(Modifier.padding(vertical = 12.dp)) { if (query.isEmpty()) Text("بحث داخل الملاحظة…", color = muted, style = MaterialTheme.typography.bodyMedium); inner() } },
+                                    decorationBox = { inner -> Box(Modifier.padding(vertical = Space.md)) { if (query.isEmpty()) Text("بحث داخل الملاحظة…", color = muted, style = MaterialTheme.typography.bodyMedium); inner() } },
                                     modifier = Modifier.weight(1f)
                                 )
                                 val count = if (query.isBlank()) 0 else Regex(Regex.escape(query), RegexOption.IGNORE_CASE).findAll(body.text).count()
@@ -270,7 +272,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                             Modifier
                                 .weight(1f)
                                 .verticalScroll(rememberScrollState())
-                                .padding(16.dp)
+                                .padding(Space.lg)
                         ) {
                             BasicTextField(
                                 value = title, onValueChange = { title = it }, singleLine = true,
@@ -279,7 +281,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                                 decorationBox = { inner -> if (title.isEmpty()) Text("عنوان الملاحظة", style = MaterialTheme.typography.headlineSmall, color = muted, fontWeight = FontWeight.Bold); inner() },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(Space.md))
                             BasicTextField(
                                 value = body, onValueChange = { edit(it) },
                                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
@@ -293,7 +295,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                         }
                     }
                     if (mode == Mode.SPLIT) {
-                        Box(Modifier.width(1.dp).fillMaxSize().padding(vertical = 8.dp)) {
+                        Box(Modifier.width(Space.xxs).fillMaxSize().padding(vertical = Space.sm)) {
                             Surface(color = MaterialTheme.colorScheme.outline, modifier = Modifier.fillMaxSize()) {}
                         }
                     }
@@ -302,11 +304,11 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                             Modifier
                                 .weight(1f)
                                 .verticalScroll(rememberScrollState())
-                                .padding(16.dp)
+                                .padding(Space.lg)
                         ) {
                             if (title.isNotBlank()) {
                                 Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.height(10.dp))
+                                Spacer(Modifier.height(Space.md))
                             }
                             NoteContent(
                                 markdown = body.text,
@@ -333,16 +335,16 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                 if (suggestions.isNotEmpty()) {
                     Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
                         LazyRow(
-                            Modifier.fillMaxWidth().padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            Modifier.fillMaxWidth().padding(Space.sm),
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm)
                         ) {
                             items(suggestions) { s ->
                                 Surface(
                                     onClick = { edit(applySuggestion(body, symbol, partial, s)) },
                                     color = if (symbol == '@') MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = Radius.shapeMd
                                 ) {
-                                    Text("$symbol$s", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+                                    Text("$symbol$s", Modifier.padding(horizontal = Space.md, vertical = Space.sm), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
                                 }
                             }
                         }
@@ -360,7 +362,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                             .navigationBarsPadding()
                             .imePadding()
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                            .padding(horizontal = Space.xs, vertical = Space.xs),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Tb(Icons.AutoMirrored.Filled.Undo, "تراجع", enabled = undo.isNotEmpty()) {
@@ -420,9 +422,9 @@ private fun Tb(icon: ImageVector, desc: String, enabled: Boolean = true, tint: C
 private fun TbDivider() {
     Box(
         Modifier
-            .padding(horizontal = 4.dp)
-            .width(1.dp)
-            .height(24.dp)
+            .padding(horizontal = Space.xs)
+            .width(Space.xxs)
+            .height(Space.xl)
     ) { Surface(color = MaterialTheme.colorScheme.outline, modifier = Modifier.fillMaxSize()) {} }
 }
 

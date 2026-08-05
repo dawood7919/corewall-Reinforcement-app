@@ -58,6 +58,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.corewall.qaqc.data.db.AttendanceFileEntity
 import com.corewall.qaqc.data.db.DailyAttendanceEntity
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 // ---------------------------------------------------------------- ملف جديد
 
@@ -85,7 +87,7 @@ fun NewAttendanceFileDialog(
                     label = { Text("اسم الشركة / المقاول") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Space.md))
                 Text("التخصص", style = MaterialTheme.typography.labelMedium)
                 Box {
                     OutlinedButton(onClick = { tradeMenu = true }, modifier = Modifier.fillMaxWidth()) {
@@ -98,26 +100,26 @@ fun NewAttendanceFileDialog(
                         }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Space.md))
                 OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.CalendarMonth, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(Space.sm))
                     Text("تاريخ البدء: ${shortDate(startDate)}")
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Space.md))
                 OutlinedTextField(
                     value = notes, onValueChange = { notes = it },
                     label = { Text("ملاحظات (اختياري)") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(Space.md))
                 Text("لون الوسم", style = MaterialTheme.typography.labelMedium)
                 // الدايرة صغيرة، بس مساحة اللمس ٤٨. قبل كده الزرار نفسه كان
                 // 28dp — أقل من الحد الأدنى — وكان **فاضي تماماً** لما ما يكونش
                 // مختار، يعني زرار مالوش أي اسم ولا محتوى لقارئ الشاشة.
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
                 ) {
                     TAG_COLORS.forEach { c ->
                         val selected = c == colorTag
@@ -205,35 +207,35 @@ fun AddDailyDialog(
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.CalendarMonth, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(Space.sm))
                     Text("${dayName(date)} · ${fullDate(date)}")
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 NumberRow("عمال", workers) { workers = it }
                 NumberRow("مشرفين (فورمان)", foremen) { foremen = it }
                 NumberRow("مهندسين", engineers) { engineers = it }
                 NumberRow("مراقبين", supervisors) { supervisors = it }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 OutlinedTextField(
                     value = overtime, onValueChange = { overtime = it.filter { c -> c.isDigit() || c == '.' } },
                     label = { Text("ساعات إضافية (Overtime)") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Space.md))
                 Text("الطقس", style = MaterialTheme.typography.labelMedium)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     Weather.entries.forEach { w ->
                         Surface(
                             onClick = { weather = w },
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                            shape = androidx.compose.foundation.shape.Radius.shapeMd,
                             color = if (weather == w) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
                         ) {
-                            Text("${w.emoji} ${w.label}", Modifier.padding(horizontal = 10.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
+                            Text("${w.emoji} ${w.label}", Modifier.padding(horizontal = Space.md, vertical = Space.sm), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Space.md))
                 OutlinedTextField(
                     value = remarks, onValueChange = { remarks = it },
                     label = { Text("ملاحظات (منطقة العمل…)") },
@@ -263,13 +265,13 @@ fun AddDailyDialog(
 
 @Composable
 private fun NumberRow(label: String, value: Int, onChange: (Int) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Space.sm))
         com.corewall.qaqc.ui.theme.SrtStepper(value = value, onChange = onChange, modifier = Modifier.fillMaxWidth())
     }
 }

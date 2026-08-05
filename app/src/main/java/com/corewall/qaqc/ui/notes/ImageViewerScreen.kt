@@ -32,6 +32,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.corewall.qaqc.data.FilesManager
 import java.io.File
+import com.corewall.qaqc.ui.design.Space
 
 /** عارض صور بملء الشاشة: Pinch-zoom + Pan، دبل-تاب، مشاركة، وإغلاق. */
 @Composable
@@ -72,7 +73,7 @@ fun ImageViewerScreen(files: FilesManager, path: String, onClose: () -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(8.dp),
+                .padding(Space.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {

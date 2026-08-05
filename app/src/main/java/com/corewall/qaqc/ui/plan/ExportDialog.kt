@@ -33,6 +33,7 @@ import com.corewall.qaqc.ui.LevelPickerDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.corewall.qaqc.ui.design.Space
 
 @Composable
 fun ExportDialog(vm: MainViewModel, onDismiss: () -> Unit) {
@@ -96,11 +97,11 @@ fun ExportDialog(vm: MainViewModel, onDismiss: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = asPdf, onClick = { asPdf = true })
                     Text("PDF")
-                    Spacer(Modifier.padding(horizontal = 8.dp))
+                    Spacer(Modifier.padding(horizontal = Space.sm))
                     RadioButton(selected = !asPdf, onClick = { asPdf = false })
                     Text("PNG")
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Text("المحتوى:", style = MaterialTheme.typography.labelMedium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = !compareMode, onClick = { compareMode = false })

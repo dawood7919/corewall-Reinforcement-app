@@ -34,6 +34,8 @@ import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.ai.model.ReportKind
 import com.corewall.qaqc.ui.notes.NoteContent
 import com.corewall.qaqc.ui.theme.LocalSrtColors
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 /**
  * توليد المستندات الهندسية: تقرير يومي/أسبوعي/فحص/طلب مواد/تعليمات موقع —
@@ -49,34 +51,34 @@ fun AiReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val error by vm.reportError.collectAsStateWithLifecycle()
     val cfg by vm.aiConfig.collectAsStateWithLifecycle()
 
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.lg)) {
         Text("توليد مستند لدور $level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(Space.xs))
         Text(
             "الـAI بيكتب المستند من بيانات التطبيق والمستندات المحلّلة — الأرقام محسوبة مش مخترعة.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         if (!cfg.isConfigured) {
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(Space.lg))
             Text("ضيف مفتاح API من إعدادات المساعد الذكي الأول.",
                 style = MaterialTheme.typography.bodySmall, color = srt.orange)
             return@Column
         }
 
-        Spacer(Modifier.height(16.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Spacer(Modifier.height(Space.lg))
+        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             ReportKind.entries.forEach { kind ->
                 Surface(
                     onClick = { if (!busy) vm.generateReport(kind) },
-                    shape = RoundedCornerShape(14.dp),
+                    shape = Radius.shapeLg,
                     color = MaterialTheme.colorScheme.surface,
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Description, contentDescription = null, tint = srt.blue, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(Space.md))
                         Column(Modifier.weight(1f)) {
                             Text(kind.label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                             Text(kind.prompt, style = MaterialTheme.typography.labelSmall,
@@ -88,16 +90,16 @@ fun AiReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
 
         if (busy) {
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Space.lg))
             Text("بيكتب المستند…", style = MaterialTheme.typography.bodySmall, color = srt.blue)
         }
         error?.let {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Space.md))
             Text(it, style = MaterialTheme.typography.bodySmall, color = srt.red)
         }
 
         report?.let { r ->
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(Space.xl))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(r.title, style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -111,41 +113,41 @@ fun AiReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                             ).show()
                         }
                     },
-                    shape = RoundedCornerShape(10.dp), color = srt.blueTint
+                    shape = Radius.shapeMd, color = srt.blueTint
                 ) {
-                    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Save, contentDescription = null, tint = srt.blue, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(5.dp))
+                        Spacer(Modifier.width(Space.xs))
                         Text("حفظ", style = MaterialTheme.typography.labelMedium, color = srt.blue)
                     }
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(Space.sm))
                 Surface(
                     onClick = {
                         vm.saveReportToFiles { f -> f?.let { vm.files.share(it) } }
                     },
-                    shape = RoundedCornerShape(10.dp), color = srt.green.copy(alpha = 0.14f)
+                    shape = Radius.shapeMd, color = srt.green.copy(alpha = 0.14f)
                 ) {
-                    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Share, contentDescription = null, tint = srt.green, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(5.dp))
+                        Spacer(Modifier.width(Space.xs))
                         Text("مشاركة", style = MaterialTheme.typography.labelMedium, color = srt.green)
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Space.md))
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = Radius.shapeLg,
                 color = MaterialTheme.colorScheme.surface,
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(Space.lg)) {
                     // نعرضه بالماركداون الموجود في التطبيق
                     NoteContent(markdown = r.markdown)
                 }
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(Space.xl))
         }
     }
 }

@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlin.math.min
 import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.Space
 
 /**
  * ألوان السلاسل — من اللوحة، مش قايمة مستقلة.
@@ -45,7 +46,7 @@ fun DonutChart(data: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
     val total = data.sumOf { it.second }.coerceAtLeast(1)
     val colors = chartColors()
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Canvas(Modifier.size(130.dp).padding(6.dp)) {
+        Canvas(Modifier.size(130.dp).padding(Space.sm)) {
             var start = -90f
             val stroke = size.minDimension * 0.22f
             val inset = stroke / 2
@@ -63,12 +64,12 @@ fun DonutChart(data: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
                 start += sweep
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(Space.md))
         Column {
             data.forEachIndexed { i, (label, v) ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = Space.xxs)) {
                     Box(Modifier.size(10.dp).background(colors[i % colors.size], CircleShape))
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(Space.sm))
                     Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(90.dp), maxLines = 1)
                     Text("${(v * 100 / total)}%", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 }

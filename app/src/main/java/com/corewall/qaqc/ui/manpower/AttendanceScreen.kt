@@ -46,6 +46,8 @@ import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.data.db.AttendanceFileEntity
 import com.corewall.qaqc.ui.EmptyState
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 @Composable
 fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
@@ -83,18 +85,18 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         ) {
             // كارت ملخّص اليوم (أزرق متدرّج زي الموك أب)
             Surface(
-                shape = RoundedCornerShape(24.dp),
+                shape = Radius.shapeXl,
                 color = Color.Transparent,
-                modifier = Modifier.padding(16.dp).fillMaxWidth()
+                modifier = Modifier.padding(Space.lg).fillMaxWidth()
             ) {
                 Column(
                     Modifier
-                        .background(Brush.verticalGradient(gradient), RoundedCornerShape(24.dp))
-                        .padding(20.dp)
+                        .background(Brush.verticalGradient(gradient), Radius.shapeXl)
+                        .padding(Space.xl)
                 ) {
                     Text("اليوم · دور $level", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.85f))
                     Text(fullDate(System.currentTimeMillis()), style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(Space.lg))
                     Row(Modifier.fillMaxWidth()) {
                         BigMetric("$workersToday", "إجمالي العمال", Modifier.weight(1f))
                         DividerV()
@@ -117,7 +119,7 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(Space.md)
             ) {
                 if (files.isNotEmpty()) {
                     item(key = "__health__") {
@@ -134,7 +136,7 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                                 HealthMetric("الشركات", companiesActive, Icons.Filled.Apartment, cw.series(7))
                             )
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(Space.xs))
                         Text("ملفات الحضور", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -166,9 +168,9 @@ private data class HealthMetric(val label: String, val value: Int, val icon: and
 /** شبكة كروت العمالة بستايل Apple Health — بعدّادات متحركة. */
 @Composable
 private fun HealthGrid(metrics: List<HealthMetric>) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
         metrics.chunked(3).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 row.forEach { m -> HealthCard(m, Modifier.weight(1f)) }
                 repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
             }
@@ -184,17 +186,17 @@ private fun HealthCard(m: HealthMetric, modifier: Modifier = Modifier) {
         label = "hc"
     )
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = modifier
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(Space.md)) {
             Box(
-                Modifier.size(30.dp).background(m.accent.copy(alpha = 0.14f), RoundedCornerShape(9.dp)),
+                Modifier.size(30.dp).background(m.accent.copy(alpha = 0.14f), Radius.shapeSm),
                 contentAlignment = Alignment.Center
             ) { Icon(m.icon, contentDescription = null, tint = m.accent, modifier = Modifier.size(17.dp)) }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(Space.sm))
             Text("$animated", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(m.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
@@ -213,8 +215,8 @@ private fun BigMetric(value: String, label: String, modifier: Modifier = Modifie
 private fun DividerV() {
     Box(
         Modifier
-            .width(1.dp)
-            .height(38.dp)
+            .width(Space.xxs)
+            .height(Space.xxl)
             .background(Color.White.copy(alpha = 0.25f))
     )
 }
@@ -230,7 +232,7 @@ private fun AttendanceFileCard(
     val tag = colorFor(file.colorTag)
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
+        shape = Radius.shapeXl,
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp,
         shadowElevation = 2.dp,
@@ -239,16 +241,16 @@ private fun AttendanceFileCard(
         Row {
             Box(
                 Modifier
-                    .width(6.dp)
+                    .width(Space.sm)
                     .height(120.dp)
-                    .padding(0.dp)
+                    .padding(Space.xxs)
             ) { Surface(color = tag, modifier = Modifier.fillMaxSize()) {} }
-            Column(Modifier.padding(16.dp).fillMaxWidth()) {
+            Column(Modifier.padding(Space.lg).fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(color = tag.copy(alpha = 0.15f), shape = RoundedCornerShape(8.dp)) {
+                    Surface(color = tag.copy(alpha = 0.15f), shape = Radius.shapeSm) {
                         Text(
                             Trade.from(file.trade).label,
-                            Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            Modifier.padding(horizontal = Space.md, vertical = Space.xs),
                             style = MaterialTheme.typography.labelMedium,
                             color = tag,
                             fontWeight = FontWeight.Bold
@@ -257,11 +259,11 @@ private fun AttendanceFileCard(
                     Spacer(Modifier.weight(1f))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.CalendarMonth, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(Space.xs))
                         Text("بدأ ${shortDate(file.startDate)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier.size(38.dp).background(tag, androidx.compose.foundation.shape.CircleShape),
@@ -274,11 +276,11 @@ private fun AttendanceFileCard(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(Space.md))
                     Text(file.company.ifBlank { "بدون اسم" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.height(Space.md))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                     Column {
                         Text("$workersToday", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text("عامل النهاردة", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

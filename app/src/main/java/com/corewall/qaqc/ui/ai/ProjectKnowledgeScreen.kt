@@ -53,6 +53,8 @@ import com.corewall.qaqc.data.db.DocFactEntity
 import com.corewall.qaqc.data.db.DocumentEntity
 import com.corewall.qaqc.ui.theme.LocalSrtColors
 import com.corewall.qaqc.ui.theme.LocalVizColors
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 /**
  * **معرفة المشروع** — المكتبة المشتركة بين كل الأدوار.
@@ -84,13 +86,13 @@ fun ProjectKnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize()) {
         // ---------------------------------------------------- الترويسة
         Surface(color = srt.purple.copy(alpha = 0.10f), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(Space.lg)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier.size(34.dp).clip(CircleShape).background(srt.purple.copy(alpha = 0.16f)),
                         contentAlignment = Alignment.Center
                     ) { Icon(Icons.Filled.Hub, contentDescription = null, tint = srt.purple, modifier = Modifier.size(19.dp)) }
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(Space.md))
                     Column(Modifier.weight(1f)) {
                         Text(
                             "معرفة المشروع",
@@ -107,35 +109,35 @@ fun ProjectKnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     Text("$done / ${docs.size}", style = MaterialTheme.typography.labelMedium, color = srt.purple)
                 }
 
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.height(Space.md))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     Surface(
                         onClick = { picker.launch(arrayOf("*/*")) },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = Radius.shapeMd,
                         color = srt.purple,
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(
-                            Modifier.padding(12.dp),
+                            Modifier.padding(Space.md),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Filled.UploadFile, contentDescription = null, tint = Color.White,
                                 modifier = Modifier.size(17.dp))
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(Space.sm))
                             Text("ارفع ملف مشترك", color = Color.White, fontWeight = FontWeight.SemiBold)
                         }
                     }
                     if (pending > 0 || failed > 0) {
                         Surface(
                             onClick = { vm.analyzePendingDocuments() },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = Radius.shapeMd,
                             color = MaterialTheme.colorScheme.surface
                         ) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Refresh, contentDescription = null, tint = srt.purple,
                                     modifier = Modifier.size(17.dp))
-                                Spacer(Modifier.width(6.dp))
+                                Spacer(Modifier.width(Space.sm))
                                 Text(
                                     if (analyzing > 0) "بيحلّل…" else "${pending + failed}",
                                     color = srt.purple, fontWeight = FontWeight.SemiBold
@@ -146,7 +148,7 @@ fun ProjectKnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
 
                 if (!cfg.isConfigured) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(Space.sm))
                     Text(
                         "مفيش مفتاح API — الملفات هتتسجّل بس ومش هتتحلّل.",
                         style = MaterialTheme.typography.bodySmall, color = srt.orange
@@ -163,10 +165,10 @@ fun ProjectKnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(Space.md)
         ) {
             items(docs, key = { it.id }) { doc -> SharedDocCard(vm, doc) }
-            item { Spacer(Modifier.height(8.dp)) }
+            item { Spacer(Modifier.height(Space.sm)) }
             item { ScopeNote() }
         }
     }
@@ -176,7 +178,7 @@ fun ProjectKnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 private fun EmptyLibrary() {
     val srt = LocalSrtColors.current
     Column(
-        Modifier.fillMaxSize().padding(32.dp),
+        Modifier.fillMaxSize().padding(Space.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -184,9 +186,9 @@ private fun EmptyLibrary() {
             Modifier.size(72.dp).clip(CircleShape).background(srt.purple.copy(alpha = 0.10f)),
             contentAlignment = Alignment.Center
         ) { Icon(Icons.Filled.Hub, contentDescription = null, tint = srt.purple, modifier = Modifier.size(34.dp)) }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(Space.lg))
         Text("المكتبة فاضية", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Space.sm))
         Text(
             "حطّ هنا الحاجات اللي بتخصّ المشروع كله مش دور معيّن:\n" +
                 "المواصفات · الأكواد · طرق التنفيذ · جداول عامة",
@@ -221,18 +223,18 @@ private fun SharedDocCard(vm: MainViewModel, doc: DocumentEntity) {
 
     Surface(
         onClick = { expanded = !expanded },
-        shape = RoundedCornerShape(18.dp),
+        shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(34.dp).clip(CircleShape).background(tone.copy(alpha = 0.14f)),
                     contentAlignment = Alignment.Center
                 ) { Icon(icon, contentDescription = null, tint = tone, modifier = Modifier.size(18.dp)) }
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(Space.md))
                 Column(Modifier.weight(1f)) {
                     Text(
                         doc.fileName, style = MaterialTheme.typography.bodyMedium,
@@ -251,14 +253,14 @@ private fun SharedDocCard(vm: MainViewModel, doc: DocumentEntity) {
             }
 
             if (doc.error.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Text(
                     doc.error, style = MaterialTheme.typography.bodySmall,
                     color = if (doc.status == "FAILED") viz.critical else viz.warning
                 )
             }
             if (doc.summary.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Text(
                     doc.summary, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -269,25 +271,25 @@ private fun SharedDocCard(vm: MainViewModel, doc: DocumentEntity) {
             AnimatedVisibility(expanded, enter = fadeIn() + expandVertically(), exit = shrinkVertically()) {
                 Column {
                     if (facts.isNotEmpty()) {
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(Space.md))
                         Text(
                             "اتستخرج ${facts.size} معلومة:",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold, color = srt.text3
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(Space.sm))
                         facts.groupBy { it.kind }.forEach { (kind, list) ->
                             Text("• $kind (${list.size})", style = MaterialTheme.typography.labelSmall, color = srt.purple)
                             Text(
                                 list.take(12).joinToString("، ") { "${it.key}=${it.value}${it.unit}" },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 10.dp, bottom = 6.dp)
+                                modifier = Modifier.padding(start = Space.md, bottom = Space.sm)
                             )
                         }
                     }
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.height(Space.md))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         SmallAction("حلّل تاني", Icons.Filled.Refresh) { vm.reanalyzeDocument(doc.id) }
                         SmallAction("افتح", Icons.Filled.UploadFile) { vm.openAnyFile(doc.filePath) }
                     }
@@ -301,15 +303,15 @@ private fun SharedDocCard(vm: MainViewModel, doc: DocumentEntity) {
 private fun SmallAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(10.dp),
+        shape = Radius.shapeMd,
         color = MaterialTheme.colorScheme.surfaceVariant
     ) {
         Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier.padding(horizontal = Space.md, vertical = Space.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp))
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(Space.sm))
             Text(label, style = MaterialTheme.typography.labelMedium)
         }
     }
@@ -320,17 +322,17 @@ private fun SmallAction(label: String, icon: androidx.compose.ui.graphics.vector
 private fun ScopeNote() {
     val srt = LocalSrtColors.current
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(Space.lg)) {
             Text(
                 "الفرق بين المكتبتين",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Space.sm))
             Text(
                 "• ملفات الدور (تبويب الملفات) → المساعد بيشوفها في الدور ده **بس**. " +
                     "الأدوار معزولة تماماً عن بعض.\n" +

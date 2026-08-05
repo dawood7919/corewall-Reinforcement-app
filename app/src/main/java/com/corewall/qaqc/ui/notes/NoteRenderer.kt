@@ -48,6 +48,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.corewall.qaqc.ui.theme.PlexMono
 import java.io.File
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 @Composable
 fun rememberInlineColors(): InlineColors {
@@ -78,7 +80,7 @@ fun NoteContent(
 ) {
     val blocks = parseNote(markdown)
     val ic = rememberInlineColors()
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         for (b in blocks) {
             when (b) {
                 is NoteBlock.Heading -> Text(
@@ -94,7 +96,7 @@ fun NoteContent(
                     inlineAnnotated(b.text, ic),
                     style = MaterialTheme.typography.bodyLarge
                 )
-                is NoteBlock.BulletList -> Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                is NoteBlock.BulletList -> Column(verticalArrangement = Arrangement.spacedBy(Space.xxs)) {
                     b.items.forEach {
                         Row {
                             Text("•  ", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
@@ -102,7 +104,7 @@ fun NoteContent(
                         }
                     }
                 }
-                is NoteBlock.NumberedList -> Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                is NoteBlock.NumberedList -> Column(verticalArrangement = Arrangement.spacedBy(Space.xxs)) {
                     b.items.forEachIndexed { idx, it ->
                         Row {
                             Text(
@@ -128,24 +130,24 @@ fun NoteContent(
                 is NoteBlock.Quote -> Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                        .padding(12.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, Radius.shapeSm)
+                        .padding(Space.md)
                 ) {
                     Box(
                         Modifier
-                            .width(3.dp)
-                            .height(20.dp)
+                            .width(Space.xxs)
+                            .height(Space.xl)
                             .background(MaterialTheme.colorScheme.primary)
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(Space.md))
                     Text(inlineAnnotated(b.text, ic), style = MaterialTheme.typography.bodyMedium)
                 }
                 is NoteBlock.Code -> Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = Radius.shapeMd,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(Modifier.horizontalScroll(rememberScrollState()).padding(12.dp)) {
+                    Column(Modifier.horizontalScroll(rememberScrollState()).padding(Space.md)) {
                         if (b.language.isNotBlank()) Text(
                             b.language,
                             style = MaterialTheme.typography.labelSmall,
@@ -154,7 +156,7 @@ fun NoteContent(
                         Text(b.code, fontFamily = PlexMono, style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                NoteBlock.Divider -> HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                NoteBlock.Divider -> HorizontalDivider(Modifier.padding(vertical = Space.xs))
                 is NoteBlock.Callout -> CalloutCard(b, ic)
                 is NoteBlock.Image -> ImageCard(b.path, b.caption, onOpen = { onOpenImage(b.path) })
                 is NoteBlock.FileCard -> FileAttachmentCard(b.path, onOpen = { onOpenFile(b.path) })
@@ -194,12 +196,12 @@ private fun CalloutCard(b: NoteBlock.Callout, ic: InlineColors) {
     val icon = iconOfCallout(b.kind)
     Surface(
         color = s.container,
-        shape = RoundedCornerShape(12.dp),
+        shape = Radius.shapeMd,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(Modifier.padding(12.dp)) {
+        Row(Modifier.padding(Space.md)) {
             Icon(icon, contentDescription = null, tint = s.onContainer, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(Space.md))
             Column {
                 Text(
                     b.title.ifBlank { b.kind.label },
@@ -222,7 +224,7 @@ fun ImageCard(path: String, caption: String, onOpen: () -> Unit) {
     val meta = rememberFileMeta(path)
     Surface(
         onClick = onOpen,
-        shape = RoundedCornerShape(14.dp),
+        shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -248,18 +250,18 @@ fun ImageCard(path: String, caption: String, onOpen: () -> Unit) {
                 Surface(
                     color = Color.Black.copy(alpha = 0.45f),
                     contentColor = Color.White,
-                    shape = RoundedCornerShape(8.dp),
+                    shape = Radius.shapeSm,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(8.dp)
+                        .padding(Space.sm)
                 ) {
-                    Icon(Icons.Filled.Fullscreen, contentDescription = "تكبير", modifier = Modifier.padding(5.dp).size(18.dp))
+                    Icon(Icons.Filled.Fullscreen, contentDescription = "تكبير", modifier = Modifier.padding(Space.xs).size(18.dp))
                 }
             }
-            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                 if (caption.isNotBlank()) {
                     Text(caption, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(Space.sm))
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
@@ -279,13 +281,13 @@ fun FileAttachmentCard(path: String, onOpen: () -> Unit) {
     val pdfThumb = if (isPdf) rememberPdfThumb(path) else null
     Surface(
         onClick = onOpen,
-        shape = RoundedCornerShape(14.dp),
+        shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = Radius.shapeMd,
                 color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.size(56.dp)
             ) {
@@ -306,7 +308,7 @@ fun FileAttachmentCard(path: String, onOpen: () -> Unit) {
                     }
                 }
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(Space.md))
             Column(Modifier.weight(1f)) {
                 Text(meta.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 1)
                 Text(
@@ -322,9 +324,9 @@ fun FileAttachmentCard(path: String, onOpen: () -> Unit) {
             Surface(
                 color = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = RoundedCornerShape(10.dp)
+                shape = Radius.shapeMd
             ) {
-                Text("فتح", Modifier.padding(horizontal = 14.dp, vertical = 8.dp), fontWeight = FontWeight.Bold)
+                Text("فتح", Modifier.padding(horizontal = Space.lg, vertical = Space.sm), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -333,7 +335,7 @@ fun FileAttachmentCard(path: String, onOpen: () -> Unit) {
 @Composable
 private fun NoteTable(b: NoteBlock.Table, ic: InlineColors) {
     Surface(
-        shape = RoundedCornerShape(10.dp),
+        shape = Radius.shapeMd,
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -342,7 +344,7 @@ private fun NoteTable(b: NoteBlock.Table, ic: InlineColors) {
                 b.header.forEach { cell ->
                     Text(
                         cell,
-                        Modifier.width(120.dp).padding(10.dp),
+                        Modifier.width(120.dp).padding(Space.md),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -354,7 +356,7 @@ private fun NoteTable(b: NoteBlock.Table, ic: InlineColors) {
                     row.forEach { cell ->
                         Text(
                             inlineAnnotated(cell, ic),
-                            Modifier.width(120.dp).padding(10.dp),
+                            Modifier.width(120.dp).padding(Space.md),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }

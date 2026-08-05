@@ -64,6 +64,8 @@ import com.corewall.qaqc.ui.theme.StatusColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 private val timeFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ENGLISH)
 
@@ -91,7 +93,7 @@ private fun CategoryLabel(cat: ElementCategory) {
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         ColorDot(color)
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(Space.sm))
         Text(label, style = MaterialTheme.typography.labelMedium)
     }
 }
@@ -105,9 +107,9 @@ private fun NamingContent(vm: MainViewModel, element: PlanElement) {
     var input by remember(element.id) { mutableStateOf(existing) }
 
     Text("تسمية العنصر ${element.id}", style = MaterialTheme.typography.titleLarge)
-    Spacer(Modifier.height(4.dp))
+    Spacer(Modifier.height(Space.xs))
     CategoryLabel(element.cat)
-    Spacer(Modifier.height (12.dp))
+    Spacer(Modifier.height (Space.md))
 
     OutlinedTextField(
         value = input,
@@ -123,7 +125,7 @@ private fun NamingContent(vm: MainViewModel, element: PlanElement) {
             .take(30)
     }
     if (suggestions.isNotEmpty()) {
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Space.sm))
         Text("اقتراحات:", style = MaterialTheme.typography.labelMedium)
         LazyColumn(Modifier.height(160.dp)) {
             items(suggestions) { mark ->
@@ -133,15 +135,15 @@ private fun NamingContent(vm: MainViewModel, element: PlanElement) {
                     else MaterialTheme.colorScheme.surface,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(mark, Modifier.padding(vertical = 10.dp, horizontal = 8.dp))
+                    Text(mark, Modifier.padding(vertical = Space.md, horizontal = Space.sm))
                 }
             }
         }
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(Space.md))
     // الحفظ بيقفل الـSheet فوراً — الانتقال للعنصر التالي بزرار منفصل ومقصود
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
         Button(
             onClick = { vm.saveName(element.id, input) },
             enabled = input.isNotBlank() || existing.isNotBlank()
@@ -172,46 +174,46 @@ private fun DetailsContent(vm: MainViewModel, element: PlanElement) {
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(Space.sm))
             Text(
                 "(${element.id})",
-                Modifier.padding(bottom = 4.dp),
+                Modifier.padding(bottom = Space.xs),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(Space.xs))
         Row(verticalAlignment = Alignment.CenterVertically) {
             CategoryLabel(element.cat)
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(Space.md))
             Text("الدور الحالي: $level", style = MaterialTheme.typography.labelMedium)
         }
 
         if (mark == null) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Space.md))
             Text(
                 "العنصر ده لسه متسمّاش. فعّل وضع التسمية من فوق عشان تديله اسمه المرجعي.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(Space.sm))
             Button(onClick = { vm.setNamingMode(true) }) { Text("فعّل وضع التسمية") }
             return@Column
         }
 
         val active = vm.logic.activeRange(schedule, mark, level)
         if (active is ActiveRangeResult.Gap) {
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Space.md))
             GapWarning(vm, mark)
         }
 
         // -------- حالة الفحص للدور الحالي --------
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(Space.lg))
         Text("حالة الفحص — دور $level", style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Space.sm))
         val currentStatus = InspectionStatus.from(inspections[element.id to level])
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
             InspectionStatus.entries.forEach { status ->
                 FilterChip(
@@ -224,9 +226,9 @@ private fun DetailsContent(vm: MainViewModel, element: PlanElement) {
         }
 
         // -------- جدول المدايات --------
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(Space.lg))
         Text("مدايات التسليح", style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Space.sm))
 
         val wallRows = schedule.walls[mark]
         val beamRows = schedule.beams[mark]
@@ -260,15 +262,15 @@ private fun DetailsContent(vm: MainViewModel, element: PlanElement) {
         }
 
         // -------- الكومنتات (معزولة لكل دور) --------
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(Space.lg))
         Text("الكومنتات — دور $level", style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Space.sm))
         val comments = allComments.filter { it.elementId == element.id && it.level == level }
         comments.forEach { c ->
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = Space.xs),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
@@ -332,13 +334,13 @@ private fun RangeCardScaffold(
     var expanded by remember { mutableStateOf(isActive) }
     val rotation by androidx.compose.animation.core.animateFloatAsState(if (expanded) 180f else 0f, label = "chev")
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(
             if (isActive) 1.5.dp else 1.dp,
             if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
         ),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs)
     ) {
         Column {
             // رأس قابل للطي
@@ -346,15 +348,15 @@ private fun RangeCardScaffold(
                 Modifier
                     .fillMaxWidth()
                     .clickable { expanded = !expanded }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(horizontal = Space.lg, vertical = Space.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 3.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = Space.xxs)) {
                         if (isActive) StatusBadge("الشغّال الآن", MaterialTheme.colorScheme.primary)
-                        if (rev) { Spacer(Modifier.width(6.dp)); StatusBadge("REV", com.corewall.qaqc.ui.theme.LocalSrtColors.current.purple) }
-                        if (edited) { Spacer(Modifier.width(6.dp)); StatusBadge("معدَّل", com.corewall.qaqc.ui.theme.LocalSrtColors.current.orange) }
+                        if (rev) { Spacer(Modifier.width(Space.sm)); StatusBadge("REV", com.corewall.qaqc.ui.theme.LocalSrtColors.current.purple) }
+                        if (edited) { Spacer(Modifier.width(Space.sm)); StatusBadge("معدَّل", com.corewall.qaqc.ui.theme.LocalSrtColors.current.orange) }
                     }
                 }
                 IconButton(onClick = onEdit) {
@@ -367,12 +369,12 @@ private fun RangeCardScaffold(
                 )
             }
             androidx.compose.animation.AnimatedVisibility(visible = expanded) {
-                Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
+                Column(Modifier.padding(start = Space.lg, end = Space.lg, bottom = Space.lg)) {
                     androidx.compose.material3.HorizontalDivider(color = com.corewall.qaqc.ui.theme.LocalSrtColors.current.divider)
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(Space.md))
                     content()
                     if (note != null) {
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(Space.sm))
                         com.corewall.qaqc.ui.theme.SrtCallout(
                             title = "ملاحظة على الصف",
                             body = note,
@@ -393,15 +395,15 @@ private fun SpecGroup(title: String, content: @Composable () -> Unit) {
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
         color = com.corewall.qaqc.ui.theme.LocalSrtColors.current.text3,
-        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+        modifier = Modifier.padding(top = Space.sm, bottom = Space.xs)
     )
     content()
 }
 
 @Composable
 private fun StatusBadge(text: String, color: androidx.compose.ui.graphics.Color) {
-    Surface(color = color.copy(alpha = 0.14f), shape = RoundedCornerShape(6.dp)) {
-        Text(text, Modifier.padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
+    Surface(color = color.copy(alpha = 0.14f), shape = Radius.shapeSm) {
+        Text(text, Modifier.padding(horizontal = Space.sm, vertical = Space.xxs), style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -411,7 +413,7 @@ private fun Badge(text: String, color: androidx.compose.ui.graphics.Color) {
         text,
         Modifier
             .background(color.copy(alpha = 0.2f), MaterialTheme.shapes.extraSmall)
-            .padding(horizontal = 6.dp, vertical = 1.dp),
+            .padding(horizontal = Space.sm, vertical = Space.xxs),
         color = color,
         style = MaterialTheme.typography.labelSmall
     )
@@ -549,7 +551,7 @@ private fun EditRangeDialog(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 fields.forEach { (key, _) ->
                     OutlinedTextField(
                         value = values.value[key] ?: "",
@@ -558,7 +560,7 @@ private fun EditRangeDialog(
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 3.dp)
+                            .padding(vertical = Space.xxs)
                     )
                 }
             }

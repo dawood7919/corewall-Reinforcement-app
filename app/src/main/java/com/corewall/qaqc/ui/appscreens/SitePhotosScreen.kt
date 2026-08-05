@@ -147,7 +147,7 @@ fun SitePhotosScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Space.md)) {
                 FloatingActionButton(
                     onClick = { showNewFolder = true; newFolderName = "" },
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -172,7 +172,7 @@ fun SitePhotosScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                    Modifier.padding(horizontal = Space.sm, vertical = Space.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (currentFolder.isNotBlank()) {
@@ -214,8 +214,8 @@ fun SitePhotosScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(Space.md),
+                    verticalArrangement = Arrangement.spacedBy(Space.md)
                 ) {
                     items(folders, key = { "dir-${it.absolutePath}" }) { dir ->
                         FolderCard(
@@ -306,7 +306,7 @@ fun SitePhotosScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     placeholder = { Text("مثال: فحص قبل الصب") },
-                    shape = RoundedCornerShape(14.dp)
+                    shape = Radius.shapeLg
                 )
             },
             confirmButton = {
@@ -331,25 +331,25 @@ private fun FolderCard(name: String, onOpen: () -> Unit, onDelete: () -> Unit) {
     val srt = LocalSrtColors.current
     Surface(
         onClick = onOpen,
-        shape = RoundedCornerShape(18.dp),
+        shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            Modifier.padding(14.dp),
+            Modifier.padding(Space.lg),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(Radius.shapeLg)
                     .background(srt.blue.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Filled.Folder, contentDescription = null, tint = srt.blue, modifier = Modifier.size(32.dp))
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Space.md))
             Text(
                 name,
                 style = MaterialTheme.typography.titleSmall,
@@ -357,7 +357,7 @@ private fun FolderCard(name: String, onOpen: () -> Unit, onDelete: () -> Unit) {
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Space.sm))
             TextButton(onClick = onDelete) {
                 Text("حذف", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
             }
@@ -377,7 +377,7 @@ private fun SitePhotoCard(
     val dateText = remember(photo.timestamp) { photoDateFmt.format(Date(photo.timestamp)) }
 
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         shadowElevation = 2.dp,
@@ -387,7 +387,7 @@ private fun SitePhotoCard(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-                .clip(RoundedCornerShape(18.dp))
+                .clip(Radius.shapeLg)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             if (bmp != null) {
@@ -415,7 +415,7 @@ private fun SitePhotoCard(
                             listOf(Color.Transparent, Color.Black.copy(alpha = 0.82f))
                         )
                     )
-                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .padding(horizontal = Space.md, vertical = Space.md)
             ) {
                 Column {
                     if (photo.comment.isNotBlank()) {
@@ -428,7 +428,7 @@ private fun SitePhotoCard(
                             maxLines = 4,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(Space.xs))
                     }
                     Text(
                         dateText,
@@ -474,7 +474,7 @@ private fun CommentDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(Space.md))
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
@@ -482,7 +482,7 @@ private fun CommentDialog(
                     placeholder = { Text("مثال: تسليح حائط T1-W05 قبل الصب") },
                     minLines = 3,
                     maxLines = 6,
-                    shape = RoundedCornerShape(14.dp)
+                    shape = Radius.shapeLg
                 )
             }
         },

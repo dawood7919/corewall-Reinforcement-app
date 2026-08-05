@@ -40,6 +40,8 @@ import com.corewall.qaqc.ui.EmptyState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 @Composable
 fun ManpowerReportsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
@@ -98,37 +100,37 @@ fun ManpowerReportsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         return
     }
 
-    LazyColumn(modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(Space.md)) {
         item {
             Text("تقرير دور $level", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Spacer(Modifier.height(Space.sm))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 StatCard("إجمالي العمال", "$totalWorkers", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
                 StatCard("إجمالي المشرفين", "$totalForemen", LocalCwColors.current.series(1), Modifier.weight(1f))
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 StatCard("متوسط/يوم", "%.0f".format(avg), LocalCwColors.current.series(2), Modifier.weight(1f))
                 StatCard("أعلى", "$maxW", LocalCwColors.current.series(5), Modifier.weight(1f))
                 StatCard("أقل", "$minW", LocalCwColors.current.series(6), Modifier.weight(1f))
             }
         }
         item {
-            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+            Surface(shape = Radius.shapeLg, color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(Space.lg)) {
                     Text("اتجاه الحضور", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(Space.md))
                     LineChart(perDay, MaterialTheme.colorScheme.primary)
                 }
             }
         }
         item {
             if (byTrade.isNotEmpty()) {
-                Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
+                Surface(shape = Radius.shapeLg, color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(Space.lg)) {
                         Text("توزيع العمالة حسب النوع", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(Space.sm))
                         DonutChart(byTrade.map { it.first.label to it.second })
                     }
                 }
@@ -136,12 +138,12 @@ fun ManpowerReportsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
         item { DistributionCard("توزيع الشركات", byCompany.map { it.first to it.second }) }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.md), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = { pdfLauncher.launch("manpower-$level.pdf") }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.PictureAsPdf, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("PDF")
+                    Icon(Icons.Filled.PictureAsPdf, contentDescription = null); Spacer(Modifier.width(Space.sm)); Text("PDF")
                 }
                 OutlinedButton(onClick = { csvLauncher.launch("manpower-$level.csv") }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.TableView, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Excel/CSV")
+                    Icon(Icons.Filled.TableView, contentDescription = null); Spacer(Modifier.width(Space.sm)); Text("Excel/CSV")
                 }
             }
         }
@@ -150,8 +152,8 @@ fun ManpowerReportsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
 @Composable
 private fun StatCard(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
-    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = modifier) {
-        Column(Modifier.padding(16.dp)) {
+    Surface(shape = Radius.shapeLg, color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = modifier) {
+        Column(Modifier.padding(Space.lg)) {
             Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = accent)
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -162,23 +164,23 @@ private fun StatCard(label: String, value: String, accent: Color, modifier: Modi
 fun DistributionCard(title: String, data: List<Pair<String, Int>>) {
     if (data.isEmpty()) return
     val max = data.maxOf { it.second }.coerceAtLeast(1)
-    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
+    Surface(shape = Radius.shapeLg, color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(Space.lg)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Space.md))
             data.forEach { (label, value) ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = Space.xs)) {
                     Text(label, Modifier.width(96.dp), style = MaterialTheme.typography.bodySmall, maxLines = 1)
                     Box(
-                        Modifier.weight(1f).height(18.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(9.dp))
+                        Modifier.weight(1f).height(Space.lg)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, Radius.shapeSm)
                     ) {
                         Box(
-                            Modifier.fillMaxWidth(value.toFloat() / max).height(18.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(9.dp))
+                            Modifier.fillMaxWidth(value.toFloat() / max).height(Space.lg)
+                                .background(MaterialTheme.colorScheme.primary, Radius.shapeSm)
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(Space.sm))
                     Text("$value", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 }
             }

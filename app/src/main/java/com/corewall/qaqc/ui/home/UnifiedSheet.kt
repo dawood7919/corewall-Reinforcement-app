@@ -23,6 +23,7 @@ import com.corewall.qaqc.data.model.PlanElement
 import com.corewall.qaqc.ui.counting.CountingSheetContent
 import com.corewall.qaqc.ui.dataroom.DataSheetContent
 import com.corewall.qaqc.ui.plan.ReinforcementSheetContent
+import com.corewall.qaqc.ui.design.Space
 
 /**
  * Sheet واعي بالعدسة: نفس العنصر — بدّل العدسة من جوّه من غير ما تقفل
@@ -38,10 +39,10 @@ fun UnifiedSheet(vm: MainViewModel, element: PlanElement, onDismiss: () -> Unit)
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
+                .padding(horizontal = Space.lg)
+                .padding(bottom = Space.xl)
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Lens.entries.forEach { l ->
                     FilterChip(
                         selected = lens == l,
@@ -50,7 +51,7 @@ fun UnifiedSheet(vm: MainViewModel, element: PlanElement, onDismiss: () -> Unit)
                     )
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Space.md))
             when (lens) {
                 Lens.REINF -> ReinforcementSheetContent(vm, element)
                 Lens.COUNT -> CountingSheetContent(vm, element)

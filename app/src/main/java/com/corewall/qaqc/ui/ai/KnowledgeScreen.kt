@@ -44,6 +44,8 @@ import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.DocFactEntity
 import com.corewall.qaqc.data.db.DocumentEntity
 import com.corewall.qaqc.ui.theme.LocalSrtColors
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 /**
  * شاشة المعرفة: بتورّي كل ملف دخل التطبيق وحالته —
@@ -68,30 +70,30 @@ fun KnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize()) {
         // ملخّص + زر تحليل الكل
         Surface(color = srt.blueTint, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(Space.lg)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = srt.blue, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(Space.sm))
                     Text("ذاكرة دور $level", style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold, color = srt.blue, modifier = Modifier.weight(1f))
                     Text("$done / ${docs.size}", style = MaterialTheme.typography.labelMedium, color = srt.blue)
                 }
                 if (!cfg.isConfigured) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(Space.sm))
                     Text("مفيش مفتاح API — الملفات بتتسجّل بس ومش بتتحلّل.",
                         style = MaterialTheme.typography.bodySmall, color = srt.orange)
                 } else if (pending > 0 || retryable > 0) {
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(Space.md))
                     Surface(
                         onClick = { vm.analyzePendingDocuments() },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = Radius.shapeMd,
                         color = srt.blue,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.Center,
+                        Row(Modifier.padding(Space.md), horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(Space.sm))
                             Text(
                                 when {
                                     analyzing > 0 -> "بيحلّل…"
@@ -107,14 +109,14 @@ fun KnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
         if (docs.isEmpty()) {
             Column(
-                Modifier.fillMaxSize().padding(32.dp),
+                Modifier.fillMaxSize().padding(Space.xxl),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
                 Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = srt.text3, modifier = Modifier.size(48.dp))
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(Space.md))
                 Text("مفيش ملفات في ذاكرة الدور ده", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(Space.xs))
                 Text("ارفع ملفات من تبويب الملفات وهتظهر هنا تلقائي.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -124,7 +126,7 @@ fun KnowledgeScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(Space.md)
         ) {
             items(docs, key = { it.id }) { doc -> DocCard(vm, doc) }
         }
@@ -155,18 +157,18 @@ private fun DocCard(vm: MainViewModel, doc: DocumentEntity) {
 
     Surface(
         onClick = { expanded = !expanded },
-        shape = RoundedCornerShape(18.dp),
+        shape = Radius.shapeLg,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(34.dp).clip(CircleShape).background(statusColor.copy(alpha = 0.14f)),
                     contentAlignment = Alignment.Center
                 ) { Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(18.dp)) }
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(Space.md))
                 Column(Modifier.weight(1f)) {
                     Text(doc.fileName, style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -183,7 +185,7 @@ private fun DocCard(vm: MainViewModel, doc: DocumentEntity) {
             }
 
             if (doc.error.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 // الأحمر للفشل النهائي بس؛ الناقص والمستني تنبيه مش خطأ
                 Text(
                     doc.error, style = MaterialTheme.typography.bodySmall,
@@ -191,7 +193,7 @@ private fun DocCard(vm: MainViewModel, doc: DocumentEntity) {
                 )
             }
             if (doc.summary.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Text(doc.summary, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = if (expanded) 20 else 2, overflow = TextOverflow.Ellipsis)
@@ -199,29 +201,29 @@ private fun DocCard(vm: MainViewModel, doc: DocumentEntity) {
 
             if (expanded) {
                 if (facts.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(Space.md))
                     Text("اتستخرج ${facts.size} معلومة:", style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold, color = srt.text3)
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(Space.sm))
                     facts.groupBy { it.kind }.forEach { (kind, list) ->
                         Text("• $kind (${list.size})", style = MaterialTheme.typography.labelSmall, color = srt.blue)
                         Text(
                             list.take(12).joinToString("، ") { "${it.key}=${it.value}${it.unit}" },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 10.dp, bottom = 6.dp)
+                            modifier = Modifier.padding(start = Space.md, bottom = Space.sm)
                         )
                     }
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Space.md))
                 Surface(
                     onClick = { vm.reanalyzeDocument(doc.id) },
-                    shape = RoundedCornerShape(10.dp),
+                    shape = Radius.shapeMd,
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(Space.sm))
                         Text("حلّل تاني", style = MaterialTheme.typography.labelMedium)
                     }
                 }

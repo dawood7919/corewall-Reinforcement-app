@@ -50,6 +50,8 @@ import com.corewall.qaqc.ui.theme.LocalSrtColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Space
 
 private val stamp = SimpleDateFormat("hh:mm a", Locale.ENGLISH)
 
@@ -71,7 +73,7 @@ fun AiDashboardCard(
     val gradient = LocalAppGradients.current.header
 
     Surface(
-        shape = RoundedCornerShape(22.dp),
+        shape = Radius.shapeXl,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         shadowElevation = 1.dp,
@@ -83,28 +85,28 @@ fun AiDashboardCard(
                 Modifier
                     .fillMaxWidth()
                     .background(Brush.horizontalGradient(gradient))
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .padding(horizontal = Space.lg, vertical = Space.lg),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color.White)
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(Space.md))
                 Column(Modifier.weight(1f)) {
                     Text("مساعد CoreWall الذكي", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
                     Text(subtitleFor(state), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.85f))
                 }
                 Surface(
                     onClick = onOpenChat,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = Radius.shapeMd,
                     color = Color.White.copy(alpha = 0.2f)
                 ) {
                     Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "المساعد الهندسي",
-                        tint = Color.White, modifier = Modifier.padding(9.dp).size(20.dp))
+                        tint = Color.White, modifier = Modifier.padding(Space.sm).size(20.dp))
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(Space.sm))
                 RefreshButton(loading = state is AiUiState.Loading, onClick = onRefresh)
             }
 
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(Space.lg)) {
                 when (state) {
                     AiUiState.NotConfigured -> NotConfigured(onOpenSettings)
                     AiUiState.Idle -> IdlePrompt(onRefresh)
@@ -134,14 +136,14 @@ private fun RefreshButton(loading: Boolean, onClick: () -> Unit) {
     )
     Surface(
         onClick = { if (!loading) onClick() },
-        shape = RoundedCornerShape(12.dp),
+        shape = Radius.shapeMd,
         color = Color.White.copy(alpha = 0.2f)
     ) {
         Icon(
             Icons.Filled.Refresh,
             contentDescription = "تحديث التحليل",
             tint = Color.White,
-            modifier = Modifier.padding(9.dp).size(20.dp).then(if (loading) Modifier.rotate(angle) else Modifier)
+            modifier = Modifier.padding(Space.sm).size(20.dp).then(if (loading) Modifier.rotate(angle) else Modifier)
         )
     }
 }
@@ -156,24 +158,24 @@ private fun NotConfigured(onOpenSettings: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(Space.md))
         Surface(
             onClick = onOpenSettings,
-            shape = RoundedCornerShape(14.dp),
+            shape = Radius.shapeLg,
             color = srt.blueTint,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
-                Modifier.padding(14.dp),
+                Modifier.padding(Space.lg),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(Icons.Filled.Settings, contentDescription = null, tint = srt.blue, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(Space.sm))
                 Text("أضف مفتاح OpenRouter", color = srt.blue, fontWeight = FontWeight.SemiBold)
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Space.sm))
         Text(
             "من غير مفتاح، التطبيق بيفضل أوفلاين بالكامل ومفيش أي بيانات بتخرج منه.",
             style = MaterialTheme.typography.labelSmall,
@@ -191,14 +193,14 @@ private fun IdlePrompt(onRefresh: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(Space.md))
         Surface(
             onClick = onRefresh,
-            shape = RoundedCornerShape(14.dp),
+            shape = Radius.shapeLg,
             color = srt.blueTint,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.Center) {
+            Row(Modifier.padding(Space.lg), horizontalArrangement = Arrangement.Center) {
                 Text("حلّل الدور", color = srt.blue, fontWeight = FontWeight.SemiBold)
             }
         }
@@ -212,11 +214,11 @@ private fun LoadingBody() {
             Box(
                 Modifier
                     .fillMaxWidth(if (i == 2) 0.6f else 1f)
-                    .height(14.dp)
-                    .clip(RoundedCornerShape(7.dp))
+                    .height(Space.lg)
+                    .clip(Radius.shapeSm)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Space.md))
         }
         Text(
             "بيقرأ التسليح، الفجوات، الفحوصات، وعدّ الأسياخ…",
@@ -233,12 +235,12 @@ private fun ErrorBody(state: AiUiState.Error, onOpenSettings: () -> Unit) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
+                .clip(Radius.shapeLg)
                 .background(srt.red.copy(alpha = 0.10f))
-                .padding(14.dp)
+                .padding(Space.lg)
         ) {
             Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = srt.red, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(Space.md))
             Column(Modifier.weight(1f)) {
                 Text("تعذّر التحليل", fontWeight = FontWeight.Bold, color = srt.red, style = MaterialTheme.typography.bodyMedium)
                 Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
@@ -246,18 +248,18 @@ private fun ErrorBody(state: AiUiState.Error, onOpenSettings: () -> Unit) {
         }
         // لو فيه تحليل قديم، نفضل نعرضه بدل ما الشاشة تفضى
         state.previous?.let {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Space.md))
             Text("آخر تحليل ناجح:", style = MaterialTheme.typography.labelSmall, color = srt.text3)
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Space.sm))
             Text(it.analysis.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Space.md))
         Text(
             "راجع الإعدادات",
             style = MaterialTheme.typography.labelMedium,
             color = srt.blue,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.clip(RoundedCornerShape(8.dp)).padding(4.dp)
+            modifier = Modifier.clip(Radius.shapeSm).padding(Space.xs)
         )
     }
 }
@@ -279,7 +281,7 @@ private fun ReadyBody(state: AiUiState.Ready, onOpenFull: () -> Unit) {
             ) {
                 Text("${a.healthScore}", style = MaterialTheme.typography.titleLarge, color = statusColor, fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(Space.lg))
             Column(Modifier.weight(1f)) {
                 Text(
                     when (a.status.uppercase()) {
@@ -294,7 +296,7 @@ private fun ReadyBody(state: AiUiState.Ready, onOpenFull: () -> Unit) {
         }
 
         if (a.summary.isNotBlank()) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Space.md))
             Text(a.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
         }
 
@@ -302,18 +304,18 @@ private fun ReadyBody(state: AiUiState.Ready, onOpenFull: () -> Unit) {
         Section("تحذيرات", a.warnings.take(3), Icons.Filled.WarningAmber, srt.orange)
         Section("توصيات", a.recommendations.take(3), Icons.Filled.Lightbulb, srt.green)
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(Space.md))
         Surface(
             onClick = onOpenFull,
-            shape = RoundedCornerShape(14.dp),
+            shape = Radius.shapeLg,
             color = MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.Center) {
+            Row(Modifier.padding(Space.md), horizontalArrangement = Arrangement.Center) {
                 Text("عرض التحليل الكامل", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Space.sm))
         Text(
             "الموديل: ${state.model}",
             style = MaterialTheme.typography.labelSmall,
@@ -325,13 +327,13 @@ private fun ReadyBody(state: AiUiState.Ready, onOpenFull: () -> Unit) {
 @Composable
 private fun Section(title: String, items: List<AiItem>, icon: ImageVector, accent: Color) {
     if (items.isEmpty()) return
-    Spacer(Modifier.height(14.dp))
+    Spacer(Modifier.height(Space.lg))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(Space.sm))
         Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = accent)
     }
-    Spacer(Modifier.height(6.dp))
+    Spacer(Modifier.height(Space.sm))
     items.forEach { AiItemRow(it) }
 }
 
@@ -345,16 +347,16 @@ fun AiItemRow(item: AiItem) {
         AiSeverity.LOW -> srt.blue
         AiSeverity.INFO -> srt.text3
     }
-    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-        Box(Modifier.padding(top = 6.dp).size(7.dp).clip(CircleShape).background(color))
-        Spacer(Modifier.width(10.dp))
+    Row(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
+        Box(Modifier.padding(top = Space.sm).size(7.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.width(Space.md))
         Column(Modifier.weight(1f)) {
             Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
             if (item.detail.isNotBlank()) {
                 Text(item.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (item.marks.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(Space.xs))
                 Text(
                     item.marks.joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall,
