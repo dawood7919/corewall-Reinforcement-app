@@ -9,6 +9,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.ui.ai.AiChatScreen
@@ -125,37 +130,54 @@ fun AppShell(vm: MainViewModel) {
             }
         }
     ) {
-        Scaffold(
-            containerColor = c.background,
-            topBar = {
-                if (!fullScreen) {
-                    FloorBar(
-                        level = level,
-                        levelIndex = vm.levels.indexOf(level),
-                        levelCount = vm.levels.size,
-                        destinationTitle = if (nav.canPop) titleFor(vm, dest) else null,
-                        unread = unread,
-                        onPickLevel = { showLevelSheet = true },
-                        onMenu = { scope.launch { drawerState.open() } },
-                        onBack = if (nav.canPop) ({ vm.back() }) else null,
-                        onNotifications = { vm.go(Dest.Notifications) }
-                    )
+        // على شاشة عريضة (تابلت أو موبايل مفرود) الشريط السفلي بيتحوّل لعمود
+        // جانبي. السبب مش شكلي: التبويبات في الأسفل على تابلت بتبقى بعيدة عن
+        // الإبهام وبتاكل ارتفاع، والمسقط هنا هو الشغل الأساسي والارتفاع أغلى
+        // من العرض. مجموعة التبويبات نفسها ما بتتغيّرش — نفس الخمسة.
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val wide = maxWidth >= WideBreakpoint
+            val showRail = wide && !fullScreen
+
+            Row(Modifier.fillMaxSize()) {
+                if (showRail) {
+                    NavRail(current = nav.tab, onSelect = { vm.selectTab(it) })
                 }
-            },
-            bottomBar = {
-                if (!fullScreen) BottomNav(current = nav.tab, onSelect = { vm.selectTab(it) })
-            }
-        ) { padding ->
-            val inner = Modifier.padding(padding)
-            // انتقال هادي بين الوجهات — بيشرح إن الشاشة اتغيّرت، من غير مسرح.
-            AnimatedContent(
-                targetState = dest,
-                transitionSpec = {
-                    fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit())
-                },
-                label = "destination"
-            ) { d ->
-                Destination(vm = vm, dest = d, modifier = inner)
+                Scaffold(
+                    modifier = Modifier.weight(1f),
+                    containerColor = c.background,
+                    topBar = {
+                        if (!fullScreen) {
+                            FloorBar(
+                                level = level,
+                                levelIndex = vm.levels.indexOf(level),
+                                levelCount = vm.levels.size,
+                                destinationTitle = if (nav.canPop) titleFor(vm, dest) else null,
+                                unread = unread,
+                                onPickLevel = { showLevelSheet = true },
+                                onMenu = { scope.launch { drawerState.open() } },
+                                onBack = if (nav.canPop) ({ vm.back() }) else null,
+                                onNotifications = { vm.go(Dest.Notifications) }
+                            )
+                        }
+                    },
+                    bottomBar = {
+                        if (!fullScreen && !showRail) {
+                            BottomNav(current = nav.tab, onSelect = { vm.selectTab(it) })
+                        }
+                    }
+                ) { padding ->
+                    val inner = Modifier.padding(padding)
+                    // انتقال هادي بين الوجهات — بيشرح إن الشاشة اتغيّرت، من غير مسرح.
+                    AnimatedContent(
+                        targetState = dest,
+                        transitionSpec = {
+                            fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit())
+                        },
+                        label = "destination"
+                    ) { d ->
+                        Destination(vm = vm, dest = d, modifier = inner)
+                    }
+                }
             }
         }
     }
@@ -293,6 +315,36 @@ private fun BottomNav(current: Dest.Root, onSelect: (Dest.Root) -> Unit) {
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+        }
+    }
+}
+
+/** الحد اللي بعده بنعتبر الشاشة عريضة — نفس حد Material للـmedium width. */
+private val WideBreakpoint = 600.dp
+
+/** عمود التنقّل الجانبي — نفس التبويبات الخمسة، بس رأسية. */
+@Composable
+private fun NavRail(current: Dest.Root, onSelect: (Dest.Root) -> Unit) {
+    val c = LocalCwColors.current
+    Surface(color = c.surface) {
+        Column(
+            Modifier
+                .fillMaxHeight()
+                .width(Sizes.rail)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(vertical = Space.sm),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs)
+        ) {
+            Tabs.forEach { tab ->
+                NavTab(
+                    spec = tab,
+                    selected = tab.dest == current,
+                    onClick = { onSelect(tab.dest) },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }

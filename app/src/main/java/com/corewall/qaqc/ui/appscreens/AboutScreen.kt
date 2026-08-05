@@ -77,7 +77,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
                 )
                 Spacer(Modifier.height(Space.xs))
                 Text(
-                    "الإصدار 8.0 (Build 32)",
+                    "الإصدار 8.1 (Build 33)",
                     style = CwText.code,
                     color = c.textTertiary
                 )
