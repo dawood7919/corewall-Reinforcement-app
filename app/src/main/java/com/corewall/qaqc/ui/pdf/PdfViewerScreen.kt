@@ -1,17 +1,12 @@
 package com.corewall.qaqc.ui.pdf
 
-import android.graphics.Bitmap
-import android.graphics.pdf.PdfRenderer
-import android.os.ParcelFileDescriptor
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,39 +14,40 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallMade
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Highlight
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -62,18 +58,30 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
+import com.corewall.qaqc.pdfengine.PdfCanvas
+import com.corewall.qaqc.pdfengine.PdfDocumentSession
+import com.corewall.qaqc.pdfengine.PdfOpenException
+import com.corewall.qaqc.pdfengine.PdfViewerState
+import com.corewall.qaqc.pdfengine.PageLayout
+import com.corewall.qaqc.pdfengine.TileEngine
+import com.corewall.qaqc.pdfengine.ViewMode
+import com.corewall.qaqc.pdfengine.pageHit
+import com.corewall.qaqc.pdfengine.pagePointToScreen
+import com.corewall.qaqc.ui.design.CwIconButton
+import com.corewall.qaqc.ui.design.CwText
+import com.corewall.qaqc.ui.design.IconSize
+import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Sizes
+import com.corewall.qaqc.ui.design.Space
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,7 +92,6 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
-import com.corewall.qaqc.ui.design.Space
 
 private enum class PdfTool(val toolName: String?) {
     PAN(null),
@@ -106,55 +113,112 @@ private val PALETTE = listOf(
 private val json = Json
 
 /**
- * عارض PDF داخلي: تقليب صفحات + زوم، وأدوات تعليق بتتحفظ تلقائي:
- * هايلايت مساحة / مستطيل / دايرة / سهم / رسم حر — مع تراجع ومسح
- * وتصدير نسخة PDF عليها كل التعليقات.
+ * عارض الـPDF — مبني على محرّك المربّعات.
+ *
+ * اللي اتغيّر عن النسخة القديمة، ولية:
+ *
+ * • **الرندر** كان صورة واحدة عرضها ٢٠٤٨ بكسل للصفحة كلها، والتكبير كان
+ *   بيمطّطها. يعني عند ١٠× انت بتبصّ على ٢٠٥ بكسل حقيقيين متفرودين على
+ *   الشاشة — والرسمة بتضيع في اللحظة اللي بتقرّب فيها عشان تقرا التسليح.
+ *   دلوقتي كل منطقة بتترسم بدقّتها الحقيقية لحد ٦٤×.
+ * • **التمرير** كان صفحة صفحة بأزرار. دلوقتي تمرير متصل رأسي وأفقي
+ *   واندفاع طبيعي.
+ * • **الذاكرة** كانت ٢٤ ميجا للصفحة الواحدة مهما كان التكبير. دلوقتي
+ *   ميزانية محسوبة من الجهاز، وبتشيل كذا شاشة عند أي تكبير.
+ *
+ * التعليقات لسه بنفس النموذج المتخزّن (إحداثيات منسّبة ٠..١ لكل صفحة)،
+ * فمفيش أي علامة قديمة ضاعت مع التغيير ده.
  */
 @Composable
 fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val c = LocalCwColors.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val file = remember(path) { File(path) }
 
-    val rendererLock = remember(path) { Any() }
-    val renderer = remember(path) {
-        runCatching {
-            PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY))
-        }.getOrNull()
-    }
-    DisposableEffect(path) {
-        onDispose { runCatching { renderer?.close() } }
+    // ── فتح المستند
+    var session by remember(path) { mutableStateOf<PdfDocumentSession?>(null) }
+    var openError by remember(path) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(path) {
+        val opened = withContext(Dispatchers.IO) {
+            runCatching { PdfDocumentSession.open(context, file) }
+        }
+        opened.onSuccess { session = it }
+        opened.onFailure { e ->
+            openError = (e as? PdfOpenException)?.userMessage ?: "مقدرناش نفتح الملف ده"
+        }
     }
 
-    if (renderer == null) {
-        Surface(Modifier.fillMaxSize()) {
-            Column(
-                Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text("مقدرناش نفتح الـPDF ده", color = MaterialTheme.colorScheme.error)
-                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "إغلاق") }
-            }
-        }
+    DisposableEffect(path) {
+        onDispose { session?.close() }
+    }
+
+    val active = session
+    if (openError != null || active == null) {
+        LoadingOrError(openError, onClose)
         return
     }
 
-    val pageCount = renderer.pageCount
-    var pageIndex by remember(path) { mutableIntStateOf(0) }
-    var tool by remember { mutableStateOf(PdfTool.PAN) }
-    var colorIdx by remember { mutableIntStateOf(0) }
+    // ── المحرّك والحالة
+    val engine = remember(active) { TileEngine(active, TileEngine.budgetFor(context)) }
+    DisposableEffect(engine) { onDispose { engine.clear() } }
 
-    val allAnnotations by vm.pdfAnnotations.collectAsStateWithLifecycle()
-    val pageAnnotations = remember(allAnnotations, path, pageIndex) {
-        allAnnotations.filter { it.filePath == path && it.page == pageIndex }.sortedBy { it.id }
+    val state = remember(active) { PdfViewerState(active.pageCount) }
+    val measured by active.measuredCount.collectAsStateWithLifecycle()
+
+    // الرصّ بيتعاد كل ما مقاس صفحة جديد يوصل. ده اللي بيخلّي المستند الكبير
+    // يفتح فوراً بتقدير وبعدين يظبط نفسه من غير ما المستخدم يحسّ.
+    LaunchedEffect(measured, state.mode) {
+        state.setLayout(PageLayout.build(active.allSizes(), state.mode))
     }
 
-    val pageBitmap by produceState<Bitmap?>(initialValue = null, path, pageIndex) {
-        value = null
-        value = withContext(Dispatchers.IO) {
-            runCatching { renderPage(renderer, rendererLock, pageIndex) }.getOrNull()
+    // قياس الصفحات القريبة من المشهد — مش كلها، عشان مستند ٢٠٠٠ صفحة
+    // مايستهلكش القرص والوقت على صفحات محدش هيوصلها.
+    LaunchedEffect(state.currentPage) {
+        val from = (state.currentPage - 4).coerceAtLeast(0)
+        val to = (state.currentPage + 8).coerceAtMost(active.pageCount - 1)
+        for (p in from..to) active.measure(p)
+    }
+
+    // ── التعليقات
+    val allAnnotations by vm.pdfAnnotations.collectAsStateWithLifecycle()
+    val fileAnnotations = remember(allAnnotations, path) {
+        allAnnotations.filter { it.filePath == path }
+    }
+
+    var tool by remember { mutableStateOf(PdfTool.PAN) }
+    var colorIdx by remember { mutableIntStateOf(0) }
+    var draft by remember { mutableStateOf<List<Offset>>(emptyList()) }
+    var draftPage by remember { mutableIntStateOf(-1) }
+    var chromeVisible by remember { mutableStateOf(true) }
+
+    val colorArgb = PALETTE[colorIdx]
+
+    fun commitDraft() {
+        val toolName = tool.toolName
+        val page = draftPage
+        if (toolName == null || page < 0 || draft.size < 2) {
+            draft = emptyList(); draftPage = -1; return
         }
+        // بنخزّن **منسّب لصفحته** — يفضل صح مع أي تكبير أو دوران أو تصدير
+        val slot = state.layout.slotAt(page)
+        if (slot == null) { draft = emptyList(); draftPage = -1; return }
+        val flat = ArrayList<Float>(draft.size * 2)
+        draft.forEach { p ->
+            val doc = state.screenToDoc(p)
+            flat += ((doc.x - slot.left) / slot.size.width).coerceIn(0f, 1f)
+            flat += ((doc.y - slot.top) / slot.size.height).coerceIn(0f, 1f)
+        }
+        vm.addPdfAnnotation(
+            PdfAnnotationEntity(
+                filePath = path, page = page, tool = toolName,
+                color = colorArgb, pointsJson = json.encodeToString(flat),
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        draft = emptyList()
+        draftPage = -1
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -162,278 +226,114 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     ) { uri ->
         if (uri != null) scope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri)?.use { os ->
-                        exportAnnotatedPdf(renderer, rendererLock, os) { page ->
-                            allAnnotations.filter { it.filePath == path && it.page == page }
-                        }
-                    } ?: error("مقدرناش نفتح الملف")
+                exportAnnotatedPdf(context, active, uri) { page ->
+                    fileAnnotations.filter { it.page == page }
                 }
             }
             Toast.makeText(
                 context,
-                if (result.isSuccess) "تم تصدير النسخة المعلّقة ✓" else "فشل التصدير: ${result.exceptionOrNull()?.message}",
+                if (result.isSuccess) "تم تصدير النسخة المعلّقة ✓"
+                else "فشل التصدير: ${result.exceptionOrNull()?.message}",
                 Toast.LENGTH_LONG
             ).show()
         }
     }
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize()) {
-            // الشريط العلوي (مظبوط تحت الـstatus bar)
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = Space.xs),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "إغلاق") }
-                Text(
-                    file.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
+    // ── الشاشة
+    Surface(Modifier.fillMaxSize(), color = c.surfaceAlt) {
+        Box(Modifier.fillMaxSize()) {
+
+            PdfCanvas(
+                state = state,
+                engine = engine,
+                session = active,
+                drawingActive = tool != PdfTool.PAN,
+                onDrawStart = { p ->
+                    val hit = state.pageHit(p)
+                    if (hit != null) { draftPage = hit.page; draft = listOf(p) }
+                },
+                onDrawMove = { p ->
+                    if (draftPage >= 0) {
+                        draft = if (tool == PdfTool.FREEHAND) draft + p
+                        else listOf(draft.firstOrNull() ?: p, p)
+                    }
+                },
+                onDrawEnd = { commitDraft() },
+                onTap = { chromeVisible = !chromeVisible },
+                overlay = { s ->
+                    drawAnnotations(s, fileAnnotations)
+                    if (draft.size >= 2) {
+                        tool.toolName?.let { drawShape(it, Color(colorArgb), draft, s.zoom) }
+                    }
+                }
+            )
+
+            AnimatedVisibility(chromeVisible, enter = fadeIn(), exit = fadeOut()) {
+                TopChrome(
+                    name = file.name,
+                    page = state.currentPage + 1,
+                    pageCount = active.pageCount,
+                    zoomPercent = state.zoomPercent(),
+                    onClose = onClose,
+                    onExport = { exportLauncher.launch("${file.nameWithoutExtension}-معلّق.pdf") }
                 )
-                IconButton(onClick = { vm.undoLastPdfAnnotation(path, pageIndex) }) {
-                    Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "تراجع")
-                }
-                IconButton(onClick = { vm.clearPdfPage(path, pageIndex) }) {
-                    Icon(Icons.Filled.Delete, contentDescription = "مسح الصفحة")
-                }
-                IconButton(onClick = {
-                    exportLauncher.launch(file.nameWithoutExtension + "-annotated.pdf")
-                }) {
-                    Icon(Icons.Filled.IosShare, contentDescription = "تصدير نسخة معلّقة")
-                }
             }
 
-            // الصفحة
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+            AnimatedVisibility(
+                visible = chromeVisible,
+                enter = fadeIn(), exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter)
             ) {
-                val bmp = pageBitmap
-                if (bmp == null) {
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                } else {
-                    PdfPageCanvas(
-                        bitmap = bmp,
-                        annotations = pageAnnotations,
-                        tool = tool,
-                        colorArgb = PALETTE[colorIdx],
-                        onCommit = { toolName, points ->
-                            vm.addPdfAnnotation(
-                                PdfAnnotationEntity(
-                                    filePath = path,
-                                    page = pageIndex,
-                                    tool = toolName,
-                                    color = PALETTE[colorIdx],
-                                    pointsJson = json.encodeToString(points),
-                                    createdAt = System.currentTimeMillis()
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
-            // شريط الأدوات (سطرين مظبوطين فوق الـnavigation bar)
-            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = Space.sm, vertical = Space.xxs),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Space.xxs)
-                    ) {
-                        ToolButton(Icons.Filled.PanTool, "تحريك وزوم", tool == PdfTool.PAN) { tool = PdfTool.PAN }
-                        ToolButton(Icons.Filled.Highlight, "هايلايت", tool == PdfTool.HIGHLIGHT) { tool = PdfTool.HIGHLIGHT }
-                        ToolButton(Icons.Filled.CropSquare, "مستطيل", tool == PdfTool.RECT) { tool = PdfTool.RECT }
-                        ToolButton(Icons.Filled.RadioButtonUnchecked, "دايرة", tool == PdfTool.CIRCLE) { tool = PdfTool.CIRCLE }
-                        ToolButton(Icons.AutoMirrored.Filled.CallMade, "سهم", tool == PdfTool.ARROW) { tool = PdfTool.ARROW }
-                        ToolButton(Icons.Filled.Draw, "رسم حر", tool == PdfTool.FREEHAND) { tool = PdfTool.FREEHAND }
-                        Spacer(Modifier.width(Space.sm))
-                        PALETTE.forEachIndexed { i, c ->
-                            Box(
-                                Modifier
-                                    .padding(Space.xxs)
-                                    .size(if (i == colorIdx) 30.dp else 24.dp)
-                                    .background(Color(c), CircleShape)
-                                    .pointerInput(i) { detectTapGestures { colorIdx = i } }
-                            )
-                        }
-                    }
-                    if (pageCount > 1) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Space.sm),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(onClick = { if (pageIndex > 0) pageIndex-- }, enabled = pageIndex > 0) {
-                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "السابقة")
-                            }
-                            androidx.compose.material3.Slider(
-                                value = pageIndex.toFloat(),
-                                onValueChange = { pageIndex = it.toInt().coerceIn(0, pageCount - 1) },
-                                valueRange = 0f..(pageCount - 1).toFloat(),
-                                steps = (pageCount - 2).coerceAtLeast(0),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                "${pageIndex + 1}/$pageCount",
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(horizontal = Space.sm)
-                            )
-                            IconButton(
-                                onClick = { if (pageIndex < pageCount - 1) pageIndex++ },
-                                enabled = pageIndex < pageCount - 1
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "التالية")
-                            }
-                        }
-                    }
-                }
+                BottomChrome(
+                    tool = tool,
+                    onTool = { tool = if (tool == it) PdfTool.PAN else it },
+                    colorIdx = colorIdx,
+                    onColor = { colorIdx = it },
+                    mode = state.mode,
+                    onMode = { state.setMode(it, active.allSizes()) },
+                    onFitWidth = { state.fitWidth() },
+                    onFitPage = { state.fitPage() },
+                    canUndo = fileAnnotations.any { it.page == state.currentPage },
+                    onUndo = { vm.undoLastPdfAnnotation(path, state.currentPage) },
+                    onClear = { vm.clearPdfPage(path, state.currentPage) }
+                )
             }
         }
     }
 }
 
-@Composable
-private fun ToolButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    desc: String,
-    selected: Boolean,
-    onClick: () -> Unit
+// ══════════════════════════════════════════════════════ الرسم فوق الصفحات
+
+/** بيرسم تعليقات كل صفحة مرئية في مكانها الصح. */
+private fun DrawScope.drawAnnotations(
+    state: PdfViewerState,
+    annotations: List<PdfAnnotationEntity>
 ) {
-    IconButton(onClick = onClick) {
-        Icon(
-            icon,
-            contentDescription = desc,
-            tint = if (selected) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    if (annotations.isEmpty()) return
+    val rect = state.visibleDocRect()
+    val visiblePages = state.layout
+        .visible(rect.left, rect.top, rect.right, rect.bottom)
+        .map { it.index }
+        .toSet()
+
+    for (a in annotations) {
+        if (a.page !in visiblePages) continue
+        val flat = runCatching { json.decodeFromString<List<Float>>(a.pointsJson) }.getOrNull() ?: continue
+        val points = (flat.indices step 2).mapNotNull { i ->
+            if (i + 1 >= flat.size) null
+            else state.pagePointToScreen(a.page, flat[i], flat[i + 1])
+        }
+        drawShape(a.tool, Color(a.color), points, state.zoom)
     }
 }
 
-@Composable
-private fun PdfPageCanvas(
-    bitmap: Bitmap,
-    annotations: List<PdfAnnotationEntity>,
-    tool: PdfTool,
-    colorArgb: Long,
-    onCommit: (toolName: String, normalizedPoints: List<Float>) -> Unit
+/** رسم شكل تعليق — نفس المنطق للمعاينة الحيّة وللمحفوظ. */
+private fun DrawScope.drawShape(
+    toolName: String,
+    color: Color,
+    points: List<Offset>,
+    zoom: Float
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    var draft by remember { mutableStateOf<List<Offset>>(emptyList()) }
-
-    val image = remember(bitmap) { bitmap.asImageBitmap() }
-    val bw = bitmap.width.toFloat()
-    val bh = bitmap.height.toFloat()
-
-    // العرض الافتراضي: الصفحة بعرض الشاشة كامل (fit-width) ومبدأها من فوق —
-    // ولو الصفحة أقصر من الشاشة بتتوسّط رأسياً.
-    fun baseTransform(size: IntSize): Pair<Float, Offset> {
-        if (size.width == 0 || size.height == 0) return 1f to Offset.Zero
-        val base = size.width / bw
-        val yOff = ((size.height - bh * base) / 2).coerceAtLeast(0f)
-        return base to Offset(0f, yOff)
-    }
-
-    /** مستطيل عرض الصفحة على الشاشة بعد الزوم. */
-    fun displayRect(size: IntSize): Rect {
-        val (base, baseOff) = baseTransform(size)
-        val left = baseOff.x * scale + offset.x
-        val top = baseOff.y * scale + offset.y
-        return Rect(left, top, left + bw * base * scale, top + bh * base * scale)
-    }
-
-    fun toNormalized(p: Offset): Pair<Float, Float> {
-        val r = displayRect(canvasSize)
-        val nx = ((p.x - r.left) / r.width).coerceIn(0f, 1f)
-        val ny = ((p.y - r.top) / r.height).coerceIn(0f, 1f)
-        return nx to ny
-    }
-
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF3A3A3C))
-            .onSizeChanged { canvasSize = it }
-            .pointerInput(tool) {
-                if (tool == PdfTool.PAN) {
-                    detectTransformGestures { centroid, pan, zoom, _ ->
-                        val newScale = (scale * zoom).coerceIn(0.5f, 10f)
-                        val z = newScale / scale
-                        offset = Offset(
-                            offset.x * z + centroid.x * (1 - z) + pan.x,
-                            offset.y * z + centroid.y * (1 - z) + pan.y
-                        )
-                        scale = newScale
-                    }
-                } else {
-                    detectDragGestures(
-                        onDragStart = { pos -> draft = listOf(pos) },
-                        onDrag = { change, _ ->
-                            draft = if (tool == PdfTool.FREEHAND) draft + change.position
-                            else listOf(draft.first(), change.position)
-                        },
-                        onDragEnd = {
-                            if (draft.size >= 2) {
-                                val normalized = draft.flatMap { p ->
-                                    val (nx, ny) = toNormalized(p)
-                                    listOf(nx, ny)
-                                }
-                                tool.toolName?.let { onCommit(it, normalized) }
-                            }
-                            draft = emptyList()
-                        },
-                        onDragCancel = { draft = emptyList() }
-                    )
-                }
-            }
-            .pointerInput(Unit) {
-                detectTapGestures(onDoubleTap = {
-                    scale = 1f
-                    offset = Offset.Zero
-                })
-            }
-    ) {
-        val r = displayRect(IntSize(size.width.toInt(), size.height.toInt()))
-        drawImage(
-            image = image,
-            dstOffset = IntOffset(r.left.toInt(), r.top.toInt()),
-            dstSize = IntSize(r.width.toInt().coerceAtLeast(1), r.height.toInt().coerceAtLeast(1))
-        )
-
-        for (a in annotations) {
-            val points = runCatching { json.decodeFromString<List<Float>>(a.pointsJson) }.getOrNull() ?: continue
-            val screenPoints = (points.indices step 2).mapNotNull { i ->
-                if (i + 1 >= points.size) null
-                else Offset(r.left + points[i] * r.width, r.top + points[i + 1] * r.height)
-            }
-            drawShape(a.tool, Color(a.color), screenPoints, scale)
-        }
-
-        if (draft.size >= 2) {
-            tool.toolName?.let { drawShape(it, Color(colorArgb), draft, scale) }
-        }
-    }
-}
-
-/** رسم شكل تعليق على الشاشة (نفس المنطق مستخدم للمعاينة والمحفوظ). */
-private fun DrawScope.drawShape(toolName: String, color: Color, points: List<Offset>, zoom: Float) {
     if (points.size < 2) return
     val strokeWidth = 2.5.dp.toPx() * zoom.coerceIn(0.7f, 2.5f)
     val first = points.first()
@@ -471,55 +371,259 @@ private fun DrawScope.drawShape(toolName: String, color: Color, points: List<Off
     }
 }
 
-// ---------------------------------------------------------------- Rendering
+// ══════════════════════════════════════════════════════ الشرائط
 
-private fun renderPage(renderer: PdfRenderer, lock: Any, index: Int, targetWidth: Int = 2048): Bitmap {
-    synchronized(lock) {
-        val page = renderer.openPage(index)
-        try {
-            val height = (targetWidth * page.height.toFloat() / page.width).toInt().coerceAtLeast(1)
-            val bitmap = Bitmap.createBitmap(targetWidth, height, Bitmap.Config.ARGB_8888)
-            bitmap.eraseColor(android.graphics.Color.WHITE)
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            return bitmap
-        } finally {
-            page.close()
+@Composable
+private fun LoadingOrError(error: String?, onClose: () -> Unit) {
+    val c = LocalCwColors.current
+    Surface(Modifier.fillMaxSize(), color = c.surface) {
+        Column(
+            Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            if (error == null) {
+                CircularProgressIndicator(color = c.accent)
+                Spacer(Modifier.height(Space.md))
+                Text("بيفتح الملف…", style = MaterialTheme.typography.bodyMedium, color = c.textTertiary)
+            } else {
+                Text(error, style = MaterialTheme.typography.titleSmall, color = c.danger.fg)
+                Spacer(Modifier.height(Space.md))
+                CwIconButton(Icons.Filled.Close, "إغلاق", onClose)
+            }
         }
     }
 }
 
-/** تصدير نسخة PDF كل صفحة فيها مرسومة بتعليقاتها. */
-private fun exportAnnotatedPdf(
-    renderer: PdfRenderer,
-    lock: Any,
-    os: java.io.OutputStream,
-    annotationsFor: (page: Int) -> List<PdfAnnotationEntity>
+@Composable
+private fun TopChrome(
+    name: String,
+    page: Int,
+    pageCount: Int,
+    zoomPercent: Int,
+    onClose: () -> Unit,
+    onExport: () -> Unit
 ) {
-    val doc = android.graphics.pdf.PdfDocument()
-    for (i in 0 until renderer.pageCount) {
-        val bitmap = renderPage(renderer, lock, i, targetWidth = 2000)
-        val canvas = android.graphics.Canvas(bitmap)
-        for (a in annotationsFor(i)) {
-            val points = runCatching { json.decodeFromString<List<Float>>(a.pointsJson) }.getOrNull() ?: continue
-            drawShapeAndroid(canvas, a, points, bitmap.width.toFloat(), bitmap.height.toFloat())
+    val c = LocalCwColors.current
+    Surface(
+        Modifier.fillMaxWidth(),
+        color = c.surface.copy(alpha = 0.94f)
+    ) {
+        Row(
+            Modifier
+                .statusBarsPadding()
+                .fillMaxWidth()
+                .padding(horizontal = Space.sm, vertical = Space.xs),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CwIconButton(Icons.Filled.Close, "إغلاق", onClose)
+            Column(Modifier.weight(1f).padding(horizontal = Space.sm)) {
+                Text(
+                    name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = c.textPrimary,
+                    maxLines = 1
+                )
+                Text(
+                    "صفحة $page من $pageCount · $zoomPercent٪",
+                    style = CwText.codeSmall,
+                    color = c.textTertiary,
+                    maxLines = 1
+                )
+            }
+            CwIconButton(Icons.Filled.IosShare, "صدّر نسخة معلّقة", onExport)
         }
-        // مقاس صفحة الـPDF بالنقط زي الأصل
-        val (pw, ph) = synchronized(lock) {
-            val page = renderer.openPage(i)
-            try { page.width to page.height } finally { page.close() }
-        }
-        val pdfPage = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(pw, ph, i + 1).create())
-        pdfPage.canvas.drawBitmap(
-            bitmap, null,
-            android.graphics.RectF(0f, 0f, pw.toFloat(), ph.toFloat()),
-            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
-        )
-        doc.finishPage(pdfPage)
-        bitmap.recycle()
     }
-    doc.writeTo(os)
-    doc.close()
 }
+
+@Composable
+private fun BottomChrome(
+    tool: PdfTool,
+    onTool: (PdfTool) -> Unit,
+    colorIdx: Int,
+    onColor: (Int) -> Unit,
+    mode: ViewMode,
+    onMode: (ViewMode) -> Unit,
+    onFitWidth: () -> Unit,
+    onFitPage: () -> Unit,
+    canUndo: Boolean,
+    onUndo: () -> Unit,
+    onClear: () -> Unit
+) {
+    val c = LocalCwColors.current
+    Surface(
+        Modifier.fillMaxWidth(),
+        color = c.surface.copy(alpha = 0.94f)
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .fillMaxWidth()
+                .padding(horizontal = Space.sm, vertical = Space.xs)
+        ) {
+            // لوحة الألوان بتظهر لما تبقى بترسم بس — كنترول مالوش معنى
+            // دلوقتي بياخد مساحة ويشتّت.
+            AnimatedVisibility(tool != PdfTool.PAN, enter = fadeIn(), exit = fadeOut()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Space.xs),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PALETTE.forEachIndexed { i, argb ->
+                        Surface(
+                            modifier = Modifier.size(Sizes.control),
+                            shape = Radius.pill,
+                            color = Color(argb),
+                            border = androidx.compose.foundation.BorderStroke(
+                                if (i == colorIdx) 3.dp else 1.dp,
+                                if (i == colorIdx) c.accent else c.outline
+                            ),
+                            onClick = { onColor(i) }
+                        ) {}
+                    }
+                    Spacer(Modifier.weight(1f))
+                    CwIconButton(
+                        Icons.AutoMirrored.Filled.Undo, "تراجع", onUndo,
+                        enabled = canUndo
+                    )
+                    CwIconButton(
+                        Icons.Filled.Delete, "امسح تعليقات الصفحة", onClear,
+                        tint = c.danger.fg, enabled = canUndo
+                    )
+                }
+            }
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.xxs)
+            ) {
+                ToolChip(Icons.Filled.PanTool, "تنقّل", tool == PdfTool.PAN) { onTool(PdfTool.PAN) }
+                ToolChip(Icons.Filled.Highlight, "تظليل", tool == PdfTool.HIGHLIGHT) { onTool(PdfTool.HIGHLIGHT) }
+                ToolChip(Icons.Filled.CropSquare, "مستطيل", tool == PdfTool.RECT) { onTool(PdfTool.RECT) }
+                ToolChip(Icons.Filled.RadioButtonUnchecked, "دايرة", tool == PdfTool.CIRCLE) { onTool(PdfTool.CIRCLE) }
+                ToolChip(Icons.AutoMirrored.Filled.CallMade, "سهم", tool == PdfTool.ARROW) { onTool(PdfTool.ARROW) }
+                ToolChip(Icons.Filled.Draw, "رسم حر", tool == PdfTool.FREEHAND) { onTool(PdfTool.FREEHAND) }
+
+                Spacer(Modifier.width(Space.md))
+
+                ToolChip(
+                    if (mode == ViewMode.CONTINUOUS_HORIZONTAL) Icons.Filled.SwapHoriz else Icons.Filled.SwapVert,
+                    if (mode == ViewMode.CONTINUOUS_HORIZONTAL) "تمرير أفقي" else "تمرير رأسي",
+                    false
+                ) {
+                    onMode(
+                        if (mode == ViewMode.CONTINUOUS_VERTICAL) ViewMode.CONTINUOUS_HORIZONTAL
+                        else ViewMode.CONTINUOUS_VERTICAL
+                    )
+                }
+                ToolChip(Icons.Filled.FitScreen, "ملء العرض", false, onFitWidth)
+                ToolChip(Icons.Filled.ZoomOutMap, "الصفحة كاملة", false, onFitPage)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    val c = LocalCwColors.current
+    Surface(
+        shape = Radius.shapeMd,
+        color = if (active) c.accentContainer else Color.Transparent,
+        onClick = onClick,
+        modifier = Modifier.height(Sizes.touch)
+    ) {
+        Row(
+            Modifier.padding(horizontal = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.xxs)
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (active) c.accent else c.textSecondary,
+                modifier = Modifier.size(IconSize.md)
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (active) c.accent else c.textSecondary,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════ التصدير
+
+/**
+ * بيصدّر نسخة كل صفحة فيها مرسومة بتعليقاتها.
+ *
+ * ملاحظة صريحة: التصدير ده **بيحوّل الصفحات لصور**. النص بيتحوّل بكسل،
+ * فالنسخة المصدَّرة مش قابلة للبحث وحجمها أكبر. ده كان سلوك النسخة القديمة
+ * وسايبينه زي ما هو دلوقتي عشان مانكسرش حاجة شغّالة — التصدير المتّجهي
+ * (اللي بيكتب التعليقات كـ`/Annots` حقيقية) جاي في مرحلة عمليات المستندات.
+ */
+private suspend fun exportAnnotatedPdf(
+    context: android.content.Context,
+    session: PdfDocumentSession,
+    uri: android.net.Uri,
+    annotationsFor: (page: Int) -> List<PdfAnnotationEntity>
+) = withContext(Dispatchers.IO) {
+    val doc = android.graphics.pdf.PdfDocument()
+    try {
+        for (i in 0 until session.pageCount) {
+            session.measure(i)
+            val size = session.sizeOrEstimate(i)
+            val width = EXPORT_WIDTH_PX
+            val height = (width * size.height / size.width).toInt().coerceAtLeast(1)
+
+            val bitmap = session.renderTile(
+                page = i,
+                gridWidth = width, gridHeight = height,
+                originX = 0, originY = 0,
+                tileWidth = width, tileHeight = height
+            ) ?: continue
+
+            val canvas = android.graphics.Canvas(bitmap)
+            annotationsFor(i).forEach { a ->
+                val flat = runCatching { json.decodeFromString<List<Float>>(a.pointsJson) }.getOrNull()
+                if (flat != null) {
+                    drawShapeAndroid(canvas, a, flat, bitmap.width.toFloat(), bitmap.height.toFloat())
+                }
+            }
+
+            val pw = size.width.toInt().coerceAtLeast(1)
+            val ph = size.height.toInt().coerceAtLeast(1)
+            val pdfPage = doc.startPage(
+                android.graphics.pdf.PdfDocument.PageInfo.Builder(pw, ph, i + 1).create()
+            )
+            pdfPage.canvas.drawBitmap(
+                bitmap, null,
+                android.graphics.RectF(0f, 0f, pw.toFloat(), ph.toFloat()),
+                android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+            )
+            doc.finishPage(pdfPage)
+            bitmap.recycle()
+        }
+        context.contentResolver.openOutputStream(uri)?.use { os -> doc.writeTo(os) }
+            ?: error("مقدرناش نفتح الملف للكتابة")
+    } finally {
+        doc.close()
+    }
+}
+
+private const val EXPORT_WIDTH_PX = 2000
 
 private fun drawShapeAndroid(
     canvas: android.graphics.Canvas,
