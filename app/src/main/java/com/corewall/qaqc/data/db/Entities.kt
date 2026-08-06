@@ -400,6 +400,7 @@ data class LinkEntity(
  * عشان الحقائق تتخزّن وتبقى قابلة للبحث؛ اللي بيتغيّر هو طريقة قراية
  * المستند نفسه.
  */
+@Serializable
 @Entity(tableName = "prompts")
 data class PromptEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -422,6 +423,7 @@ data class PromptEntity(
  * [rowsJson] صفوف المدى متسلسلة — `BeamRange` للكمرات و`WallRange` للحوائط.
  * الكود هو المفتاح، فاستيراد نفس الكود تاني بيستبدله بدل ما يكرّره.
  */
+@Serializable
 @Entity(tableName = "imported_marks")
 data class ImportedMarkEntity(
     @PrimaryKey val mark: String,
