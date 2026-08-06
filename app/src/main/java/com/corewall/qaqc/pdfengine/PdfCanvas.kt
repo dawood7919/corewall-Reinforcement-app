@@ -85,7 +85,7 @@ fun PdfCanvas(
     Canvas(
         modifier
             .fillMaxSize()
-            .onSizeChanged { state.setViewport(it) }
+            .onSizeChanged { state.updateViewport(it) }
             .pointerInput(drawingActive) {
                 if (drawingActive) {
                     detectDragGestures(

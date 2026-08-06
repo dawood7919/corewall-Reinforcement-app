@@ -76,7 +76,11 @@ class PdfViewerState(
 
     // ───────────────────────────────────────────────── التعديل
 
-    fun setViewport(size: IntSize) {
+    /**
+     * الاسم `updateViewport` مش `setViewport` عن قصد: الخاصية `viewport`
+     * بتولّد `setViewport` على الـJVM، فدالة بنفس الاسم بتصطدم بيها.
+     */
+    fun updateViewport(size: IntSize) {
         if (size == viewport) return
         viewport = size
         if (!hasFramed && size.width > 0 && layout.contentWidth > 0f) {
@@ -88,7 +92,8 @@ class PdfViewerState(
         bump()
     }
 
-    fun setLayout(next: PageLayout) {
+    /** نفس سبب [updateViewport] — الخاصية `layout` بتولّد `setLayout`. */
+    fun updateLayout(next: PageLayout) {
         val wasEmpty = layout.slots.isEmpty()
         layout = next
         if (wasEmpty && next.slots.isNotEmpty() && viewport.width > 0) {

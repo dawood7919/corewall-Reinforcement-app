@@ -170,7 +170,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     // الرصّ بيتعاد كل ما مقاس صفحة جديد يوصل. ده اللي بيخلّي المستند الكبير
     // يفتح فوراً بتقدير وبعدين يظبط نفسه من غير ما المستخدم يحسّ.
     LaunchedEffect(measured, state.mode) {
-        state.setLayout(PageLayout.build(active.allSizes(), state.mode))
+        state.updateLayout(PageLayout.build(active.allSizes(), state.mode))
     }
 
     // قياس الصفحات القريبة من المشهد — مش كلها، عشان مستند ٢٠٠٠ صفحة
