@@ -24,9 +24,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AiAnalysisEntity::class,
         DocumentEntity::class,
         DocFactEntity::class,
-        ChatMessageEntity::class
+        ChatMessageEntity::class,
+        FileMetaEntity::class,
+        ChatThreadEntity::class,
+        LinkEntity::class,
+        NoteRevisionEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -46,6 +50,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun documentDao(): DocumentDao
     abstract fun docFactDao(): DocFactDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun fileMetaDao(): FileMetaDao
+    abstract fun chatThreadDao(): ChatThreadDao
+    abstract fun linkDao(): LinkDao
+    abstract fun noteRevisionDao(): NoteRevisionDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -209,6 +217,51 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
 
+
+        /**
+         * إعادة تصميم الموديولات: بيانات الملفات (وسوم/مفضّلة/OCR)، المحادثات
+         * كوحدات ليها عنوان وتثبيت، الروابط العامة بين الكيانات، ونُسخ الملاحظات.
+         *
+         * كله جداول جديدة — مفيش عمود اتغيّر ولا اتشال، فالبيانات القديمة
+         * ما بتتلمسش خالص.
+         */
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `file_meta` (" +
+                        "`path` TEXT NOT NULL, `favourite` INTEGER NOT NULL, " +
+                        "`tags` TEXT NOT NULL, `ocrText` TEXT NOT NULL, " +
+                        "`ocrStatus` TEXT NOT NULL, `lastOpenedAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`path`))"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `chat_threads` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`level` TEXT NOT NULL, `title` TEXT NOT NULL, " +
+                        "`pinned` INTEGER NOT NULL, `folder` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `links` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`fromType` TEXT NOT NULL, `fromId` TEXT NOT NULL, " +
+                        "`toType` TEXT NOT NULL, `toId` TEXT NOT NULL, " +
+                        "`level` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `note_revisions` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`noteId` INTEGER NOT NULL, `title` TEXT NOT NULL, " +
+                        "`body` TEXT NOT NULL, `savedAt` INTEGER NOT NULL)"
+                )
+                // الرسايل القديمة بتفضل زي ما هي؛ threadId = 0 يعني "قبل المحادثات".
+                db.execSQL("ALTER TABLE `chat_messages` ADD COLUMN `threadId` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_links_from` ON `links` (`fromType`, `fromId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_links_to` ON `links` (`toType`, `toId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_msg_thread` ON `chat_messages` (`threadId`)")
+            }
+        }
+
         // طبقة المعرفة: مستندات محلّلة + حقائق مستخرجة (knowledge graph) + محادثة.
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -252,7 +305,8 @@ abstract class AppDatabase : RoomDatabase() {
                 ).addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
+                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
+                    MIGRATION_11_12
                 ).build().also { instance = it }
             }
     }

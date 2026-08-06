@@ -332,3 +332,105 @@ interface ChatMessageDao {
     @Query("DELETE FROM chat_messages WHERE level = :level")
     suspend fun clearLevel(level: String)
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// إعادة تصميم الموديولات
+// ═══════════════════════════════════════════════════════════════════
+
+@Dao
+interface FileMetaDao {
+    @Query("SELECT * FROM file_meta")
+    fun observeAll(): Flow<List<FileMetaEntity>>
+
+    @Query("SELECT * FROM file_meta WHERE path = :path")
+    suspend fun byPath(path: String): FileMetaEntity?
+
+    @Query("SELECT * FROM file_meta WHERE favourite = 1")
+    fun observeFavourites(): Flow<List<FileMetaEntity>>
+
+    @Query("SELECT * FROM file_meta WHERE lastOpenedAt > 0 ORDER BY lastOpenedAt DESC LIMIT :limit")
+    fun observeRecent(limit: Int = 30): Flow<List<FileMetaEntity>>
+
+    /**
+     * بحث في الاسم والوسوم **والنص المستخرج**. الجزء الأخير هو اللي بيخلّي
+     * البحث مفيد: "W12" بتلاقي صفحة الجدول اللي جواها الكود، مش بس اسم ملف
+     * صادف إن فيه W12.
+     */
+    @Query(
+        "SELECT * FROM file_meta WHERE " +
+            "path LIKE '%' || :q || '%' OR tags LIKE '%' || :q || '%' OR ocrText LIKE '%' || :q || '%' " +
+            "LIMIT :limit"
+    )
+    suspend fun search(q: String, limit: Int = 100): List<FileMetaEntity>
+
+    @Query("SELECT * FROM file_meta WHERE ocrStatus = :status LIMIT :limit")
+    suspend fun withOcrStatus(status: String, limit: Int = 20): List<FileMetaEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: FileMetaEntity)
+
+    @Query("DELETE FROM file_meta WHERE path = :path")
+    suspend fun delete(path: String)
+}
+
+@Dao
+interface ChatThreadDao {
+    /** المثبّت الأول، وبعدين الأحدث تعديلاً. */
+    @Query("SELECT * FROM chat_threads WHERE level = :level ORDER BY pinned DESC, updatedAt DESC")
+    fun observeForLevel(level: String): Flow<List<ChatThreadEntity>>
+
+    @Query("SELECT * FROM chat_threads WHERE id = :id")
+    suspend fun byId(id: Long): ChatThreadEntity?
+
+    @Query("SELECT * FROM chat_threads WHERE level = :level AND title LIKE '%' || :q || '%'")
+    suspend fun search(level: String, q: String): List<ChatThreadEntity>
+
+    @Query("SELECT DISTINCT folder FROM chat_threads WHERE level = :level AND folder != ''")
+    fun observeFolders(level: String): Flow<List<String>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: ChatThreadEntity): Long
+
+    @Query("DELETE FROM chat_threads WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface LinkDao {
+    @Query("SELECT * FROM links WHERE fromType = :type AND fromId = :id")
+    fun observeFrom(type: String, id: String): Flow<List<LinkEntity>>
+
+    @Query("SELECT * FROM links WHERE toType = :type AND toId = :id")
+    fun observeTo(type: String, id: String): Flow<List<LinkEntity>>
+
+    /** كل اللي متربط بكيان معيّن في الاتجاهين — الربط علاقة مش اتجاه. */
+    @Query(
+        "SELECT * FROM links WHERE (fromType = :type AND fromId = :id) " +
+            "OR (toType = :type AND toId = :id)"
+    )
+    suspend fun allFor(type: String, id: String): List<LinkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: LinkEntity): Long
+
+    @Query("DELETE FROM links WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM links WHERE (fromType = :type AND fromId = :id) OR (toType = :type AND toId = :id)")
+    suspend fun deleteAllFor(type: String, id: String)
+}
+
+@Dao
+interface NoteRevisionDao {
+    @Query("SELECT * FROM note_revisions WHERE noteId = :noteId ORDER BY savedAt DESC")
+    fun observeForNote(noteId: Long): Flow<List<NoteRevisionEntity>>
+
+    @Query("SELECT * FROM note_revisions WHERE noteId = :noteId ORDER BY savedAt DESC LIMIT 1")
+    suspend fun latest(noteId: Long): NoteRevisionEntity?
+
+    @Insert
+    suspend fun insert(entity: NoteRevisionEntity): Long
+
+    @Query("DELETE FROM note_revisions WHERE noteId = :noteId")
+    suspend fun deleteForNote(noteId: Long)
+}

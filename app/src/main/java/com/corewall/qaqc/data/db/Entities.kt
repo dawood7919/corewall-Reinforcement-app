@@ -262,8 +262,115 @@ data class DocFactEntity(
 data class ChatMessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val level: String,
+    /** المحادثة اللي الرسالة تبعها. صفر = رسايل قديمة من قبل ما المحادثات توجد. */
+    val threadId: Long = 0,
     /** user | assistant */
     val role: String,
     val content: String,
     val createdAt: Long
+)
+
+// ═══════════════════════════════════════════════════════════════════
+// إعادة تصميم الموديولات — الجداول الجديدة
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * بيانات إضافية لملف على القرص.
+ *
+ * الملفات نفسها بتفضل على نظام الملفات زي ما هي — الجدول ده بيعلّق عليها
+ * وسوم ومفضّلة ونصّ مستخرج، من غير ما ينقل الملف نفسه لقاعدة البيانات.
+ * المفتاح هو المسار، فلو الملف اتمسح من برّه السطر بيبقى يتيم وبيتنضّف
+ * لوحده — أرخص من إننا نحاول نمسك كل تعديل على القرص.
+ *
+ * [ocrText] هو اللي بيخلّي البحث في الملفات مفيد فعلاً: "W12" يلاقي صفحة
+ * الـBBS اللي فيها الكود، مش بس اسم الملف.
+ */
+@Entity(tableName = "file_meta")
+data class FileMetaEntity(
+    @PrimaryKey val path: String,
+    val favourite: Boolean = false,
+    /** وسوم مفصولة بفاصلة — قليلة العدد لكل ملف، فمش محتاجة جدول منفصل. */
+    val tags: String = "",
+    /** النص المستخرج بالتعرّف الضوئي — فاضي لحد ما التحليل يجري. */
+    val ocrText: String = "",
+    /** NONE | PENDING | RUNNING | DONE | FAILED | UNSUPPORTED */
+    val ocrStatus: String = OCR_NONE,
+    val lastOpenedAt: Long = 0,
+    val updatedAt: Long = 0
+) {
+    companion object {
+        const val OCR_NONE = "NONE"
+        const val OCR_PENDING = "PENDING"
+        const val OCR_RUNNING = "RUNNING"
+        const val OCR_DONE = "DONE"
+        const val OCR_FAILED = "FAILED"
+        const val OCR_UNSUPPORTED = "UNSUPPORTED"
+    }
+
+    val tagList: List<String>
+        get() = tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+}
+
+/**
+ * محادثة — مجموعة رسائل ليها عنوان وحياة أطول من الجلسة.
+ *
+ * قبل كده الرسايل كانت مربوطة بالدور بس، فمفيش "محادثات" أصلاً: مفيش
+ * تاريخ ولا بحث ولا تثبيت ولا مجلدات. الجدول ده بيدّي الرسايل مالك.
+ */
+@Entity(tableName = "chat_threads")
+data class ChatThreadEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** الدور اللي المحادثة اتعملت فيه — العزل بالدور بيفضل قايم. */
+    val level: String,
+    val title: String,
+    val pinned: Boolean = false,
+    /** اسم المجلد، أو فاضي يعني مفيش تصنيف. */
+    val folder: String = "",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * رابط بين أي كيانين في التطبيق.
+ *
+ * ده اللي بيخلّي "كل ملاحظة مربوطة بالرسومات والأدوار والعناصر والفحوصات
+ * والصبّات والعمالة" جملة حقيقية مش كلام. جدول واحد عام أرخص بكتير من
+ * عمود مفتاح أجنبي في كل جدول لكل نوع ربط ممكن.
+ */
+@Entity(tableName = "links")
+data class LinkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** NOTE | FILE | PHOTO | ELEMENT | INSPECTION | TASK | THREAD | ATTENDANCE */
+    val fromType: String,
+    val fromId: String,
+    val toType: String,
+    val toId: String,
+    val level: String,
+    val createdAt: Long
+) {
+    companion object {
+        const val NOTE = "NOTE"
+        const val FILE = "FILE"
+        const val PHOTO = "PHOTO"
+        const val ELEMENT = "ELEMENT"
+        const val INSPECTION = "INSPECTION"
+        const val TASK = "TASK"
+        const val THREAD = "THREAD"
+        const val ATTENDANCE = "ATTENDANCE"
+    }
+}
+
+/**
+ * نسخة سابقة من ملاحظة. بتتكتب عند كل حفظ.
+ *
+ * في سياق ضبط جودة الملاحظة دليل — ولو اتعدّلت بعد واقعة، اللي كان مكتوب
+ * قبل التعديل مهم. الجدول append-only عن قصد.
+ */
+@Entity(tableName = "note_revisions")
+data class NoteRevisionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val noteId: Long,
+    val title: String,
+    val body: String,
+    val savedAt: Long
 )
