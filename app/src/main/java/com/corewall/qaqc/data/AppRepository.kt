@@ -8,8 +8,10 @@ import com.corewall.qaqc.data.db.CommentEntity
 import com.corewall.qaqc.data.db.DailyAttendanceEntity
 import com.corewall.qaqc.data.db.ElementAttachmentEntity
 import com.corewall.qaqc.data.db.ElementNameEntity
+import com.corewall.qaqc.data.db.ImportedMarkEntity
 import com.corewall.qaqc.data.db.InspectionEntity
 import com.corewall.qaqc.data.db.NoteEntity
+import com.corewall.qaqc.data.db.PromptEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.RangeEditEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
@@ -95,21 +97,79 @@ class AppRepository(context: Context) {
     fun parsePatch(patchJson: String): Map<String, String> =
         runCatching { json.decodeFromString<Map<String, String>>(patchJson) }.getOrDefault(emptyMap())
 
-    fun applyEdits(edits: List<RangeEditEntity>): ScheduleData {
-        if (edits.isEmpty()) return baseSchedule
+    /**
+     * الجدول المعروض = جدول المكتب + تعديلات المستخدم + الأكواد المستوردة.
+     *
+     * الترتيب مقصود: التعديلات بتتحط على صفوف المكتب بمكانها (rowIndex)،
+     * والمستورد بيتضاف بعد كده. لو كود مستورد بنفس اسم كود مكتبي، المستورد
+     * بيكسب — المستخدم استورده عن قصد، وشاشة الاستيراد بتحذّره إن ده هيغطّي.
+     */
+    fun applyEdits(
+        edits: List<RangeEditEntity>,
+        imported: List<ImportedMarkEntity> = emptyList()
+    ): ScheduleData {
+        if (edits.isEmpty() && imported.isEmpty()) return baseSchedule
         val byKey = edits.associateBy { it.mark to it.rowIndex }
         val walls = baseSchedule.walls.mapValues { (mark, rows) ->
             rows.mapIndexed { i, row ->
                 byKey[mark to i]?.let { applyWallPatch(row, parsePatch(it.patchJson)) } ?: row
             }
-        }
+        }.toMutableMap()
         val beams = baseSchedule.beams.mapValues { (mark, rows) ->
             rows.mapIndexed { i, row ->
                 byKey[mark to i]?.let { applyBeamPatch(row, parsePatch(it.patchJson)) } ?: row
             }
+        }.toMutableMap()
+
+        imported.forEach { m ->
+            when (m.kind) {
+                ImportedMarkEntity.BEAM ->
+                    decodeRows<BeamRange>(m.rowsJson)?.let { beams[m.mark] = it }
+                ImportedMarkEntity.WALL ->
+                    decodeRows<WallRange>(m.rowsJson)?.let { walls[m.mark] = it }
+            }
         }
         return ScheduleData(baseSchedule.levels, walls, beams)
     }
+
+    /** صف مكسور مايوقّعش الجدول كله — الكود بيتتشال وخلاص. */
+    private inline fun <reified T> decodeRows(raw: String): List<T>? =
+        runCatching { json.decodeFromString<List<T>>(raw) }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+    // ---------- الأكواد المستوردة من المستخدم ----------
+
+    val importedMarks: Flow<List<ImportedMarkEntity>> = db.importedMarkDao().observeAll()
+
+    /**
+     * بيقرا ملف مستورد ويحفظ اللي صحّ منه.
+     * بيرجّع النتيجة كاملة — عدد اللي نجح واللي اترفض وليه — مش "تم" وخلاص.
+     */
+    suspend fun importMarks(content: String, source: String): ScheduleImport.Outcome {
+        val outcome = ScheduleImport.parse(
+            content = content,
+            source = source,
+            knownLevels = baseSchedule.levels,
+            existingMarks = baseSchedule.allMarks.toSet()
+        )
+        if (outcome.marks.isNotEmpty()) db.importedMarkDao().upsertAll(outcome.marks)
+        return outcome
+    }
+
+    suspend fun deleteImportedMark(mark: String) = db.importedMarkDao().delete(mark)
+
+    suspend fun deleteAllImportedMarks() = db.importedMarkDao().deleteAll()
+
+    fun importTemplate(): String = ScheduleImport.beamTemplate(baseSchedule.levels)
+
+    // ---------- مكتبة البرومبت ----------
+
+    val prompts: Flow<List<PromptEntity>> = db.promptDao().observeAll()
+
+    suspend fun savePrompt(prompt: PromptEntity): Long = db.promptDao().upsert(prompt)
+    suspend fun deletePrompt(id: Long) = db.promptDao().delete(id)
+    suspend fun promptById(id: Long): PromptEntity? = db.promptDao().byId(id)
+    suspend fun promptByName(name: String): PromptEntity? = db.promptDao().byName(name)
+    suspend fun markPromptUsed(id: Long) = db.promptDao().markUsed(id, System.currentTimeMillis())
 
     private fun applyWallPatch(row: WallRange, patch: Map<String, String>): WallRange {
         if (patch.isEmpty()) return row
@@ -214,7 +274,11 @@ class AppRepository(context: Context) {
         val notes: List<NoteEntity> = emptyList(),
         val attendanceFiles: List<AttendanceFileEntity> = emptyList(),
         val dailyAttendance: List<DailyAttendanceEntity> = emptyList(),
-        val sitePhotos: List<SitePhotoEntity> = emptyList()
+        val sitePhotos: List<SitePhotoEntity> = emptyList(),
+        // القيم الافتراضية بتخلّي النسخ القديمة تتقري عادي — من غيرها
+        // كل نسخة اتصدّرت قبل النهاردة كانت هتبقى غير قابلة للاستيراد.
+        val prompts: List<PromptEntity> = emptyList(),
+        val importedMarks: List<ImportedMarkEntity> = emptyList()
     )
 
     suspend fun exportBackupJson(): String = json.encodeToString(
@@ -231,7 +295,9 @@ class AppRepository(context: Context) {
             notes = db.noteDao().getAll(),
             attendanceFiles = db.attendanceFileDao().getAll(),
             dailyAttendance = db.dailyAttendanceDao().getAll(),
-            sitePhotos = db.sitePhotoDao().getAll()
+            sitePhotos = db.sitePhotoDao().getAll(),
+            prompts = db.promptDao().getAll(),
+            importedMarks = db.importedMarkDao().getAll()
         )
     )
 
@@ -250,8 +316,11 @@ class AppRepository(context: Context) {
         db.attendanceFileDao().upsertAll(backup.attendanceFiles.map { it.copy(id = 0) })
         db.dailyAttendanceDao().upsertAll(backup.dailyAttendance.map { it.copy(id = 0) })
         db.sitePhotoDao().upsertAll(backup.sitePhotos.map { it.copy(id = 0) })
+        backup.prompts.forEach { db.promptDao().upsert(it.copy(id = 0)) }
+        db.importedMarkDao().upsertAll(backup.importedMarks)
         "تم استيراد ${backup.names.size} اسم و${backup.inspections.size} حالة فحص " +
             "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ و${backup.tasks.size} مهمة " +
-            "و${backup.sitePhotos.size} صورة موقع"
+            "و${backup.sitePhotos.size} صورة موقع و${backup.prompts.size} برومبت " +
+            "و${backup.importedMarks.size} كود مستورد"
     }
 }

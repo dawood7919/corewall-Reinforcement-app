@@ -5,6 +5,9 @@ import com.corewall.qaqc.ai.AiConfig
 import com.corewall.qaqc.ai.AiProviderId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 enum class AppTheme(val label: String) {
     IOS_LIGHT("Aurora فاتح"),
@@ -80,8 +83,147 @@ class SettingsStore(context: Context) {
             .apply()
     }
 
-    /** تبديل المزوّد بيرجّع الموديل والـ baseUrl لافتراضيات المزوّد الجديد. */
-    fun switchAiProvider(provider: AiProviderId) = updateAiConfig {
-        it.copy(provider = provider, model = provider.defaultModel, baseUrl = provider.defaultBaseUrl)
+    // ---------- خزنة المفاتيح ----------
+
+    /**
+     * المفاتيح المحفوظة بتتخزّن في نفس ملف `ai_secret` — **مش** في Room.
+     *
+     * ده مقصود: الملف ده مستبعد من النسخ الاحتياطي السحابي ومن نقل الجهاز
+     * (backup_rules.xml). لو حطّينا المفاتيح في قاعدة البيانات هتخرج مع أول
+     * نسخة احتياطية، والخاصية اللي المفروض تريّح المستخدم تبقى تسريب.
+     */
+    private val _savedKeys = MutableStateFlow(readKeys())
+    val savedKeys: StateFlow<List<SavedKey>> = _savedKeys
+
+    init {
+        // المستخدم اللي محدّث من نسخة قديمة عنده مفتاح شغّال والخزنة فاضية.
+        // بنحطّه فيها من أول تشغيل عشان مايضيعش لو بدّل مزوّد.
+        if (_savedKeys.value.isEmpty() && _aiConfig.value.apiKey.isNotBlank()) {
+            rememberWorkingKey("المفتاح الحالي")
+        }
+    }
+
+    private fun readKeys(): List<SavedKey> = runCatching {
+        keyJson.decodeFromString<List<SavedKey>>(aiPrefs.getString("savedKeys", "[]").orEmpty())
+    }.getOrDefault(emptyList())
+
+    private fun writeKeys(list: List<SavedKey>) {
+        val sorted = list.sortedByDescending { it.lastUsedAt }
+        _savedKeys.value = sorted
+        aiPrefs.edit().putString("savedKeys", keyJson.encodeToString(sorted)).apply()
+    }
+
+    /**
+     * بيحفظ الإعداد الشغّال دلوقتي في الخزنة.
+     *
+     * بيتنده لوحده أول ما أي طلب ينجح — يعني المفتاح اللي **اشتغل فعلاً** هو
+     * اللي بيتحفظ. ده الفرق المهم: حفظ أي نص بيتكتب في الخانة كان هيملا
+     * الخزنة بمفاتيح غلط ومقطوعة.
+     *
+     * بيرجّع true لو اتحفظ جديد، وfalse لو كان محفوظ قبل كده.
+     */
+    fun rememberWorkingKey(label: String? = null): Boolean {
+        val cfg = _aiConfig.value
+        if (cfg.apiKey.isBlank()) return false
+        val now = System.currentTimeMillis()
+        val existing = _savedKeys.value.firstOrNull {
+            it.provider == cfg.provider.name && it.apiKey == cfg.apiKey
+        }
+        if (existing != null) {
+            // موجود — بنحدّث آخر استخدام والموديل بس، من غير ما نكرّره
+            writeKeys(_savedKeys.value.map {
+                if (it.id == existing.id)
+                    it.copy(model = cfg.model, baseUrl = cfg.baseUrl, lastUsedAt = now,
+                        label = label?.takeIf(String::isNotBlank) ?: it.label)
+                else it
+            })
+            return false
+        }
+        val autoLabel = label?.takeIf(String::isNotBlank)
+            ?: "${cfg.provider.label} · ${cfg.apiKey.tail()}"
+        writeKeys(
+            _savedKeys.value + SavedKey(
+                id = "${now}_${cfg.apiKey.hashCode()}",
+                label = autoLabel,
+                provider = cfg.provider.name,
+                apiKey = cfg.apiKey,
+                model = cfg.model,
+                baseUrl = cfg.baseUrl,
+                lastUsedAt = now
+            )
+        )
+        return true
+    }
+
+    /** بيرجّع مفتاح محفوظ للاستخدام — المزوّد والموديل بيرجعوا معاه. */
+    fun activateKey(id: String) {
+        val k = _savedKeys.value.firstOrNull { it.id == id } ?: return
+        updateAiConfig {
+            it.copy(
+                provider = AiProviderId.from(k.provider),
+                apiKey = k.apiKey, model = k.model, baseUrl = k.baseUrl
+            )
+        }
+        writeKeys(_savedKeys.value.map {
+            if (it.id == id) it.copy(lastUsedAt = System.currentTimeMillis()) else it
+        })
+    }
+
+    fun renameKey(id: String, label: String) {
+        val clean = label.trim()
+        if (clean.isBlank()) return
+        writeKeys(_savedKeys.value.map { if (it.id == id) it.copy(label = clean) else it })
+    }
+
+    fun deleteKey(id: String) = writeKeys(_savedKeys.value.filterNot { it.id == id })
+
+    /**
+     * تبديل المزوّد.
+     *
+     * لو فيه مفتاح محفوظ للمزوّد الجديد بنرجّعه؛ غير كده بنفضّي الخانة.
+     * قبل كده المفتاح القديم كان بيفضل مكانه بعد التبديل — يعني مفتاح
+     * OpenRouter بيتبعت لـGemini وبيترفض، والمستخدم يفتكر إن مفتاحه باظ.
+     */
+    fun switchAiProvider(provider: AiProviderId) {
+        // ضغطة على المزوّد المختار أصلاً مالهاش معنى — ومن غير الحارس ده
+        // كانت هتفضّي المفتاح اللي المستخدم لسه كاتبه.
+        if (provider == _aiConfig.value.provider) return
+        val saved = _savedKeys.value
+            .filter { it.provider == provider.name }
+            .maxByOrNull { it.lastUsedAt }
+        updateAiConfig {
+            it.copy(
+                provider = provider,
+                apiKey = saved?.apiKey.orEmpty(),
+                model = saved?.model ?: provider.defaultModel,
+                baseUrl = saved?.baseUrl ?: provider.defaultBaseUrl
+            )
+        }
+    }
+
+    private companion object {
+        val keyJson = Json { ignoreUnknownKeys = true }
     }
 }
+
+/**
+ * مفتاح محفوظ. بيشيل المزوّد والموديل والعنوان معاه — المفتاح لوحده
+ * مش كفاية، لأن نفس المفتاح مالوش معنى مع مزوّد تاني.
+ */
+@Serializable
+data class SavedKey(
+    val id: String,
+    val label: String,
+    val provider: String,
+    val apiKey: String,
+    val model: String,
+    val baseUrl: String,
+    val lastUsedAt: Long
+) {
+    /** آخر ٤ حروف بس — الشاشة ما بتعرضش المفتاح كامل. */
+    val masked: String get() = apiKey.tail()
+}
+
+/** `••••1234` — بيعرّف المفتاح من غير ما يكشفه. */
+internal fun String.tail(): String =
+    if (length <= 4) "••••" else "••••" + takeLast(4)

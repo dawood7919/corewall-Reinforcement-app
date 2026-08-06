@@ -30,7 +30,7 @@ class CoreWallApp : Application() {
         filesManager = FilesManager(this)
         val db = AppDatabase.get(this)
         aiRepository = AiRepository(db.aiAnalysisDao())
-        aiEngine = AiEngine(db.documentDao(), db.docFactDao(), db.chatMessageDao())
+        aiEngine = AiEngine(db.documentDao(), db.docFactDao(), db.chatMessageDao(), db.promptDao())
         fileLibrary = FileLibrary(db.fileMetaDao(), db.linkDao())
     }
 }

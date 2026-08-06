@@ -5,6 +5,7 @@ import com.corewall.qaqc.ai.AiError
 import com.corewall.qaqc.ai.AiProviderId
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -172,13 +173,50 @@ object AnthropicProvider : AiProvider {
     }
 }
 
-/** Google Gemini generateContent. */
+/**
+ * Google Gemini generateContent (Google AI Studio).
+ *
+ * ملاحظة مهمة: الكلاس ده كان **مش** مغطّي [completeWithImages]، فكان بيرجع
+ * للنسخة النصّية. ومعنى كده إن الـPDF — اللي التطبيق بيحوّله صور — كان
+ * بيوصل لـGemini من غير أي صورة، بس ومعاه جملة "حلّل الصور المرفقة".
+ * الموديل كان بيلاقي نفسه مطلوب منه يحلّل حاجة مش شايفها، فبيخمّن.
+ * ده كان سبب إن تحليل الملفات بيطلع غلط على Gemini.
+ */
 object GeminiProvider : AiProvider {
+
     override suspend fun complete(
         config: AiConfig,
         systemPrompt: String,
         userContent: String,
         expectJson: Boolean
+    ): String = send(config, systemPrompt, expectJson) {
+        add(buildJsonObject { put("text", userContent) })
+    }
+
+    override suspend fun completeWithImages(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        imagesBase64: List<String>
+    ): String = send(config, systemPrompt, expectJson = true) {
+        add(buildJsonObject { put("text", userContent) })
+        imagesBase64.forEach { b64 ->
+            add(buildJsonObject {
+                putJsonObject("inlineData") {
+                    // الصور بتتولّد JPEG في DocumentExtractor.toBase64
+                    put("mimeType", "image/jpeg")
+                    put("data", b64)
+                }
+            })
+        }
+    }
+
+    /** الجسم واحد في الحالتين — الفرق بس في محتوى `parts`. */
+    private suspend fun send(
+        config: AiConfig,
+        systemPrompt: String,
+        expectJson: Boolean,
+        parts: JsonArrayBuilder.() -> Unit
     ): String {
         val payload = buildJsonObject {
             putJsonObject("systemInstruction") {
@@ -187,21 +225,27 @@ object GeminiProvider : AiProvider {
             putJsonArray("contents") {
                 add(buildJsonObject {
                     put("role", "user")
-                    putJsonArray("parts") { add(buildJsonObject { put("text", userContent) }) }
+                    putJsonArray("parts", parts)
                 })
             }
             putJsonObject("generationConfig") {
                 put("temperature", 0.2)
+                // من غير السقف ده Gemini بيقطع الرد عند حد افتراضي منخفض،
+                // فالـJSON بيوصل ناقص — نفس اللي حصل مع المزوّدين التانيين.
+                put("maxOutputTokens", MAX_TOKENS)
                 if (expectJson) put("responseMimeType", "application/json")
             }
         }.toString()
 
-        val url = "${config.baseUrl.trimEnd('/')}/models/${config.model}:generateContent?key=${config.apiKey}"
-        val raw = AiHttpClient.postJson(url, payload, emptyMap())
+        // المفتاح في هيدر مش في الـURL: لو الطلب اتسجّل في لوج أو بروكسي
+        // الـURL بيتسجّل معاه، والمفتاح بيبقى مكشوف.
+        val url = "${config.baseUrl.trimEnd('/')}/models/${config.model}:generateContent"
+        val raw = AiHttpClient.postJson(url, payload, mapOf("x-goog-api-key" to config.apiKey))
         return runCatching {
             lenientJson.parseToJsonElement(raw).jsonObject["candidates"]!!.jsonArray
                 .first().jsonObject["content"]!!.jsonObject["parts"]!!.jsonArray
-                .first().jsonObject["text"]!!.jsonPrimitive.content
+                .first { it.jsonObject.containsKey("text") }
+                .jsonObject["text"]!!.jsonPrimitive.content
         }.getOrElse { throw AiError.BadResponse(raw.take(300)) }
     }
 }

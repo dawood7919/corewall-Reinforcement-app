@@ -328,7 +328,7 @@ class AgentExecutor(
             is com.corewall.qaqc.ai.docs.DocumentExtractor.Content.Images ->
                 ok(
                     "read_file",
-                    "${f.name} ملف مصوّر (${c.base64Png.size} صفحة). مش بيتقري كنص هنا — " +
+                    "${f.name} ملف مصوّر (${c.base64Jpeg.size} صفحة). مش بيتقري كنص هنا — " +
                         "شوف list_documents لو اتحلّل بالـAI."
                 )
             is com.corewall.qaqc.ai.docs.DocumentExtractor.Content.Unsupported ->

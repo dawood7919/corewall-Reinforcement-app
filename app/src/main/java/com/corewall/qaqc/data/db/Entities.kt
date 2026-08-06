@@ -238,7 +238,13 @@ data class DocumentEntity(
     val status: String,
     val error: String,
     val analyzedAt: Long,
-    val createdAt: Long
+    val createdAt: Long,
+    /**
+     * اسم البرومبت اللي اتحلّل بيه. فاضي = التحليل الافتراضي.
+     * بيتخزّن عشان "حلّل تاني" يستخدم نفس البرومبت بدل ما يرجع للعام —
+     * غير كده إعادة التحليل بتلغي اختيار المستخدم من غير ما يحس.
+     */
+    val promptName: String = ""
 )
 
 /**
@@ -379,6 +385,57 @@ data class LinkEntity(
         const val TASK = "TASK"
         const val THREAD = "THREAD"
         const val ATTENDANCE = "ATTENDANCE"
+    }
+}
+
+/**
+ * برومبت محفوظ باسم — "BBS"، "رسمة تسليح"، "طلب فحص"… إلخ.
+ *
+ * ليه ده موجود: البرومبت الواحد الجامد كان بيتعامل مع كل المستندات بنفس
+ * الطريقة، فجدول حديد (BBS) وطلب فحص وكشف تسليح كلهم بيتقروا بنفس
+ * التعليمات. النتيجة تحليل عام وغالباً غلط. المهندس هو اللي عارف الملف ده
+ * بيتقري إزاي، فالمكان الصح للمعرفة دي عنده مش عندنا.
+ *
+ * [body] **تعليمات إضافية** — مش بديل للعقد. مخطط الرد بيفضل بتاع التطبيق
+ * عشان الحقائق تتخزّن وتبقى قابلة للبحث؛ اللي بيتغيّر هو طريقة قراية
+ * المستند نفسه.
+ */
+@Entity(tableName = "prompts")
+data class PromptEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val body: String,
+    /** كام مرة اتستخدم — البرومبت الأكتر استخداماً بيطلع فوق في القايمة. */
+    val usageCount: Int = 0,
+    val lastUsedAt: Long = 0,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * كود (mark) اتضاف من المستخدم فوق جدول المكتب.
+ *
+ * جدول الأصول (`schedule-data.json`) للقراية بس — جاي من المكتب الفني وما
+ * ينفعش يتكتب فوقه. الجدول ده بيشيل الأكواد اللي المهندس بيضيفها بنفسه
+ * (كمرات داخلية مثلاً)، والاتنين بيتدمجوا وقت العرض.
+ *
+ * [rowsJson] صفوف المدى متسلسلة — `BeamRange` للكمرات و`WallRange` للحوائط.
+ * الكود هو المفتاح، فاستيراد نفس الكود تاني بيستبدله بدل ما يكرّره.
+ */
+@Entity(tableName = "imported_marks")
+data class ImportedMarkEntity(
+    @PrimaryKey val mark: String,
+    /** BEAM | WALL */
+    val kind: String,
+    val rowsJson: String,
+    /** اسم الملف اللي اتستورد منه — عشان تعرف الكود ده جه منين. */
+    val source: String,
+    val rowCount: Int,
+    val createdAt: Long
+) {
+    companion object {
+        const val BEAM = "BEAM"
+        const val WALL = "WALL"
     }
 }
 

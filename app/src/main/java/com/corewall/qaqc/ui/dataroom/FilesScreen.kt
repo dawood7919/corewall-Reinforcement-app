@@ -56,6 +56,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.ui.ai.AnalyzePromptSheet
+import com.corewall.qaqc.ui.nav.Dest
 import com.corewall.qaqc.data.FileSearchHit
 import com.corewall.qaqc.ui.design.CwButton
 import com.corewall.qaqc.ui.design.CwButtonStyle
@@ -118,6 +120,9 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     var selection by remember { mutableStateOf(setOf<String>()) }
     var newFolder by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    /** الملف اللي مستني اختيار برومبت قبل ما يتحلّل. */
+    var analyzeTarget by remember { mutableStateOf<File?>(null) }
+    val prompts by vm.prompts.collectAsStateWithLifecycle()
 
     val currentDir = remember(level, subPath, refresh) {
         val base = vm.files.levelDir(level)
@@ -280,10 +285,9 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 },
                 onDelete = { confirmDelete = true },
                 onShare = { f -> vm.files.share(f); selection = emptySet() },
-                onAnalyze = { f ->
-                    vm.analyzeFile(f) { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
-                    selection = emptySet()
-                },
+                // البرومبت بيتختار الأول — التحليل من غير اختيار بيقرا كل
+                // مستند بنفس التعليمات العامة، وده سبب التحليل الغلط.
+                onAnalyze = { f -> analyzeTarget = f },
                 onAddToProject = { f ->
                     vm.addFileToProjectKnowledge(f) { msg ->
                         Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
@@ -422,6 +426,24 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }) { Text("امسح", color = c.danger.fg) }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("سيبها") } }
+        )
+    }
+
+    // ── اختيار البرومبت قبل التحليل
+    val target = analyzeTarget
+    if (target != null) {
+        AnalyzePromptSheet(
+            file = target,
+            prompts = prompts,
+            onPick = { promptId ->
+                analyzeTarget = null
+                selection = emptySet()
+                vm.analyzeFile(target, promptId) { msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                }
+            },
+            onManagePrompts = { analyzeTarget = null; vm.go(Dest.Prompts) },
+            onDismiss = { analyzeTarget = null }
         )
     }
 }

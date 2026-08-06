@@ -115,6 +115,19 @@ sealed interface Dest {
         override val title = "إعدادات المساعد"
     }
 
+    /**
+     * مكتبة البرومبت — تعليمات التحليل لكل نوع مستند، باسم.
+     * ملف الـBBS مايتقريش زي طلب الفحص، والمهندس هو اللي عارف الفرق.
+     */
+    data object Prompts : Dest {
+        override val title = "مكتبة البرومبت"
+    }
+
+    /** استيراد أكواد الجدول (كمرات داخلية…) وحذفها. */
+    data object ScheduleImport : Dest {
+        override val title = "استيراد بيانات الجدول"
+    }
+
     // ───────────────────────────── النظام
 
     data object Notifications : Dest {
@@ -202,6 +215,7 @@ object NavGraph {
         Dest.PourReadiness, Dest.Gaps, Dest.CountingReport, Dest.Tools, Dest.FloorAnalysis,
         Dest.FloorNotes, Dest.SitePhotos, Dest.Manpower,
         Dest.FloorKnowledge, Dest.ProjectKnowledge, Dest.DocumentGen, Dest.AiSettings,
+        Dest.Prompts, Dest.ScheduleImport,
         Dest.Notifications, Dest.Settings, Dest.Sync, Dest.About,
         Dest.NoteEditor
     )
@@ -224,6 +238,8 @@ object NavGraph {
         Dest.ProjectKnowledge to listOf(Dest.Assistant),
         Dest.DocumentGen to listOf(Dest.Assistant),
         Dest.AiSettings to listOf(Dest.Assistant, Dest.Settings),
+        Dest.Prompts to listOf(Dest.AiSettings, Dest.Settings),
+        Dest.ScheduleImport to listOf(Dest.Settings),
         Dest.Notifications to listOf(Dest.Today),
         Dest.Settings to listOf(Dest.Today),
         Dest.Sync to listOf(Dest.Settings),

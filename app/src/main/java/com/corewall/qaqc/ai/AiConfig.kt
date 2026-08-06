@@ -27,10 +27,14 @@ enum class AiProviderId(val label: String, val defaultBaseUrl: String, val defau
         defaultBaseUrl = "https://api.anthropic.com/v1",
         defaultModel = "claude-sonnet-4-5"
     ),
+    /**
+     * Google AI Studio. الموديل الافتراضي بيشوف الصور، وده شرط لتحليل
+     * الـPDF — التطبيق بيحوّل صفحاته صور قبل ما يبعتها.
+     */
     GEMINI(
-        label = "Gemini",
+        label = "Gemini (AI Studio)",
         defaultBaseUrl = "https://generativelanguage.googleapis.com/v1beta",
-        defaultModel = "gemini-2.0-flash"
+        defaultModel = "gemini-2.5-flash"
     );
 
     companion object {

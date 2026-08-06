@@ -34,8 +34,8 @@ object DocumentExtractor {
     sealed interface Content {
         /** نص مقروء — أرخص وأدق مسار. */
         data class Text(val text: String, val kindHint: String) : Content
-        /** صور base64 (PNG) — للـPDF والصور؛ محتاج موديل vision. */
-        data class Images(val base64Png: List<String>, val kindHint: String) : Content
+        /** صور base64 **JPEG** — للـPDF والصور؛ محتاج موديل بيشوف (vision). */
+        data class Images(val base64Jpeg: List<String>, val kindHint: String) : Content
         data class Unsupported(val reason: String) : Content
     }
 

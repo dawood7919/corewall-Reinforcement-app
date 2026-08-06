@@ -8,6 +8,7 @@ import com.corewall.qaqc.data.db.DocFactDao
 import com.corewall.qaqc.data.db.DocFactEntity
 import com.corewall.qaqc.data.db.DocumentDao
 import com.corewall.qaqc.data.db.DocumentEntity
+import com.corewall.qaqc.data.db.PromptDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -29,6 +30,19 @@ object KnowledgeScope {
     const val PROJECT = "__PROJECT__"
     const val PROJECT_LABEL = "معرفة المشروع"
     fun isProject(level: String) = level == PROJECT
+}
+
+/**
+ * البرومبت اللي هيتحلّل بيه المستند.
+ *
+ * [name] بيتخزّن على المستند عشان "حلّل تاني" يستخدم نفس البرومبت،
+ * و[guidance] هو نص التعليمات نفسه.
+ */
+data class PromptChoice(val name: String = "", val guidance: String = "") {
+    companion object {
+        /** التحليل العام — من غير تعليمات مخصّصة. */
+        val Default = PromptChoice()
+    }
 }
 
 /** نتيجة تحليل مستند — الموديل بيرجّعها JSON. */
@@ -66,7 +80,8 @@ data class ExtractedFact(
 class AiEngine(
     private val documentDao: DocumentDao,
     private val factDao: DocFactDao,
-    private val chatDao: ChatMessageDao
+    private val chatDao: ChatMessageDao,
+    private val promptDao: PromptDao
 ) {
     private val json = Json {
         ignoreUnknownKeys = true; isLenient = true
@@ -97,7 +112,13 @@ class AiEngine(
      * بيحلّل مستند: استخراج المحتوى ← الموديل ← معرفة منظّمة + ربط بالدور.
      * بيرجّع الحالة النهائية.
      */
-    suspend fun analyze(config: AiConfig, docId: Long, knownLevels: List<String>): DocumentEntity? {
+    suspend fun analyze(
+        config: AiConfig,
+        docId: Long,
+        knownLevels: List<String>,
+        /** برومبت المستخدم لنوع المستند ده — فاضي = التحليل الافتراضي. */
+        prompt: PromptChoice = PromptChoice.Default
+    ): DocumentEntity? {
         val doc = withContext(Dispatchers.IO) { documentDao.byId(docId) } ?: return null
         if (!config.isConfigured) return doc
 
@@ -113,20 +134,20 @@ class AiEngine(
             return save(doc.copy(status = "UNSUPPORTED", error = content.reason, analyzedAt = System.currentTimeMillis()))
         }
 
-        val prompt = AiPrompt.docSystem(knownLevels)
+        val systemPrompt = AiPrompt.docSystem(knownLevels, prompt.guidance)
         val header = "اسم الملف: ${doc.fileName}\nالدور وقت الرفع: ${doc.level}\n\n"
 
         val raw = runCatching {
             when (content) {
                 is DocumentExtractor.Content.Text ->
                     providerFor(config.provider).complete(
-                        config, prompt, header + "نوع المحتوى: ${content.kindHint}\n\n${content.text}"
+                        config, systemPrompt, header + "نوع المحتوى: ${content.kindHint}\n\n${content.text}"
                     )
                 is DocumentExtractor.Content.Images ->
                     providerFor(config.provider).completeWithImages(
-                        config, prompt,
+                        config, systemPrompt,
                         header + "نوع المحتوى: ${content.kindHint}. حلّل الصور المرفقة.",
-                        content.base64Png
+                        content.base64Jpeg
                     )
                 else -> ""
             }
@@ -179,7 +200,8 @@ class AiEngine(
             error = if (truncated)
                 "الرد اتقطع — البيانات جزئية (${extraction.facts.size} عنصر). اضغط \"حلّل تاني\" لو ناقص."
             else "",
-            analyzedAt = System.currentTimeMillis()
+            analyzedAt = System.currentTimeMillis(),
+            promptName = prompt.name
         )
         withContext(Dispatchers.IO) {
             documentDao.upsert(updated)
@@ -209,7 +231,7 @@ class AiEngine(
         val pending = withContext(Dispatchers.IO) { documentDao.pending(max) }
         var done = 0
         for (d in pending) {
-            val result = runCatching { analyze(config, d.id, knownLevels) }
+            val result = runCatching { analyze(config, d.id, knownLevels, promptFor(d.promptName)) }
             val doc = result.getOrNull()
             when {
                 doc == null -> Unit
@@ -219,6 +241,16 @@ class AiEngine(
             }
         }
         return done
+    }
+
+    /**
+     * بيحوّل الاسم المتخزّن على المستند لبرومبت كامل.
+     * لو المستخدم مسح البرومبت بعد ما اتحلّل بيه، بنرجع للعام بدل ما نفشل.
+     */
+    suspend fun promptFor(name: String): PromptChoice {
+        if (name.isBlank()) return PromptChoice.Default
+        val p = withContext(Dispatchers.IO) { promptDao.byName(name) } ?: return PromptChoice.Default
+        return PromptChoice(p.name, p.body)
     }
 
     // ---------------------------------------------------------------- المحادثة

@@ -113,9 +113,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedElementId = MutableStateFlow<String?>(null)
     val selectedElementId: StateFlow<String?> = _selectedElementId
 
-    val schedule: StateFlow<ScheduleData> = repo.rangeEdits
-        .map { repo.applyEdits(it) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, repo.baseSchedule)
+    /** جدول المكتب + تعديلات المستخدم + الأكواد اللي استوردها. */
+    val schedule: StateFlow<ScheduleData> =
+        combine(repo.rangeEdits, repo.importedMarks) { edits, imported ->
+            repo.applyEdits(edits, imported)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, repo.baseSchedule)
 
     val names: StateFlow<Map<String, String>> = repo.names
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -481,6 +483,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             _aiState.value = result.fold(
                 onSuccess = { (analysis, at) ->
+                    keyWorked()
                     com.corewall.qaqc.ai.model.AiUiState.Ready(
                         analysis = analysis, level = level, model = cfg.model,
                         generatedAt = at, cached = false
@@ -583,8 +586,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** تحليل ملف بعينه من قائمة الملفات (زرار "تحليل" في قائمة الملف). */
-    fun analyzeFile(file: java.io.File, onDone: (String) -> Unit = {}) {
+    /**
+     * تحليل ملف بعينه من قائمة الملفات (زرار "تحليل" في قائمة الملف).
+     *
+     * [promptId] البرومبت اللي المستخدم اختاره من القايمة — null يعني
+     * التحليل العام. الاسم بيتخزّن على المستند فـ"حلّل تاني" بيرجع بنفسه.
+     */
+    fun analyzeFile(file: java.io.File, promptId: Long? = null, onDone: (String) -> Unit = {}) {
         val cfg = settingsStore.aiConfig.value
         if (!cfg.isConfigured) { onDone("ضيف مفتاح API من إعدادات المساعد الذكي الأول."); return }
         viewModelScope.launch {
@@ -593,14 +601,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (id == null) { _analyzing.value = 0; onDone("تعذّر تسجيل الملف."); return@launch }
             // موجود قبل كده؟ رجّعه لقائمة الانتظار عشان يتحلّل من أول وجديد
             runCatching { aiEngine.reset(id) }
-            val result = runCatching { aiEngine.analyze(cfg, id, levels) }.getOrNull()
+            val choice = resolvePrompt(promptId)
+            val result = runCatching { aiEngine.analyze(cfg, id, levels, choice) }.getOrNull()
             _analyzing.value = 0
             loadKnowledge()
             loadProjectKnowledge()
             refreshSuggestions()
             onDone(
                 when (result?.status) {
-                    "DONE" -> "اتحلّل: " + result.title.ifBlank { file.name }
+                    "DONE" -> { keyWorked(); "اتحلّل: " + result.title.ifBlank { file.name } }
                     "UNSUPPORTED" -> result.error.ifBlank { "نوع الملف مش مدعوم" }
                     "PENDING" -> "مستني الشبكة — هيتحلّل لوحده"
                     null -> "تعذّر التحليل"
@@ -720,18 +729,101 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** إعادة محاولة مستند فشل أو معلّق. */
-    fun reanalyzeDocument(docId: Long) {
+    /**
+     * إعادة محاولة مستند فشل أو معلّق.
+     * [promptId] null معناه "استخدم اللي اتحلّل بيه قبل كده" — مش "ارجع للعام".
+     */
+    fun reanalyzeDocument(docId: Long, promptId: Long? = null) {
         val cfg = settingsStore.aiConfig.value
         if (!cfg.isConfigured) return
         viewModelScope.launch {
             _analyzing.value = 1
+            val remembered = _documents.value.firstOrNull { it.id == docId }?.promptName.orEmpty()
+            val choice = if (promptId != null) resolvePrompt(promptId)
+            else aiEngine.promptFor(remembered)
             runCatching { aiEngine.reset(docId) }
-            runCatching { aiEngine.analyze(cfg, docId, levels) }
+            runCatching { aiEngine.analyze(cfg, docId, levels, choice) }
             _analyzing.value = 0
             loadKnowledge()
         }
     }
+
+    // ------------------------------------------------- مكتبة البرومبت
+
+    val prompts: StateFlow<List<com.corewall.qaqc.data.db.PromptEntity>> = repo.prompts
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private suspend fun resolvePrompt(id: Long?): com.corewall.qaqc.ai.PromptChoice {
+        if (id == null) return com.corewall.qaqc.ai.PromptChoice.Default
+        val p = repo.promptById(id) ?: return com.corewall.qaqc.ai.PromptChoice.Default
+        repo.markPromptUsed(id)
+        return com.corewall.qaqc.ai.PromptChoice(p.name, p.body)
+    }
+
+    /** بيحفظ برومبت جديد أو بيعدّل واحد موجود. بيرجّع رسالة للعرض. */
+    fun savePrompt(id: Long, name: String, body: String, onDone: (String) -> Unit = {}) {
+        val cleanName = name.trim()
+        val cleanBody = body.trim()
+        if (cleanName.isEmpty()) { onDone("لازم تدّي البرومبت اسم."); return }
+        if (cleanBody.isEmpty()) { onDone("البرومبت فاضي."); return }
+        viewModelScope.launch {
+            // الاسم هو اللي بيتخزّن على المستند، فلازم يفضل مميّز
+            val clash = repo.promptByName(cleanName)
+            if (clash != null && clash.id != id) { onDone("فيه برومبت تاني بنفس الاسم."); return@launch }
+            val now = System.currentTimeMillis()
+            val existing = if (id != 0L) repo.promptById(id) else null
+            repo.savePrompt(
+                com.corewall.qaqc.data.db.PromptEntity(
+                    id = id, name = cleanName, body = cleanBody,
+                    usageCount = existing?.usageCount ?: 0,
+                    lastUsedAt = existing?.lastUsedAt ?: 0L,
+                    createdAt = existing?.createdAt ?: now,
+                    updatedAt = now
+                )
+            )
+            onDone(if (id == 0L) "اتحفظ \"$cleanName\"" else "اتعدّل \"$cleanName\"")
+        }
+    }
+
+    fun deletePrompt(id: Long) {
+        viewModelScope.launch { repo.deletePrompt(id) }
+    }
+
+    // ------------------------------------------------- استيراد أكواد الجدول
+
+    val importedMarks: StateFlow<List<com.corewall.qaqc.data.db.ImportedMarkEntity>> =
+        repo.importedMarks.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** أكواد جدول المكتب — عشان الشاشة تعرف مين مستورد ومين أصلي. */
+    fun officeMarks(): Set<String> = repo.baseSchedule.allMarks.toSet()
+
+    fun importMarks(uri: Uri, onDone: (com.corewall.qaqc.data.ScheduleImport.Outcome) -> Unit) {
+        viewModelScope.launch {
+            val app = getApplication<android.app.Application>()
+            val outcome = runCatching {
+                val name = files.displayNameOf(uri)
+                val content = withContext(Dispatchers.IO) {
+                    app.contentResolver.openInputStream(uri)
+                        ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        ?: error("مقدرناش نقرا الملف")
+                }
+                repo.importMarks(content, name)
+            }.getOrElse {
+                com.corewall.qaqc.data.ScheduleImport.Outcome(fatal = it.message ?: "خطأ غير معروف")
+            }
+            onDone(outcome)
+        }
+    }
+
+    fun deleteImportedMark(mark: String) {
+        viewModelScope.launch { repo.deleteImportedMark(mark) }
+    }
+
+    fun deleteAllImportedMarks() {
+        viewModelScope.launch { repo.deleteAllImportedMarks() }
+    }
+
+    fun importTemplate(): String = repo.importTemplate()
 
     /** حقائق مستخرجة من مستند — للعرض في شاشة المعرفة. */
     suspend fun factsFor(docId: Long) = aiEngine.factsFor(docId)
@@ -779,6 +871,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _agentStatus.value = thought
                 }
             }.onSuccess { run ->
+                keyWorked()
                 aiEngine.saveTurn(level, q, run.answer)
                 if (run.executed.isNotEmpty()) {
                     _actionLog.value = (run.executed.reversed() + _actionLog.value).take(60)
@@ -1144,6 +1237,57 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun switchAiProvider(provider: com.corewall.qaqc.ai.AiProviderId) =
         settingsStore.switchAiProvider(provider)
 
+    // ------------------------------------------------- خزنة المفاتيح
+
+    val savedKeys: StateFlow<List<com.corewall.qaqc.data.SavedKey>> = settingsStore.savedKeys
+
+    /**
+     * بيتنده بعد أي طلب AI نجح. المفتاح اللي اشتغل بيتحفظ لوحده، فالمستخدم
+     * مش محتاج يفتكر يضغط "احفظ" ولا يكتبه تاني بعد ما يبدّل مزوّد.
+     */
+    private fun keyWorked() { settingsStore.rememberWorkingKey() }
+
+    fun useSavedKey(id: String) = settingsStore.activateKey(id)
+    fun renameSavedKey(id: String, label: String) = settingsStore.renameKey(id, label)
+    fun deleteSavedKey(id: String) = settingsStore.deleteKey(id)
+
+    /**
+     * بيتأكد إن المفتاح شغّال فعلاً بأصغر طلب ممكن، وبيحفظه لو نجح.
+     * الاختبار ده هو الفرق بين "كتبت مفتاح" و"عندي مفتاح شغّال" — من غيره
+     * المستخدم بيكتشف إن المفتاح غلط بعد ما يستنى تحليل ملف كامل.
+     */
+    fun testAndSaveKey(onDone: (String) -> Unit) {
+        val cfg = settingsStore.aiConfig.value
+        if (!cfg.isConfigured) { onDone("اكتب المفتاح الأول."); return }
+        viewModelScope.launch {
+            _testingKey.value = true
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    com.corewall.qaqc.ai.remote.providerFor(cfg.provider).complete(
+                        cfg,
+                        "رُدّ بـJSON فقط.",
+                        "رُدّ بالضبط بـ {\"ok\":true} من غير أي نص تاني.",
+                        expectJson = true
+                    )
+                }
+            }
+            _testingKey.value = false
+            onDone(
+                result.fold(
+                    onSuccess = {
+                        val fresh = settingsStore.rememberWorkingKey()
+                        if (fresh) "المفتاح شغّال ✓ واتحفظ في الخزنة"
+                        else "المفتاح شغّال ✓ (محفوظ عندك من قبل)"
+                    },
+                    onFailure = { it.aiMessage() }
+                )
+            )
+        }
+    }
+
+    private val _testingKey = MutableStateFlow(false)
+    val testingKey: StateFlow<Boolean> = _testingKey
+
     /** شاشة ملء-الشاشة الحالية (إشعارات/إعدادات/مزامنة/عن) — من القائمة الجانبية. */
 
 
@@ -1151,7 +1295,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val unreadNotifications: StateFlow<Int> = _unreadNotifications
     fun setUnreadNotifications(n: Int) { _unreadNotifications.value = n }
 
-    fun allMarks(): List<String> = repo.baseSchedule.allMarks
+    /** الأكواد المتاحة للتسمية — شاملة اللي المستخدم استورده. */
+    fun allMarks(): List<String> = schedule.value.allMarks
 
     val attendanceFiles: StateFlow<List<AttendanceFileEntity>> =
         combine(repo.attendanceFiles, _currentLevel) { all, level ->

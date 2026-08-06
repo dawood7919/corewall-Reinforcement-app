@@ -434,3 +434,46 @@ interface NoteRevisionDao {
     @Query("DELETE FROM note_revisions WHERE noteId = :noteId")
     suspend fun deleteForNote(noteId: Long)
 }
+
+@Dao
+interface PromptDao {
+    /** الأكتر استخداماً الأول — اللي بتستخدمه كل يوم مايستهلكش تمرير. */
+    @Query("SELECT * FROM prompts ORDER BY usageCount DESC, updatedAt DESC")
+    fun observeAll(): Flow<List<PromptEntity>>
+
+    @Query("SELECT * FROM prompts WHERE id = :id")
+    suspend fun byId(id: Long): PromptEntity?
+
+    @Query("SELECT * FROM prompts WHERE name = :name LIMIT 1")
+    suspend fun byName(name: String): PromptEntity?
+
+    @Query("SELECT * FROM prompts ORDER BY usageCount DESC, updatedAt DESC")
+    suspend fun getAll(): List<PromptEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: PromptEntity): Long
+
+    @Query("UPDATE prompts SET usageCount = usageCount + 1, lastUsedAt = :at WHERE id = :id")
+    suspend fun markUsed(id: Long, at: Long)
+
+    @Query("DELETE FROM prompts WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface ImportedMarkDao {
+    @Query("SELECT * FROM imported_marks ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<ImportedMarkEntity>>
+
+    @Query("SELECT * FROM imported_marks ORDER BY createdAt DESC")
+    suspend fun getAll(): List<ImportedMarkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<ImportedMarkEntity>)
+
+    @Query("DELETE FROM imported_marks WHERE mark = :mark")
+    suspend fun delete(mark: String)
+
+    @Query("DELETE FROM imported_marks")
+    suspend fun deleteAll()
+}

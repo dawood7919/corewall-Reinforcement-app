@@ -13,10 +13,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.TableRows
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -153,9 +155,15 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             CwCard(contentPadding = PaddingValues(vertical = Space.xs)) {
                 CwListItem(
                     title = "إعدادات المساعد الذكي",
-                    subtitle = "المزوّد والموديل ومفتاح الـAPI",
+                    subtitle = "المزوّد والموديل ومفاتيح الـAPI المحفوظة",
                     leading = { CwLeadingIcon(Icons.Filled.AutoAwesome, tone = CwTone.Info) },
                     onClick = { vm.go(Dest.AiSettings) }
+                )
+                CwListItem(
+                    title = "مكتبة البرومبت",
+                    subtitle = "تعليمات تحليل لكل نوع مستند — BBS، رسمة، طلب فحص",
+                    leading = { CwLeadingIcon(Icons.Filled.Description, tone = CwTone.Info) },
+                    onClick = { vm.go(Dest.Prompts) }
                 )
             }
         }
@@ -190,6 +198,16 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+        }
+        item(key = "schedule") {
+            CwCard(contentPadding = PaddingValues(vertical = Space.xs)) {
+                CwListItem(
+                    title = "استيراد بيانات الجدول",
+                    subtitle = "ضيف كمراتك الداخلية فوق جدول المكتب، وامسحها وقت ما تحب",
+                    leading = { CwLeadingIcon(Icons.Filled.TableRows, tone = CwTone.Pending) },
+                    onClick = { vm.go(Dest.ScheduleImport) }
+                )
             }
         }
         item(key = "system") {

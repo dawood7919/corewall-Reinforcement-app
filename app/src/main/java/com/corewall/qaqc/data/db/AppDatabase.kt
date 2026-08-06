@@ -28,9 +28,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FileMetaEntity::class,
         ChatThreadEntity::class,
         LinkEntity::class,
-        NoteRevisionEntity::class
+        NoteRevisionEntity::class,
+        PromptEntity::class,
+        ImportedMarkEntity::class
     ],
-    version = 12,
+    version = 13,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -55,6 +57,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chatThreadDao(): ChatThreadDao
     abstract fun linkDao(): LinkDao
     abstract fun noteRevisionDao(): NoteRevisionDao
+    abstract fun promptDao(): PromptDao
+    abstract fun importedMarkDao(): ImportedMarkDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -267,6 +271,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * مكتبة البرومبت + الأكواد المستوردة من المستخدم.
+         *
+         * كله إضافة: جدولين جداد وعمود واحد على `documents`. مفيش عمود
+         * اتشال ولا اتغيّر نوعه، فالبيانات القديمة ما بتتلمسش.
+         *
+         * ملاحظة مقصودة: **مفيش `CREATE INDEX` هنا**. الجدولين صغيرين
+         * (عشرات الصفوف)، والفهرس اللي مش معرّف على الكيان بيوقّع التطبيق
+         * أول ما يفتح — وده حصل مرتين قبل كده.
+         */
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `prompts` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, `body` TEXT NOT NULL, " +
+                        "`usageCount` INTEGER NOT NULL, `lastUsedAt` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `imported_marks` (" +
+                        "`mark` TEXT NOT NULL, `kind` TEXT NOT NULL, " +
+                        "`rowsJson` TEXT NOT NULL, `source` TEXT NOT NULL, " +
+                        "`rowCount` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`mark`))"
+                )
+                db.execSQL("ALTER TABLE `documents` ADD COLUMN `promptName` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         // طبقة المعرفة: مستندات محلّلة + حقائق مستخرجة (knowledge graph) + محادثة.
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -311,7 +345,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
-                    MIGRATION_11_12
+                    MIGRATION_11_12, MIGRATION_12_13
                 ).build().also { instance = it }
             }
     }

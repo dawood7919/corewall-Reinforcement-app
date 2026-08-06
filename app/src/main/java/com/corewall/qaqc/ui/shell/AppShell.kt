@@ -56,6 +56,8 @@ import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.ui.ai.AiChatScreen
 import com.corewall.qaqc.ui.ai.AiReportScreen
 import com.corewall.qaqc.ui.ai.AiSettingsScreen
+import com.corewall.qaqc.ui.ai.PromptsScreen
+import com.corewall.qaqc.ui.settings.ScheduleImportScreen
 import com.corewall.qaqc.ui.ai.AiAnalysisScreen
 import com.corewall.qaqc.ui.ai.KnowledgeScreen
 import com.corewall.qaqc.ui.ai.ProjectKnowledgeScreen
@@ -251,11 +253,13 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
         Dest.ProjectKnowledge -> ProjectKnowledgeScreen(vm, modifier)
         Dest.DocumentGen -> AiReportScreen(vm, modifier)
         Dest.AiSettings -> AiSettingsScreen(vm, modifier)
+        Dest.Prompts -> PromptsScreen(vm, modifier)
 
         // النظام
         Dest.Notifications -> NotificationsScreen(vm, modifier)
         Dest.Settings -> SettingsScreen(vm, modifier)
         Dest.Sync -> SyncScreen(vm, modifier)
+        Dest.ScheduleImport -> ScheduleImportScreen(vm, modifier)
         Dest.About -> AboutScreen(modifier)
 
         // ملء الشاشة
