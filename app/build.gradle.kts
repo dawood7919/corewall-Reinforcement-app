@@ -68,4 +68,32 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+
+    // ─────────────────────────────────────────────────────────────
+    // مكتبات بتحلّ محل كود مكتوب بالإيد.
+    //
+    // التطبيق كان ١٥ اعتماد ومفيش ولا واحد منهم بيعمل شغل واجهة أو
+    // وسائط أو شبكة — يعني الـHTTP والصور والماركداون والـPDF والرسوم
+    // والإيماءات كلهم متكتبين من الصفر (حوالي ٤٠٠٠ سطر). ده مش توفير،
+    // ده صيانة دايمة لحاجة محلولة برّه.
+    //
+    // النسخ هنا متختارة لتوافق Compose 1.7 (BOM 2024.09.03) وKotlin
+    // 2.0.21 — مش الأحدث على الإطلاق. ترقية الـtoolchain مشروع لوحده
+    // وملهاش عائد على المستخدم دلوقتي.
+    // ─────────────────────────────────────────────────────────────
+
+    // تحميل الصور: كاش ذاكرة وقرص وإلغاء تلقائي مع التمرير.
+    // بيحلّ محل rememberThumb المكتوب بالإيد (سبب تهتهة شبكة الملفات).
+    implementation("io.coil-kt.coil3:coil-compose:3.0.4")
+
+    // شبكة + SSE. من غير ده الردود المتدفّقة مستحيلة أصلاً:
+    // HttpURLConnection بيقرا الجسم كله قبل ما يفكّه.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
+
+    // رسوم بيانية — بديل الرسم اليدوي على Canvas.
+    implementation("com.patrykandpatrick.vico:compose-m3:2.0.0-beta.3")
+
+    // عارض ماركداون — بديل الـparser المكتوب بالإيد.
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
 }
