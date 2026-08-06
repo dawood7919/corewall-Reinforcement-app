@@ -238,7 +238,9 @@ class PdfDocumentSession private constructor(
                 }
             }
 
-            val count = runCatching { doc.pageCount }.getOrDefault(0)
+            // دالة مش خاصية: `getPageCount()` معرّفة بـ`fun` في المكتبة،
+            // فصيغة الخاصية `doc.pageCount` مابتترجمش.
+            val count = runCatching { doc.getPageCount() }.getOrDefault(0)
             if (count <= 0) {
                 runCatching { doc.close() }; runCatching { pfd.close() }
                 throw PdfOpenException("الملف مافيهوش صفحات")
