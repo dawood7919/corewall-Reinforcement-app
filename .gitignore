@@ -9,3 +9,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# مخطط Room بيتولّد وقت البناء (CI بيعمله ويفحصه) — مش مصدر حقيقة يتعمله commit
+/app/schemas
+__pycache__/

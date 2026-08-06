@@ -31,7 +31,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NoteRevisionEntity::class
     ],
     version = 12,
-    exportSchema = false
+    // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun elementNameDao(): ElementNameDao
@@ -256,9 +257,13 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 // الرسايل القديمة بتفضل زي ما هي؛ threadId = 0 يعني "قبل المحادثات".
                 db.execSQL("ALTER TABLE `chat_messages` ADD COLUMN `threadId` INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_links_from` ON `links` (`fromType`, `fromId`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_links_to` ON `links` (`toType`, `toId`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `idx_msg_thread` ON `chat_messages` (`threadId`)")
+                // الأسماء دي مش اختيارية: لازم تطابق اللي Room بيولّده من
+                // `@Index` على الكيان بالحرف، وإلا التحقّق بعد الترحيل بيرمي
+                // والتطبيق بيقفل أول ما يفتح. الصيغة هي
+                // `index_<جدول>_<عمود>_<عمود>`.
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_links_fromType_fromId` ON `links` (`fromType`, `fromId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_links_toType_toId` ON `links` (`toType`, `toId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_messages_threadId` ON `chat_messages` (`threadId`)")
             }
         }
 

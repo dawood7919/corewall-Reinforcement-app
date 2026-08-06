@@ -31,6 +31,12 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
+      # الترحيلات مجرد نصّ SQL، فالكومبايلر مش شايفها. الفحص ده بيقارنها
+      # بالمخطط اللي Room ولّده — أي فهرس ناقص أو زيادة معناه إن التطبيق
+      # هيقفل أول ما يفتح عند اللي بيحدّث، فبنوقّع البناء هنا قبل النشر.
+      - name: Verify Room migrations match the generated schema
+        run: python3 tools/check_room_schema.py
+
       # برانش orphan بكوميت واحد بيتعمله force-push كل بناء — قناة توزيع ثابتة
       # للـAPK تشتغل بـgit فقط (مفيدة لمّا تحميل الـartifacts/الـreleases مش متاح).
       - name: Push APK to apk-latest branch

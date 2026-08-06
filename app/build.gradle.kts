@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 33
-        versionName = "8.1"
+        versionCode = 34
+        versionName = "8.1.1"
     }
 
     // مفتاح توقيع ثابت متسجّل في الريبو — كل بناء بيتوقّع بنفس المفتاح،
@@ -49,6 +49,14 @@ android {
     buildFeatures {
         compose = true
     }
+}
+
+// بيخلّي Room يكتب المخطط المتولّد على القرص. الفايدة مش أرشيفية:
+// سكربت `tools/check_room_schema.py` بيقارن الفهارس اللي الترحيل بيعملها
+// بالفهارس اللي Room متوقّعها، فأي اختلاف بيوقّع البناء بدل ما يطلع APK
+// بيقفل أول ما يفتح.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {

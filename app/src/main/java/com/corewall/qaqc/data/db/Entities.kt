@@ -2,6 +2,7 @@ package com.corewall.qaqc.data.db
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
@@ -257,8 +258,19 @@ data class DocFactEntity(
     val numericValue: Double
 )
 
-/** رسالة في محادثة المساعد الهندسي (لكل دور). */
-@Entity(tableName = "chat_messages")
+/**
+ * رسالة في محادثة المساعد الهندسي (لكل دور).
+ *
+ * الفهرس على [threadId] **لازم** يتعرّف هنا مش في الترحيل بس: Room بيقارن
+ * المخطط المتولّد من الكيان بالقاعدة الحقيقية، وأي فهرس موجود في وحدة منهم
+ * بس بيرمي `IllegalStateException` أول ما القاعدة تتفتح — يعني التطبيق
+ * بيقفل بعد الفتح بثانيتين. الاسم سايبينه لـRoom عن قصد (`index_…`) عشان
+ * الترحيل والكيان يطلّعوا نفس الجملة بالحرف.
+ */
+@Entity(
+    tableName = "chat_messages",
+    indices = [Index(value = ["threadId"])]
+)
 data class ChatMessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val level: String,
@@ -336,8 +348,18 @@ data class ChatThreadEntity(
  * ده اللي بيخلّي "كل ملاحظة مربوطة بالرسومات والأدوار والعناصر والفحوصات
  * والصبّات والعمالة" جملة حقيقية مش كلام. جدول واحد عام أرخص بكتير من
  * عمود مفتاح أجنبي في كل جدول لكل نوع ربط ممكن.
+ *
+ * الفهارس هنا مش رفاهية: كل قراءة رابط بتسأل بالطرف (نوع + معرّف)، ومن غير
+ * فهرس دي بتبقى مسح كامل للجدول. ولازم تتعرّف على الكيان نفسه — بص على
+ * التعليق فوق [ChatMessageEntity].
  */
-@Entity(tableName = "links")
+@Entity(
+    tableName = "links",
+    indices = [
+        Index(value = ["fromType", "fromId"]),
+        Index(value = ["toType", "toId"])
+    ]
+)
 data class LinkEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     /** NOTE | FILE | PHOTO | ELEMENT | INSPECTION | TASK | THREAD | ATTENDANCE */
