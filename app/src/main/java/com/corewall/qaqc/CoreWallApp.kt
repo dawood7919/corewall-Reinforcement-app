@@ -4,6 +4,7 @@ import android.app.Application
 import com.corewall.qaqc.ai.AiEngine
 import com.corewall.qaqc.ai.AiRepository
 import com.corewall.qaqc.data.AppRepository
+import com.corewall.qaqc.data.FileLibrary
 import com.corewall.qaqc.data.FilesManager
 import com.corewall.qaqc.data.SettingsStore
 import com.corewall.qaqc.data.db.AppDatabase
@@ -19,6 +20,8 @@ class CoreWallApp : Application() {
         private set
     lateinit var aiEngine: AiEngine
         private set
+    lateinit var fileLibrary: FileLibrary
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -28,5 +31,6 @@ class CoreWallApp : Application() {
         val db = AppDatabase.get(this)
         aiRepository = AiRepository(db.aiAnalysisDao())
         aiEngine = AiEngine(db.documentDao(), db.docFactDao(), db.chatMessageDao())
+        fileLibrary = FileLibrary(db.fileMetaDao(), db.linkDao())
     }
 }

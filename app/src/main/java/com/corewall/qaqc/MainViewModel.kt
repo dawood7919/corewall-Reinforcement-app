@@ -24,6 +24,9 @@ import com.corewall.qaqc.data.model.PlanElement
 import com.corewall.qaqc.data.model.ScheduleData
 import com.corewall.qaqc.domain.AttentionDiff
 import com.corewall.qaqc.domain.AttentionItem
+import com.corewall.qaqc.data.FileLibrary
+import com.corewall.qaqc.data.FileSearchHit
+import com.corewall.qaqc.data.db.FileMetaEntity
 import com.corewall.qaqc.domain.FloorSummary
 import com.corewall.qaqc.domain.startOfDay
 import com.corewall.qaqc.domain.startOfToday
@@ -1209,6 +1212,57 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun closeCad() { back() }
 
     // ---------- Derived ----------
+
+    // ------------------------------------------------------- مكتبة الملفات
+
+    /** بيانات الملفات: وسوم، مفضّلة، نصّ مستخرج، روابط. */
+    val fileLibrary: FileLibrary = (app as CoreWallApp).fileLibrary
+
+    val fileMeta: StateFlow<Map<String, FileMetaEntity>> = fileLibrary.allMeta
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    val fileFavourites: StateFlow<List<FileMetaEntity>> = fileLibrary.favourites
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val fileRecent: StateFlow<List<FileMetaEntity>> = fileLibrary.recent
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val fileTags: StateFlow<List<String>> = fileLibrary.allTags
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _fileQuery = MutableStateFlow("")
+    val fileQuery: StateFlow<String> = _fileQuery
+
+    private val _fileResults = MutableStateFlow<List<FileSearchHit>>(emptyList())
+    val fileResults: StateFlow<List<FileSearchHit>> = _fileResults
+
+    private var searchJob: kotlinx.coroutines.Job? = null
+
+    /** بحث مع تهدئة — الكتابة بتلغي البحث اللي قبله بدل ما تكدّس استعلامات. */
+    fun setFileQuery(q: String) {
+        _fileQuery.value = q
+        searchJob?.cancel()
+        if (q.trim().length < 2) {
+            _fileResults.value = emptyList()
+            return
+        }
+        searchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(220)
+            _fileResults.value = fileLibrary.search(q)
+        }
+    }
+
+    fun toggleFileFavourite(path: String) =
+        viewModelScope.launch { fileLibrary.toggleFavourite(path) }
+
+    fun addFileTag(path: String, tag: String) =
+        viewModelScope.launch { fileLibrary.addTag(path, tag) }
+
+    fun removeFileTag(path: String, tag: String) =
+        viewModelScope.launch { fileLibrary.removeTag(path, tag) }
+
+    fun noteFileOpened(path: String) =
+        viewModelScope.launch { fileLibrary.markOpened(path) }
 
     // ------------------------------------------------------- ملخّص الدور
 
