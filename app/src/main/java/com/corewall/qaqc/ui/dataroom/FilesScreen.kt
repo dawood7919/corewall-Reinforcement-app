@@ -185,7 +185,7 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             },
             trailingIcon = {
                 if (query.isNotEmpty()) {
-                    CwIconButton(Icons.Filled.Close, "امسح البحث") { vm.setFileQuery("") }
+                    CwIconButton(Icons.Filled.Close, "امسح البحث", { vm.setFileQuery("") })
                 }
             },
             singleLine = true,
@@ -208,9 +208,11 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     .padding(horizontal = Space.screen),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                CwIconButton(Icons.AutoMirrored.Filled.ArrowForward, "رجوع لمجلد أعلى") {
-                    subPath = subPath.substringBeforeLast('/', "")
-                }
+                CwIconButton(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    "رجوع لمجلد أعلى",
+                    { subPath = subPath.substringBeforeLast('/', "") }
+                )
                 Text(
                     subPath,
                     style = MaterialTheme.typography.labelLarge,
@@ -539,9 +541,9 @@ private fun SelectionBar(
             maxLines = 1
         )
         if (single != null) {
-            CwIconButton(Icons.Filled.AutoAwesome, "حلّل الملف") { onAnalyze(single) }
-            CwIconButton(Icons.Filled.Hub, "ضمّه لمعرفة المشروع") { onAddToProject(single) }
-            CwIconButton(Icons.Filled.Share, "شارك") { onShare(single) }
+            CwIconButton(Icons.Filled.AutoAwesome, "حلّل الملف", { onAnalyze(single) })
+            CwIconButton(Icons.Filled.Hub, "ضمّه لمعرفة المشروع", { onAddToProject(single) })
+            CwIconButton(Icons.Filled.Share, "شارك", { onShare(single) })
         }
         CwIconButton(Icons.Filled.Star, "ضيف للمفضّلة", onFavourite)
         CwIconButton(Icons.Filled.Delete, "امسح المختار", onDelete, tint = c.danger.fg)
