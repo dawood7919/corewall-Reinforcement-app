@@ -32,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PromptEntity::class,
         ImportedMarkEntity::class
     ],
-    version = 13,
+    version = 14,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -301,6 +301,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * سُمك الخط والشفافية للعلامات.
+         *
+         * عمودين بقيم افتراضية بس — العلامات القديمة بتاخد السُمك اللي كانت
+         * بترسم بيه فعلاً (٢.٥) وشفافية كاملة، فشكلها مابيتغيّرش.
+         *
+         * ومفيش `@ColumnInfo(defaultValue = …)` على الكيان عن قصد: طالما
+         * الكيان مش معرّف قيمة افتراضية، Room مابيقارنهاش أصلاً. ده نفس
+         * اللي عملناه مع `threadId` في ترحيل ١١→١٢ واشتغل.
+         */
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `pdf_annotations` ADD COLUMN `strokeWidth` REAL NOT NULL DEFAULT 2.5")
+                db.execSQL("ALTER TABLE `pdf_annotations` ADD COLUMN `opacity` REAL NOT NULL DEFAULT 1.0")
+            }
+        }
+
         // طبقة المعرفة: مستندات محلّلة + حقائق مستخرجة (knowledge graph) + محادثة.
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -345,7 +362,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
-                    MIGRATION_11_12, MIGRATION_12_13
+                    MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14
                 ).build().also { instance = it }
             }
     }

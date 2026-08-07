@@ -160,7 +160,18 @@ data class PdfAnnotationEntity(
     val tool: String,
     val color: Long,
     val pointsJson: String,
-    val createdAt: Long
+    val createdAt: Long,
+    /**
+     * سُمك الخط **بنقط الـPDF** مش بالبكسل.
+     *
+     * الفرق مهم: النقطة وحدة على الورقة نفسها، فالعلامة بتكبر وتصغر مع
+     * التكبير زي ما لو كانت متحبّرة على الرسمة فعلاً. لو خزّنّاه بالبكسل،
+     * الخط كان هيفضل بنفس السُمك على الشاشة مهما قرّبت — يعني عند ٢٠×
+     * بيبقى شعرة، وعند ٠.٥× بيغطّي نص الرسمة.
+     */
+    val strokeWidth: Float = 2.5f,
+    /** ٠..١ — التظليل بيستخدم قيم منخفضة عشان اللي تحته يفضل مقروء. */
+    val opacity: Float = 1f
 ) {
     companion object {
         const val TOOL_HIGHLIGHT = "HIGHLIGHT"
@@ -168,6 +179,12 @@ data class PdfAnnotationEntity(
         const val TOOL_CIRCLE = "CIRCLE"
         const val TOOL_ARROW = "ARROW"
         const val TOOL_FREEHAND = "FREEHAND"
+
+        // أدوات جديدة. القديمة فوق سايبينها بأسمائها عشان العلامات
+        // المتخزّنة من قبل تفضل تتقري.
+        const val TOOL_MARKER = "MARKER"
+        const val TOOL_LINE = "LINE"
+        const val TOOL_CLOUD = "CLOUD"
     }
 }
 

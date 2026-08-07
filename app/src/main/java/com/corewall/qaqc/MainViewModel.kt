@@ -1346,6 +1346,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.undoLastPdfAnnotation(filePath, page) }
     }
 
+    /** حذف علامة بعينها — التراجع بيحتاجه عشان يقدر يرجّعها بعدين. */
+    fun deletePdfAnnotation(id: Long) {
+        viewModelScope.launch { repo.deletePdfAnnotation(id) }
+    }
+
     fun clearPdfPage(filePath: String, page: Int) {
         viewModelScope.launch { repo.clearPdfPage(filePath, page) }
     }

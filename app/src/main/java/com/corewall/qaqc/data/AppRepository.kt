@@ -254,6 +254,8 @@ class AppRepository(context: Context) {
     suspend fun addPdfAnnotation(entity: PdfAnnotationEntity) = db.pdfAnnotationDao().upsert(entity)
     suspend fun undoLastPdfAnnotation(filePath: String, page: Int) =
         db.pdfAnnotationDao().deleteLast(filePath, page)
+
+    suspend fun deletePdfAnnotation(id: Long) = db.pdfAnnotationDao().delete(id)
     suspend fun clearPdfPage(filePath: String, page: Int) =
         db.pdfAnnotationDao().clearPage(filePath, page)
 
