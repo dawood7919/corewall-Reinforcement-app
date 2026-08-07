@@ -109,18 +109,10 @@ class AppRepository(context: Context) {
         imported: List<ImportedMarkEntity> = emptyList()
     ): ScheduleData {
         if (edits.isEmpty() && imported.isEmpty()) return baseSchedule
-        val byKey = edits.associateBy { it.mark to it.rowIndex }
-        val walls = baseSchedule.walls.mapValues { (mark, rows) ->
-            rows.mapIndexed { i, row ->
-                byKey[mark to i]?.let { applyWallPatch(row, parsePatch(it.patchJson)) } ?: row
-            }
-        }.toMutableMap()
-        val beams = baseSchedule.beams.mapValues { (mark, rows) ->
-            rows.mapIndexed { i, row ->
-                byKey[mark to i]?.let { applyBeamPatch(row, parsePatch(it.patchJson)) } ?: row
-            }
-        }.toMutableMap()
 
+        // ١) المستورد الأول — بيحلّ محل كود المكتب لو نفس الاسم.
+        val walls = LinkedHashMap(baseSchedule.walls)
+        val beams = LinkedHashMap(baseSchedule.beams)
         imported.forEach { m ->
             when (m.kind) {
                 ImportedMarkEntity.BEAM ->
@@ -129,8 +121,39 @@ class AppRepository(context: Context) {
                     decodeRows<WallRange>(m.rowsJson)?.let { walls[m.mark] = it }
             }
         }
-        return ScheduleData(baseSchedule.levels, walls, beams)
+        if (edits.isEmpty()) return ScheduleData(baseSchedule.levels, walls, beams)
+
+        // ٢) تعديلات المستخدم فوق النتيجة.
+        //
+        // الترتيب ده مش تفصيلة: قبل كده التعديلات كانت بتتطبّق الأول
+        // والمستورد بيتكتب فوقها. يعني لو عدّلت قيمة في كمرة مستوردة،
+        // التعديل بيتحفظ في القاعدة و**ما بيظهرش أبداً** — أسوأ نوع من
+        // الأعطال، لأن المستخدم مش شايف إن حاجة اتكسرت.
+        val byKey = edits.associateBy { it.mark to it.rowIndex }
+        return ScheduleData(
+            levels = baseSchedule.levels,
+            walls = walls.mapValues { (mark, rows) ->
+                rows.mapIndexed { i, row ->
+                    byKey[mark to i]?.let { applyWallPatch(row, parsePatch(it.patchJson)) } ?: row
+                }
+            },
+            beams = beams.mapValues { (mark, rows) ->
+                rows.mapIndexed { i, row ->
+                    byKey[mark to i]?.let { applyBeamPatch(row, parsePatch(it.patchJson)) } ?: row
+                }
+            }
+        )
     }
+
+    /**
+     * الجدول قبل أي تعديل يدوي — المكتب + المستورد وبس.
+     *
+     * محرّر الصف بيحتاجه عشان يقارن ويخزّن **الفرق** بس. لو قارن بجدول
+     * المكتب لوحده، أي كمرة مستوردة مالهاش أصل هناك فكل حقولها بتتخزّن
+     * كتعديل حتى لو ماتغيّرش فيها حاجة.
+     */
+    fun originalSchedule(imported: List<ImportedMarkEntity>): ScheduleData =
+        applyEdits(emptyList(), imported)
 
     /** صف مكسور مايوقّعش الجدول كله — الكود بيتتشال وخلاص. */
     private inline fun <reified T> decodeRows(raw: String): List<T>? =

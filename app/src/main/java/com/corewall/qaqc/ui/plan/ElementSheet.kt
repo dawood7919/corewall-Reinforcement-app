@@ -119,7 +119,10 @@ private fun NamingContent(vm: MainViewModel, element: PlanElement) {
         modifier = Modifier.fillMaxWidth()
     )
 
-    val suggestions = remember(input, names) {
+    // `marks` مفتاح في الـremember عن قصد: من غيره، الأكواد اللي بتتستورد
+    // وانت فاتح الشيت مابتظهرش لحد ما تقفله وتفتحه تاني.
+    val marks by vm.marks.collectAsStateWithLifecycle()
+    val suggestions = remember(input, names, marks) {
         vm.availableMarks(element.id)
             .filter { it.contains(input.trim(), ignoreCase = true) || input.isBlank() }
             .take(30)
@@ -521,8 +524,11 @@ private fun EditRangeDialog(
 
     // القيم الأصلية من الجدول المرجعي (قبل أي تعديلات) عشان الفرق بس هو اللي يتخزن
     val baseValues = remember {
-        val baseWall = vm.repo.baseSchedule.walls[mark]?.getOrNull(rowIndex)
-        val baseBeam = vm.repo.baseSchedule.beams[mark]?.getOrNull(rowIndex)
+        // الأصل = المكتب + المستورد. الكمرة المستوردة مالهاش صف في جدول
+        // المكتب، فلو قارنّا بيه هيتخزّن كل حقولها كتعديل من غير داعي.
+        val original = vm.originalSchedule()
+        val baseWall = original.walls[mark]?.getOrNull(rowIndex)
+        val baseBeam = original.beams[mark]?.getOrNull(rowIndex)
         when {
             baseWall != null -> mapOf(
                 "w" to baseWall.w.toString(), "v" to baseWall.v, "h" to baseWall.h, "t" to baseWall.t

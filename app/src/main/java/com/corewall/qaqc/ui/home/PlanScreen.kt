@@ -350,6 +350,8 @@ private fun LegendItem(color: Color, label: String) {
 
 @Composable
 private fun CommandBar(vm: MainViewModel) {
+    // الأكواد من المصدر المدموج (مكتب + مستورد)، مش من الأصول
+    val allMarks by vm.marks.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     val names by vm.names.collectAsStateWithLifecycle()
 
@@ -403,7 +405,7 @@ private fun CommandBar(vm: MainViewModel) {
 
         if (query.isNotBlank()) {
             val q = query.trim()
-            val markResults = vm.repo.baseSchedule.allMarks
+            val markResults = allMarks
                 .filter { it.contains(q, ignoreCase = true) }
                 .take(8)
             val levelResults = vm.levels.filter { it.contains(q, ignoreCase = true) }.take(5)

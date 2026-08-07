@@ -80,9 +80,10 @@ private fun SearchSection(vm: MainViewModel) {
     val c = LocalCwColors.current
     var query by rememberSaveable { mutableStateOf("") }
 
-    val results = remember(query) {
+    val allMarks by vm.marks.collectAsStateWithLifecycle()
+    val results = remember(query, allMarks) {
         if (query.isBlank()) emptyList()
-        else vm.repo.baseSchedule.allMarks
+        else allMarks
             .filter { it.contains(query.trim(), ignoreCase = true) }
             .take(15)
     }

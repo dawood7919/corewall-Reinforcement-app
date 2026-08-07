@@ -1295,8 +1295,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val unreadNotifications: StateFlow<Int> = _unreadNotifications
     fun setUnreadNotifications(n: Int) { _unreadNotifications.value = n }
 
-    /** الأكواد المتاحة للتسمية — شاملة اللي المستخدم استورده. */
-    fun allMarks(): List<String> = schedule.value.allMarks
+    /**
+     * كل الأكواد — **مصدر واحد مراقَب**.
+     *
+     * قبل كده كل شاشة كانت بتقرا `repo.baseSchedule.allMarks` بنفسها، وده
+     * جدول المكتب اللي في الأصول. لما بقى فيه أكواد مستوردة، الشاشات دي
+     * فضلت شايفة الجدول الأصلي بس — الكمرة تتستورد بنجاح وماتظهرش في
+     * التسمية ولا البحث. الحل إن كل حاجة تقرا من هنا، والقايمة دي بتتحدّث
+     * لوحدها مع أي استيراد أو حذف.
+     */
+    val marks: StateFlow<List<String>> = schedule
+        .map { it.allMarks }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, repo.baseSchedule.allMarks)
+
+    fun allMarks(): List<String> = marks.value
+
+    /** الصف الأصلي قبل التعديلات — شامل الأكواد المستوردة، مش المكتب بس. */
+    fun originalSchedule(): ScheduleData = repo.originalSchedule(importedMarks.value)
 
     val attendanceFiles: StateFlow<List<AttendanceFileEntity>> =
         combine(repo.attendanceFiles, _currentLevel) { all, level ->
@@ -1530,6 +1545,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun availableMarks(exceptElementId: String?): List<String> {
         val used = names.value.filterKeys { it != exceptElementId }.values.toSet()
-        return repo.baseSchedule.allMarks.filter { it !in used }
+        return schedule.value.allMarks.filter { it !in used }
     }
 }
