@@ -13,6 +13,7 @@ import com.corewall.qaqc.data.db.InspectionEntity
 import com.corewall.qaqc.data.db.NoteEntity
 import com.corewall.qaqc.data.db.PromptEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
+import com.corewall.qaqc.data.db.PdfBookmarkEntity
 import com.corewall.qaqc.data.db.RangeEditEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
