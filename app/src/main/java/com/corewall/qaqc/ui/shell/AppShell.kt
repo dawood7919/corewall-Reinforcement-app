@@ -2,11 +2,15 @@ package com.corewall.qaqc.ui.shell
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -43,16 +47,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.ui.design.LocalReducedMotion
+import com.corewall.qaqc.ui.design.ScreenMotion
+import com.corewall.qaqc.ui.design.rememberPressScale
 import com.corewall.qaqc.ui.ai.AiChatScreen
 import com.corewall.qaqc.ui.ai.AiReportScreen
 import com.corewall.qaqc.ui.ai.AiSettingsScreen
@@ -111,6 +122,7 @@ fun AppShell(vm: MainViewModel) {
     val selectedElementId by vm.selectedElementId.collectAsStateWithLifecycle()
     val editingNote by vm.editingNote.collectAsStateWithLifecycle()
 
+    val reducedMotion = LocalReducedMotion.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var showLevelSheet by remember { mutableStateOf(false) }
@@ -170,15 +182,51 @@ fun AppShell(vm: MainViewModel) {
                     }
                 ) { padding ->
                     val inner = Modifier.padding(padding)
-                    // انتقال هادي بين الوجهات — بيشرح إن الشاشة اتغيّرت، من غير مسرح.
+
+                    /**
+                     * حافظ حالة الوجهات.
+                     *
+                     * `AnimatedContent` بيهدّ الشاشة القديمة ويبني الجديدة من
+                     * الصفر — يعني كل `remember` جوّه الشاشة بيضيع، وأول ما
+                     * ترجع بالخلف كل حاجة بتتحسب تاني: موضع التمرير، الفلاتر
+                     * المختارة، قايمة الملفات، المصغّرات. ده كان أكبر سبب
+                     * لإحساس "الرجوع بيعيد تحميل كل حاجة".
+                     *
+                     * `SaveableStateHolder` بيحفظ حالة كل وجهة بمفتاحها
+                     * ويرجّعها لما ترجع لها — نفس اللي navigation-compose
+                     * بيعمله جوّه، من غير ما نستبدل نظام التنقّل كله.
+                     *
+                     * حدود الحل بصراحة: بيحفظ `rememberSaveable` بس، مش
+                     * `remember` العادي. يعني موضع التمرير والفلاتر
+                     * والحقول بترجع مكانها (ودي أغلب اللي المستخدم بيحسّه)،
+                     * لكن الحالة التقيلة زي جلسة ملف PDF مفتوح بتتبني
+                     * تاني. اللي عايز يعيش أطول من كده مكانه الـViewModel.
+                     */
+                    val stateHolder = rememberSaveableStateHolder()
+
+                    /**
+                     * اتجاه الانتقال من **عمق المكدّس**: أعمق = للأمام،
+                     * أقل = رجوع، نفس العمق = تبديل تبويب.
+                     */
+                    val depth = nav.stack.size
+
                     AnimatedContent(
-                        targetState = dest,
+                        targetState = dest to depth,
                         transitionSpec = {
-                            fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit())
+                            val from = initialState.second
+                            val to = targetState.second
+                            when {
+                                to > from -> ScreenMotion.forward(this, reducedMotion)
+                                to < from -> ScreenMotion.backward(this, reducedMotion)
+                                else -> ScreenMotion.lateral(reducedMotion)
+                            }
                         },
+                        contentKey = { it.first.stateKey },
                         label = "destination"
-                    ) { d ->
-                        Destination(vm = vm, dest = d, modifier = inner)
+                    ) { (d, _) ->
+                        stateHolder.SaveableStateProvider(d.stateKey) {
+                            Destination(vm = vm, dest = d, modifier = inner)
+                        }
                     }
                 }
             }
@@ -368,20 +416,47 @@ private fun NavTab(
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
-    val tint = if (selected) c.onAccentContainer else c.textTertiary
+    val interaction = remember { MutableInteractionSource() }
+    val press by rememberPressScale(interaction)
+
+    // اللون والحبّة بيتحرّكوا بدل ما ينطّوا. التبويب المختار بيتحوّل
+    // قدّام عين المستخدم فبيربط الضغطة بالنتيجة.
+    val tint by animateColorAsState(
+        if (selected) c.onAccentContainer else c.textTertiary,
+        Motion.standard(), label = "tabTint"
+    )
+    val pill by animateColorAsState(
+        if (selected) c.accentContainer else Color.Transparent,
+        Motion.standard(), label = "tabPill"
+    )
+    // الحبّة بتتوسّع شوية وهي بتتحدّد — إشارة اتجاه من غير حركة تخطيط.
+    val pillScale by animateFloatAsState(
+        if (selected) 1f else PILL_RESTING_SCALE,
+        Motion.standard(), label = "tabPillScale"
+    )
+
     Column(
         modifier
             .clip(Radius.shapeMd)
             .heightIn(min = Sizes.touch)
-            .clickable(role = Role.Tab, onClick = onClick)
+            .clickable(
+                interactionSource = interaction,
+                // مؤشّر المنصّة الافتراضي — نفس التموّج اللي في كل مكان
+                // تاني في التطبيق، من غير ما نخترع واحد.
+                indication = LocalIndication.current,
+                role = Role.Tab,
+                onClick = onClick
+            )
+            .scale(press)
             .padding(vertical = Space.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Space.xxs)
     ) {
         Box(
             Modifier
+                .scale(pillScale)
                 .clip(RoundedCornerShape(percent = 50))
-                .background(if (selected) c.accentContainer else c.surface)
+                .background(pill)
                 .padding(horizontal = Space.lg, vertical = Space.xs)
         ) {
             Icon(
@@ -395,8 +470,12 @@ private fun NavTab(
             spec.dest.title,
             style = MaterialTheme.typography.labelSmall,
             color = tint,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
     }
 }
+
+/** الحبّة غير المختارة أصغر شوية — الفرق بيتحسّ قبل ما يتقري. */
+private const val PILL_RESTING_SCALE = 0.86f

@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -74,6 +75,8 @@ import com.corewall.qaqc.ui.design.Motion
 import com.corewall.qaqc.ui.design.Sizes
 import com.corewall.qaqc.ui.design.Space
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -128,7 +131,21 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         val base = vm.files.levelDir(level)
         if (subPath.isEmpty()) base else File(base, subPath)
     }
-    val entries = remember(currentDir, refresh) { vm.files.list(currentDir) }
+    /**
+     * قايمة المجلد — **بتتقري من القرص في الخلفية**.
+     *
+     * قبل كده كانت `remember { vm.files.list(dir) }`، يعني `listFiles()`
+     * وفرز النتيجة كانوا بيتنفّذوا وسط التركيب على خيط الواجهة. على
+     * التخزين الخارجي دي عملية قرص حقيقية، فكل دخول للملفات وكل فتح مجلد
+     * كان بيوقّف الإطار — وده بالظبط الإحساس بإن "الشاشة بتاخد وقت تظهر".
+     *
+     * دلوقتي الشاشة بتظهر فوراً بقايمة فاضية والمحتوى بيوصل بعدها بإطار
+     * أو اتنين. `emptyList()` كقيمة أولية مقصودة: الحالة الفاضية بتظهر
+     * لجزء من الثانية بس، وأحسن من إطار ضايع.
+     */
+    val entries by produceState(initialValue = emptyList<File>(), currentDir, refresh) {
+        value = withContext(Dispatchers.IO) { vm.files.list(currentDir) }
+    }
 
     val pickFiles = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -150,14 +167,20 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     // الفلتر بيتطبّق على المجلد الحالي؛ المفضّلة والأخيرة عابرة للمجلدات
     // لأن المستخدم اللي بيدوّر فيهم مش فاكر هما كانوا فين.
-    val shown: List<File> = remember(entries, filter, activeTag, metaMap, favourites, recent) {
-        val base = when (filter) {
-            FileFilter.ALL -> entries
-            FileFilter.FAVOURITES -> favourites.map { File(it.path) }.filter { it.exists() }
-            FileFilter.RECENT -> recent.map { File(it.path) }.filter { it.exists() }
+    // `exists()` على كل مفضّلة عملية قرص كمان — نفس السبب، نفس الحل.
+    val shown: List<File> by produceState(
+        initialValue = emptyList(),
+        entries, filter, activeTag, metaMap, favourites, recent
+    ) {
+        value = withContext(Dispatchers.IO) {
+            val base = when (filter) {
+                FileFilter.ALL -> entries
+                FileFilter.FAVOURITES -> favourites.map { File(it.path) }.filter { it.exists() }
+                FileFilter.RECENT -> recent.map { File(it.path) }.filter { it.exists() }
+            }
+            if (activeTag == null) base
+            else base.filter { activeTag in (metaMap[it.absolutePath]?.tagList ?: emptyList()) }
         }
-        if (activeTag == null) base
-        else base.filter { activeTag in (metaMap[it.absolutePath]?.tagList ?: emptyList()) }
     }
 
     val selectionMode = selection.isNotEmpty()

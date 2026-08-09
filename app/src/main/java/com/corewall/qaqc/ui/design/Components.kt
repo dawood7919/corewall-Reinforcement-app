@@ -2,6 +2,7 @@ package com.corewall.qaqc.ui.design
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,12 +33,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -116,12 +119,25 @@ fun CwCard(
     }
 
     if (onClick != null) {
+        // ردّ فعل فوري تحت الإصبع: انكماش بسيط + ارتفاع.
+        //
+        // الكارت هو الوحدة اللي المستخدم بيضغط عليها في نص التطبيق
+        // (عنصر، ملف، مهمة، ملاحظة). من غير ردّ فعل، الفجوة بين اللمسة
+        // وفتح الشاشة بتتقري كـ"بطء" حتى لو الفتح نفسه سريع.
+        val interaction = remember { MutableInteractionSource() }
+        val press by rememberPressScale(interaction)
+        val elevation by animatedElevation(interaction, Elevation.flat, Elevation.raised)
+
         Surface(
             onClick = onClick,
-            modifier = modifier.fillMaxWidth(),
+            modifier = modifier
+                .fillMaxWidth()
+                .scale(press),
             shape = Radius.shapeLg,
             color = container,
             border = border,
+            shadowElevation = elevation,
+            interactionSource = interaction,
             content = body
         )
     } else {

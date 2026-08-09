@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.corewall.qaqc.ui.design.ProvideMotionPreferences
 import com.corewall.qaqc.ui.shell.AppShell
 import com.corewall.qaqc.ui.theme.CoreWallTheme
 
@@ -25,7 +26,11 @@ class MainActivity : ComponentActivity() {
             val vm: MainViewModel = viewModel()
             val settings by vm.settings.collectAsStateWithLifecycle()
             CoreWallTheme(settings.theme) {
-                AppShell(vm)
+                // إعداد "تقليل الحركة" بيتقري مرة واحدة هنا وبيوصل لكل
+                // مكوّن — الحركة اختيارية، والوظيفة مش متوقّفة عليها أبداً.
+                ProvideMotionPreferences {
+                    AppShell(vm)
+                }
             }
         }
     }

@@ -2,6 +2,7 @@ package com.corewall.qaqc.ui.design
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,8 +27,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -78,13 +81,21 @@ fun CwButton(
     val alpha = if (enabled) 1f else 0.4f
     val fill = if (container == Color.Transparent) container else container.copy(alpha = alpha)
 
+    // نفس مبدأ الكارت: الضغطة لازم يبان أثرها في نفس الإطار، من غير
+    // انتظار العملية اللي وراها.
+    val interaction = remember { MutableInteractionSource() }
+    val press by rememberPressScale(interaction)
+
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.then(if (fillWidth) Modifier.fillMaxWidth() else Modifier),
+        modifier = modifier
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+            .scale(press),
         shape = Radius.shapeMd,
         color = fill,
-        border = border
+        border = border,
+        interactionSource = interaction
     ) {
         Row(
             Modifier

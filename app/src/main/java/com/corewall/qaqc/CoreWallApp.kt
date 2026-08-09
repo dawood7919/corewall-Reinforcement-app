@@ -1,6 +1,10 @@
 package com.corewall.qaqc
 
 import android.app.Application
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import com.corewall.qaqc.ai.AiEngine
 import com.corewall.qaqc.ai.AiRepository
 import com.corewall.qaqc.data.AppRepository
@@ -23,8 +27,17 @@ class CoreWallApp : Application() {
     lateinit var fileLibrary: FileLibrary
         private set
 
+    /**
+     * نطاق يعيش مع التطبيق — للتسخين وقت التشغيل بس.
+     * `SupervisorJob` عشان فشل تسخين مايوقّعش أي حاجة تانية.
+     */
+    private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     override fun onCreate() {
         super.onCreate()
+
+        // الإنشاء هنا رخيص: كله كائنات بتلفّ DAOs. القراية الفعلية
+        // للأصول وفتح قاعدة البيانات مؤجّلين.
         repository = AppRepository(this)
         settingsStore = SettingsStore(this)
         filesManager = FilesManager(this)
@@ -32,5 +45,12 @@ class CoreWallApp : Application() {
         aiRepository = AiRepository(db.aiAnalysisDao())
         aiEngine = AiEngine(db.documentDao(), db.docFactDao(), db.chatMessageDao(), db.promptDao())
         fileLibrary = FileLibrary(db.fileMetaDao(), db.linkDao())
+
+        // التسخين في الخلفية: فكّ الـJSON وفتح القاعدة بيحصلوا بالتوازي
+        // مع رسم أول شاشة بدل ما يتأخّروها.
+        startupScope.launch {
+            runCatching { repository.warmUp() }
+            runCatching { db.openHelper.readableDatabase }
+        }
     }
 }

@@ -39,14 +39,43 @@ class AppRepository(context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
     private val db = AppDatabase.get(context)
 
-    val planData: PlanData = context.assets.open("plan-elements.json")
-        .bufferedReader().use { it.readText() }
-        .let { json.decodeFromString<PlanData>(it) }
+    private val assets = context.applicationContext.assets
+
+    /**
+     * بيانات المسقط والجدول — **بتتقري عند أول استخدام مش عند الإنشاء**.
+     *
+     * قبل كده الاتنين كانوا `val` عادي، والمستودع بيتعمل جوّه
+     * `Application.onCreate()`. يعني قراية ملفين JSON وفكّهم كانوا بيحصلوا
+     * **قبل أول إطار يترسم** — التطبيق بيفضل شاشة بيضا لحد ما يخلّصوا.
+     *
+     * `by lazy` بيأجّلهم لأول قراية فعلية، و[warmUp] بيسخّنهم في الخلفية
+     * وقت التشغيل. النتيجة إن النافذة بتفتح فوراً والبيانات بتبقى جاهزة
+     * قبل ما أي شاشة تسأل عليها.
+     */
+    val planData: PlanData by lazy {
+        assets.open("plan-elements.json")
+            .bufferedReader().use { it.readText() }
+            .let { json.decodeFromString<PlanData>(it) }
+    }
 
     /** الجدول الأصلي زي ما جه من المكتب — من غير أي تعديلات. */
-    val baseSchedule: ScheduleData = context.assets.open("schedule-data.json")
-        .bufferedReader().use { it.readText() }
-        .let { json.decodeFromString<ScheduleData>(it) }
+    val baseSchedule: ScheduleData by lazy {
+        assets.open("schedule-data.json")
+            .bufferedReader().use { it.readText() }
+            .let { json.decodeFromString<ScheduleData>(it) }
+    }
+
+    /**
+     * بيجهّز الأصول في الخلفية.
+     *
+     * `by lazy` لوحده بينقل التكلفة لأول قراية — واللي غالباً بيبقى على
+     * خيط الواجهة وقت بناء أول شاشة. النداء ده من التشغيل بيخلّي القراية
+     * تحصل بالتوازي مع فتح النافذة.
+     */
+    fun warmUp() {
+        planData
+        baseSchedule
+    }
 
     val names: Flow<Map<String, String>> =
         db.elementNameDao().observeAll().map { list -> list.associate { it.elementId to it.mark } }

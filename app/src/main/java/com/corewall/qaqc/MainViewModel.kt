@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -116,11 +117,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedElementId = MutableStateFlow<String?>(null)
     val selectedElementId: StateFlow<String?> = _selectedElementId
 
-    /** جدول المكتب + تعديلات المستخدم + الأكواد اللي استوردها. */
+    /**
+     * جدول المكتب + تعديلات المستخدم + الأكواد اللي استوردها.
+     *
+     * `flowOn(Dispatchers.Default)` مش تزويق: `viewModelScope` شغّال على
+     * `Dispatchers.Main.immediate`، يعني **كل** عملية `map`/`combine` هنا
+     * كانت بتتنفّذ على خيط الواجهة. و`applyEdits` بيعيد بناء الجدول كله
+     * (٣١ كود حيطة + ٤٩ كود كمرة بصفوفهم) في كل تعديل — يعني كل ضغطة حفظ
+     * كانت بتوقّف الرسم لحد ما البناء يخلص.
+     *
+     * نفس المبدأ متطبّق على كل تدفّق مشتق تحت: **الحساب في الخلفية،
+     * والنتيجة بس هي اللي بتوصل للواجهة**.
+     */
     val schedule: StateFlow<ScheduleData> =
         combine(repo.rangeEdits, repo.importedMarks) { edits, imported ->
             repo.applyEdits(edits, imported)
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, repo.baseSchedule)
+        }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, repo.baseSchedule)
 
     val names: StateFlow<Map<String, String>> = repo.names
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -133,6 +147,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val editedRowKeys: StateFlow<Set<Pair<String, Int>>> = repo.rangeEdits
         .map { edits -> edits.map { it.mark to it.rowIndex }.toSet() }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     fun setLens(lens: Lens) {
@@ -303,7 +318,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val tasks: StateFlow<List<TaskEntity>> =
         combine(repo.tasks, _currentLevel) { all, level ->
             all.filter { it.level == level }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun upsertTask(task: TaskEntity) {
         val bound = if (task.id == 0L) task.copy(level = _currentLevel.value) else task
@@ -383,7 +400,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val sitePhotos: StateFlow<List<SitePhotoEntity>> =
         combine(repo.sitePhotos, _currentLevel) { all, level ->
             all.filter { it.level == level }.sortedByDescending { it.timestamp }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun addSitePhoto(filePath: String, comment: String, folder: String = "") {
         viewModelScope.launch {
@@ -1309,6 +1328,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     val marks: StateFlow<List<String>> = schedule
         .map { it.allMarks }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, repo.baseSchedule.allMarks)
 
     fun allMarks(): List<String> = marks.value
@@ -1319,7 +1339,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val attendanceFiles: StateFlow<List<AttendanceFileEntity>> =
         combine(repo.attendanceFiles, _currentLevel) { all, level ->
             all.filter { it.level == level }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val dailyAttendance: StateFlow<List<DailyAttendanceEntity>> = repo.dailyAttendance
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -1540,6 +1562,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         combine(core, work, crew) { c, w, k ->
+            // أغلى حساب في التطبيق: بيمرّ على كل عناصر المسقط ويقاطعها
+            // بالجدول والفحوصات. كان بيتنفّذ على خيط الواجهة مع كل تغيير
+            // في أي جدول من سبعة.
             FloorSummary.compute(
                 level = c.level,
                 elements = planData.elements,
@@ -1555,7 +1580,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 foremen = k.foremen,
                 engineers = k.engineers
             )
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, FloorSummary.EMPTY)
+        }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, FloorSummary.EMPTY)
     }
 
     // ---------------------------------------------------------------- جاهزية الصبّ
@@ -1584,6 +1611,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     openTasks = tsk.count { it.level == a.level && !it.done }
                 )
             }
+            .flowOn(Dispatchers.Default)
             .stateIn(
                 viewModelScope, SharingStarted.Eagerly,
                 PourReadiness.Result(_currentLevel.value, 0, 0, 0, emptyList())
