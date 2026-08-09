@@ -31,9 +31,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NoteRevisionEntity::class,
         PromptEntity::class,
         ImportedMarkEntity::class,
-        PdfBookmarkEntity::class
+        PdfBookmarkEntity::class,
+        PdfMeasurementEntity::class,
+        PdfScaleEntity::class
     ],
-    version = 15,
+    version = 16,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -61,6 +63,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun promptDao(): PromptDao
     abstract fun importedMarkDao(): ImportedMarkDao
     abstract fun pdfBookmarkDao(): PdfBookmarkDao
+    abstract fun pdfMeasurementDao(): PdfMeasurementDao
+    abstract fun pdfScaleDao(): PdfScaleDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -341,6 +345,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * القياس: قياسات مرسومة + معايرة المقياس.
+         *
+         * `pdf_scales` مفتاحها الأساسي (filePath, page) — يعني مافيش
+         * عمود `id`، وRoom بيتوقّع الجدول كده بالظبط. والفهرس على
+         * `pdf_measurements.filePath` اسمه لازم يبقى `index_pdf_measurements_filePath`
+         * زي ما Room بيولّده؛ `tools/check_room_schema.py` بيقارن الاتنين.
+         */
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pdf_measurements` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`filePath` TEXT NOT NULL, `page` INTEGER NOT NULL, " +
+                        "`kind` TEXT NOT NULL, `pointsJson` TEXT NOT NULL, " +
+                        "`label` TEXT NOT NULL, `colorArgb` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_measurements_filePath` ON `pdf_measurements` (`filePath`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pdf_scales` (" +
+                        "`filePath` TEXT NOT NULL, `page` INTEGER NOT NULL, " +
+                        "`unitsPerPoint` REAL NOT NULL, `unit` TEXT NOT NULL, " +
+                        "`note` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`filePath`, `page`))"
+                )
+            }
+        }
+
         // طبقة المعرفة: مستندات محلّلة + حقائق مستخرجة (knowledge graph) + محادثة.
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -386,7 +419,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
-                    MIGRATION_14_15
+                    MIGRATION_14_15, MIGRATION_15_16
                 ).build().also { instance = it }
             }
     }

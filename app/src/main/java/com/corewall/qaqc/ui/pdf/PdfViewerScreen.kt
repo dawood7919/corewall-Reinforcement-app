@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,10 +63,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
+import com.corewall.qaqc.data.db.PdfMeasurementEntity
+import com.corewall.qaqc.data.db.PdfScaleEntity
 import com.corewall.qaqc.pdfengine.OutlineEntry
 import com.corewall.qaqc.pdfengine.PageLayout
 import com.corewall.qaqc.pdfengine.PdfCanvas
 import com.corewall.qaqc.pdfengine.PdfDocumentSession
+import com.corewall.qaqc.pdfengine.MeasureKind
+import com.corewall.qaqc.pdfengine.MeasureUnit
 import com.corewall.qaqc.pdfengine.PdfImageExport
 import com.corewall.qaqc.pdfengine.PdfOpenException
 import com.corewall.qaqc.pdfengine.PdfOps
@@ -73,11 +78,13 @@ import com.corewall.qaqc.pdfengine.PdfSearchState
 import com.corewall.qaqc.pdfengine.PdfSelectionState
 import com.corewall.qaqc.pdfengine.PdfSessionStore
 import com.corewall.qaqc.pdfengine.PdfViewerState
+import com.corewall.qaqc.pdfengine.Scale
 import com.corewall.qaqc.pdfengine.SearchHit
 import com.corewall.qaqc.pdfengine.TextQuad
 import com.corewall.qaqc.pdfengine.TileEngine
 import com.corewall.qaqc.pdfengine.ViewMode
 import com.corewall.qaqc.pdfengine.bounds
+import com.corewall.qaqc.pdfengine.polylineLength
 import com.corewall.qaqc.pdfengine.pageHit
 import com.corewall.qaqc.pdfengine.pagePointToScreen
 import com.corewall.qaqc.ui.design.CwIconButton
@@ -174,6 +181,33 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
 
     var searchOpen by remember(path) { mutableStateOf(false) }
     var navOpen by remember(path) { mutableStateOf(false) }
+    // ── القياس
+    val measure = remember(path) { MeasureSession() }
+    var calibrationOpen by remember(path) { mutableStateOf(false) }
+
+    val allMeasurements by vm.pdfMeasurements.collectAsStateWithLifecycle()
+    val fileMeasurements = remember(allMeasurements, path) {
+        allMeasurements.filter { it.filePath == path }
+    }
+    val allScales by vm.pdfScales.collectAsStateWithLifecycle()
+
+    /**
+     * معايرة الصفحة: الأخصّ الأول.
+     *
+     * صفحة معايَرة لوحدها بتكسب على معايرة المستند، عشان ملف تسليم فيه
+     * مساقط ١:١٠٠ وتفاصيل ١:٢٠ يفضل قابل للقياس صفحة صفحة.
+     */
+    fun scaleFor(page: Int): Scale? {
+        val row = allScales.firstOrNull { it.filePath == path && it.page == page }
+            ?: allScales.firstOrNull {
+                it.filePath == path && it.page == PdfScaleEntity.WHOLE_DOCUMENT
+            }
+            ?: return null
+        return Scale(row.unitsPerPoint, MeasureUnit.fromId(row.unit), row.note)
+    }
+
+    val pageScale = scaleFor(state.currentPage)
+
     var imagesOpen by remember(path) { mutableStateOf(false) }
     var watermarkOpen by remember(path) { mutableStateOf(false) }
     var mergeOpen by remember(path) { mutableStateOf(false) }
@@ -306,6 +340,31 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
         }
     }
 
+    /** طول مسودة المعايرة بالنقط — بيغذّي ورقة المعايرة. */
+    fun draftLengthPt(): Double? {
+        val page = measure.draftPage
+        if (page < 0 || measure.pointCount < 2) return null
+        val slot = state.layout.slotAt(page) ?: return null
+        return polylineLength(
+            toPagePoints(measure.points(), slot.size.width, slot.size.height)
+        )
+    }
+
+    fun commitMeasurement() {
+        if (!measure.isComplete() || measure.draftPage < 0) return
+        vm.addPdfMeasurement(
+            PdfMeasurementEntity(
+                filePath = path,
+                page = measure.draftPage,
+                kind = measure.kind.id,
+                pointsJson = json.encodeToString(measure.points()),
+                colorArgb = MEASURE_COLOR,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        measure.reset()
+    }
+
     /**
      * بيشغّل عملية مستند ويعرض نتيجتها.
      *
@@ -339,7 +398,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 state = state,
                 engine = engine,
                 session = active,
-                drawingActive = tool.isDrawing,
+                drawingActive = tool.isDrawing && !measure.enabled,
                 onDrawStart = { p ->
                     state.pageHit(p)?.let { draftPage = it.page; draft = listOf(p) }
                 },
@@ -350,10 +409,20 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     }
                 },
                 onDrawEnd = { commitDraft() },
-                onTap = {
-                    // أي نقرة بتلغي التحديد الأول. النقرة اللي بتخفي
-                    // الواجهة وسايبة تحديد معلّق بتبان كأنها باج.
-                    if (selection.isActive) selection.clear() else chromeVisible = !chromeVisible
+                onTap = { point ->
+                    when {
+                        // في وضع القياس النقرة بتحطّ نقطة. إخفاء الواجهة
+                        // بيبقى على زرار الخروج بس — نقرة غامضة وسط قياس
+                        // معناها رقم غلط ومحدش هيلاحظ.
+                        measure.enabled -> {
+                            val hit = state.pageHit(point)
+                            if (hit != null) measure.addPoint(hit.page, hit.nx, hit.ny)
+                        }
+                        // أي نقرة بتلغي التحديد الأول. النقرة اللي بتخفي
+                        // الواجهة وسايبة تحديد معلّق بتبان كأنها باج.
+                        selection.isActive -> selection.clear()
+                        else -> chromeVisible = !chromeVisible
+                    }
                 },
                 onLongPress = { point ->
                     val hit = state.pageHit(point)
@@ -385,6 +454,21 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         )
                     }
                     if (selection.isActive) drawSelection(s, selection.quads, c.accent)
+
+                    // القياس فوق الكل: هو النتيجة اللي المستخدم بيقرأها،
+                    // ولو تعليق غطّاه بيبقى الرقم موجود ومش مقروء.
+                    drawMeasurements(
+                        state = s,
+                        items = fileMeasurements,
+                        pointsOf = { m ->
+                            runCatching { json.decodeFromString<List<Float>>(m.pointsJson) }
+                                .getOrDefault(emptyList())
+                        },
+                        scaleOf = { page -> scaleFor(page) }
+                    )
+                    if (measure.enabled) {
+                        drawMeasureDraft(s, measure, pageScale, Color(MEASURE_COLOR))
+                    }
                 }
             )
 
@@ -420,6 +504,13 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     onClose = onClose,
                     onSearch = { searchOpen = true },
                     onNavigate = { navOpen = true },
+                    measuring = measure.enabled,
+                    onToggleMeasure = {
+                        measure.enabled = !measure.enabled
+                        measure.reset()
+                        measure.calibrating = false
+                        if (measure.enabled) tool = PdfTool.PAN
+                    },
                     onOrganize = { vm.openPdfOrganizer(path) },
                     onImages = { imagesOpen = true },
                     onWatermark = { watermarkOpen = true },
@@ -497,7 +588,40 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 }
 
                 AnimatedVisibility(
-                    visible = chromeVisible,
+                    visible = chromeVisible && measure.enabled,
+                    enter = fadeIn() + slideInVertically { it },
+                    exit = fadeOut() + slideOutVertically { it }
+                ) {
+                    PdfMeasureToolbar(
+                        session = measure,
+                        scale = pageScale,
+                        canUndoPoint = measure.pointCount > 0,
+                        canFinish = measure.isComplete(),
+                        hasSaved = fileMeasurements.any { it.page == state.currentPage },
+                        onKind = { kind ->
+                            measure.calibrating = false
+                            measure.kind = kind
+                            measure.reset()
+                        },
+                        onUndoPoint = { measure.undoPoint() },
+                        onFinish = {
+                            if (measure.calibrating) calibrationOpen = true
+                            else commitMeasurement()
+                        },
+                        onCancel = { measure.reset() },
+                        onCalibrate = { calibrationOpen = true },
+                        onClearPage = { vm.clearPdfMeasurements(path, state.currentPage) },
+                        onExit = {
+                            measure.enabled = false
+                            measure.calibrating = false
+                            measure.reset()
+                        },
+                        modifier = Modifier.padding(bottom = Space.md)
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = chromeVisible && !measure.enabled,
                     enter = fadeIn() + slideInVertically { it },
                     exit = fadeOut() + slideOutVertically { it }
                 ) {
@@ -615,6 +739,53 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 )
             }
 
+            if (calibrationOpen) {
+                MeasureCalibrationSheet(
+                    current = pageScale,
+                    referenceLengthPt = draftLengthPt(),
+                    onRatio = { ratio ->
+                        val built = Scale.fromRatio(ratio)
+                        vm.setPdfScale(
+                            path, state.currentPage,
+                            built.unitsPerPoint, built.unit.id, built.note
+                        )
+                        calibrationOpen = false
+                        measure.calibrating = false
+                        measure.reset()
+                    },
+                    onReference = { realLength, unit ->
+                        val length = draftLengthPt()
+                        val built = length?.let { Scale.fromReference(it, realLength, unit) }
+                        if (built == null) {
+                            Toast.makeText(
+                                context, "خط المعايرة قصير أوي", Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            vm.setPdfScale(
+                                path, state.currentPage,
+                                built.unitsPerPoint, built.unit.id, built.note
+                            )
+                            calibrationOpen = false
+                            measure.calibrating = false
+                            measure.reset()
+                        }
+                    },
+                    onStartReference = {
+                        // بنقفل الورقة عشان المستخدم يشوف الرسمة ويرسم
+                        // عليها؛ الورقة بترجع لوحدها لما يضغط "خلّص".
+                        calibrationOpen = false
+                        measure.enabled = true
+                        measure.calibrating = true
+                        measure.reset()
+                    },
+                    onClear = {
+                        vm.clearPdfScale(path, state.currentPage)
+                        calibrationOpen = false
+                    },
+                    onDismiss = { calibrationOpen = false }
+                )
+            }
+
             if (navOpen) {
                 PdfOutlineSheet(
                     outline = outline,
@@ -639,6 +810,14 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
  * وأي فرق في مسافة أو سطر بيلغي النتيجة. أول كام حرف هي اللي بتنفع.
  */
 private const val MAX_SEARCH_FROM_SELECTION = 40
+
+/**
+ * لون القياس ثابت وواحد.
+ *
+ * القياس مش تعليم — مالوش ألوان بيختارها المستخدم. لون واحد معروف بيخلّي
+ * الرقم يتقري فوراً على إنه قياس مش رسمة، ولا يتلخبط مع علامات التعليم.
+ */
+private const val MEASURE_COLOR = 0xFF00897BL
 
 /** الخريطة بتظهر لما تبقى شايف جزء صغير من الصفحة فعلاً. */
 private const val MINIMAP_FROM_ZOOM = 2.5f
@@ -735,6 +914,8 @@ private fun TopChrome(
     onClose: () -> Unit,
     onSearch: () -> Unit,
     onNavigate: () -> Unit,
+    measuring: Boolean,
+    onToggleMeasure: () -> Unit,
     onOrganize: () -> Unit,
     onImages: () -> Unit,
     onWatermark: () -> Unit,
@@ -775,6 +956,10 @@ private fun TopChrome(
             }
             CwIconButton(Icons.Filled.Search, "دوّر في الملف", onSearch)
             CwIconButton(Icons.Filled.Bookmarks, "الفهرس والعلامات", onNavigate)
+            CwIconButton(
+                Icons.Filled.Straighten, "قياس على الرسمة", onToggleMeasure,
+                active = measuring
+            )
             CwIconButton(
                 Icons.Filled.GridView, "الصفحات", onToggleRail,
                 active = railOpen

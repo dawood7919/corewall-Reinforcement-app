@@ -214,6 +214,45 @@ interface PdfBookmarkDao {
 }
 
 @Dao
+interface PdfMeasurementDao {
+    @Query("SELECT * FROM pdf_measurements ORDER BY id")
+    fun observeAll(): Flow<List<PdfMeasurementEntity>>
+
+    @Query("SELECT * FROM pdf_measurements ORDER BY id")
+    suspend fun getAll(): List<PdfMeasurementEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: PdfMeasurementEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<PdfMeasurementEntity>)
+
+    @Query("DELETE FROM pdf_measurements WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM pdf_measurements WHERE filePath = :filePath AND page = :page")
+    suspend fun clearPage(filePath: String, page: Int)
+}
+
+@Dao
+interface PdfScaleDao {
+    @Query("SELECT * FROM pdf_scales")
+    fun observeAll(): Flow<List<PdfScaleEntity>>
+
+    @Query("SELECT * FROM pdf_scales")
+    suspend fun getAll(): List<PdfScaleEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: PdfScaleEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<PdfScaleEntity>)
+
+    @Query("DELETE FROM pdf_scales WHERE filePath = :filePath AND page = :page")
+    suspend fun delete(filePath: String, page: Int)
+}
+
+@Dao
 interface RangeEditDao {
     @Query("SELECT * FROM range_edits")
     fun observeAll(): Flow<List<RangeEditEntity>>

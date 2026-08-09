@@ -14,6 +14,8 @@ import com.corewall.qaqc.data.db.NoteEntity
 import com.corewall.qaqc.data.db.PromptEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.PdfBookmarkEntity
+import com.corewall.qaqc.data.db.PdfMeasurementEntity
+import com.corewall.qaqc.data.db.PdfScaleEntity
 import com.corewall.qaqc.data.db.RangeEditEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
@@ -288,6 +290,18 @@ class AppRepository(context: Context) {
     suspend fun addPdfBookmark(entity: PdfBookmarkEntity) = db.pdfBookmarkDao().upsert(entity)
     suspend fun deletePdfBookmark(id: Long) = db.pdfBookmarkDao().delete(id)
 
+    val pdfMeasurements: Flow<List<PdfMeasurementEntity>> = db.pdfMeasurementDao().observeAll()
+    val pdfScales: Flow<List<PdfScaleEntity>> = db.pdfScaleDao().observeAll()
+
+    suspend fun addPdfMeasurement(entity: PdfMeasurementEntity) =
+        db.pdfMeasurementDao().upsert(entity)
+    suspend fun deletePdfMeasurement(id: Long) = db.pdfMeasurementDao().delete(id)
+    suspend fun clearPdfMeasurements(filePath: String, page: Int) =
+        db.pdfMeasurementDao().clearPage(filePath, page)
+    suspend fun setPdfScale(entity: PdfScaleEntity) = db.pdfScaleDao().upsert(entity)
+    suspend fun clearPdfScale(filePath: String, page: Int) =
+        db.pdfScaleDao().delete(filePath, page)
+
     // ---------- نسخة احتياطية ----------
 
     @Serializable
@@ -310,7 +324,9 @@ class AppRepository(context: Context) {
         // كل نسخة اتصدّرت قبل النهاردة كانت هتبقى غير قابلة للاستيراد.
         val prompts: List<PromptEntity> = emptyList(),
         val importedMarks: List<ImportedMarkEntity> = emptyList(),
-        val pdfBookmarks: List<PdfBookmarkEntity> = emptyList()
+        val pdfBookmarks: List<PdfBookmarkEntity> = emptyList(),
+        val pdfMeasurements: List<PdfMeasurementEntity> = emptyList(),
+        val pdfScales: List<PdfScaleEntity> = emptyList()
     )
 
     suspend fun exportBackupJson(): String = json.encodeToString(
@@ -330,7 +346,9 @@ class AppRepository(context: Context) {
             sitePhotos = db.sitePhotoDao().getAll(),
             prompts = db.promptDao().getAll(),
             importedMarks = db.importedMarkDao().getAll(),
-            pdfBookmarks = db.pdfBookmarkDao().getAll()
+            pdfBookmarks = db.pdfBookmarkDao().getAll(),
+            pdfMeasurements = db.pdfMeasurementDao().getAll(),
+            pdfScales = db.pdfScaleDao().getAll()
         )
     )
 
@@ -352,6 +370,8 @@ class AppRepository(context: Context) {
         backup.prompts.forEach { db.promptDao().upsert(it.copy(id = 0)) }
         db.importedMarkDao().upsertAll(backup.importedMarks)
         db.pdfBookmarkDao().upsertAll(backup.pdfBookmarks.map { it.copy(id = 0) })
+        db.pdfMeasurementDao().upsertAll(backup.pdfMeasurements.map { it.copy(id = 0) })
+        db.pdfScaleDao().upsertAll(backup.pdfScales)
         "تم استيراد ${backup.names.size} اسم و${backup.inspections.size} حالة فحص " +
             "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ و${backup.tasks.size} مهمة " +
             "و${backup.sitePhotos.size} صورة موقع و${backup.prompts.size} برومبت " +

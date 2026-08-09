@@ -17,6 +17,8 @@ import com.corewall.qaqc.data.db.ElementAttachmentEntity
 import com.corewall.qaqc.data.db.NoteEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.PdfBookmarkEntity
+import com.corewall.qaqc.data.db.PdfMeasurementEntity
+import com.corewall.qaqc.data.db.PdfScaleEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
 import kotlinx.coroutines.Dispatchers
@@ -1392,6 +1394,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deletePdfBookmark(id: Long) {
         viewModelScope.launch { repo.deletePdfBookmark(id) }
+    }
+
+    // -------- القياس على الرسمة --------
+
+    val pdfMeasurements: StateFlow<List<PdfMeasurementEntity>> = repo.pdfMeasurements
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val pdfScales: StateFlow<List<PdfScaleEntity>> = repo.pdfScales
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addPdfMeasurement(entity: PdfMeasurementEntity) {
+        viewModelScope.launch { repo.addPdfMeasurement(entity) }
+    }
+
+    fun deletePdfMeasurement(id: Long) {
+        viewModelScope.launch { repo.deletePdfMeasurement(id) }
+    }
+
+    fun clearPdfMeasurements(filePath: String, page: Int) {
+        viewModelScope.launch { repo.clearPdfMeasurements(filePath, page) }
+    }
+
+    /**
+     * بيسجّل معايرة. [page] = −١ يعني للمستند كله.
+     *
+     * المعايرة بتتخزّن في القاعدة مش في تفضيلات العرض عن قصد: هي **بيانات
+     * هندسية**. لو ضاعت، كل قياس متسجّل في الملف بيبقى رقم بلا معنى.
+     */
+    fun setPdfScale(filePath: String, page: Int, unitsPerPoint: Double, unit: String, note: String) {
+        viewModelScope.launch {
+            repo.setPdfScale(
+                PdfScaleEntity(
+                    filePath = filePath,
+                    page = page,
+                    unitsPerPoint = unitsPerPoint,
+                    unit = unit,
+                    note = note,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun clearPdfScale(filePath: String, page: Int) {
+        viewModelScope.launch { repo.clearPdfScale(filePath, page) }
     }
 
     // -------- عارض CAD (DXF/DWG قياس) --------

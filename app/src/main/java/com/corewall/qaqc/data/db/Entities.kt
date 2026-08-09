@@ -211,6 +211,56 @@ data class PdfBookmarkEntity(
 )
 
 /**
+ * قياس مرسوم على صفحة PDF — مسافة أو مساحة أو نقطة عدّ.
+ *
+ * النقط منسّبة (٠..١) لأبعاد الصفحة زي التعليقات، فبتفضل مظبوطة مع أي
+ * تكبير. القيمة نفسها **مش متخزّنة**: بتتحسب من النقط × معايرة الصفحة
+ * وقت العرض. لو خزّنّاها، تغيير المعايرة كان هيسيب أرقام قديمة غلط
+ * جنب أرقام جديدة صح في نفس الصفحة.
+ */
+@Serializable
+@Entity(
+    tableName = "pdf_measurements",
+    indices = [Index(value = ["filePath"])]
+)
+data class PdfMeasurementEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val filePath: String,
+    val page: Int,
+    /** DISTANCE / AREA / COUNT */
+    val kind: String,
+    val pointsJson: String,
+    val label: String = "",
+    val colorArgb: Long,
+    val createdAt: Long
+)
+
+/**
+ * معايرة المقياس لصفحة.
+ *
+ * [page] = −١ معناها معايرة للمستند كله. البحث بيدوّر على الصفحة الأول
+ * وبعدين على العام — عشان رسمة بمقياس مختلف جوّه ملف واحد تفضل ممكنة،
+ * وده بيحصل كتير في ملفات التسليم المجمّعة.
+ */
+@Serializable
+@Entity(tableName = "pdf_scales", primaryKeys = ["filePath", "page"])
+data class PdfScaleEntity(
+    val filePath: String,
+    val page: Int,
+    /** وحدات حقيقية لكل نقطة PDF. */
+    val unitsPerPoint: Double,
+    /** mm / cm / m */
+    val unit: String,
+    val note: String = "",
+    val updatedAt: Long
+) {
+    companion object {
+        /** معايرة على مستوى المستند كله. */
+        const val WHOLE_DOCUMENT = -1
+    }
+}
+
+/**
  * تعديل يدوي على صف من جدول التسليح المرجعي.
  * patchJson: خريطة {اسم الحقل -> القيمة الجديدة} بصيغة JSON،
  * بتتطبق فوق بيانات الأصول (read-only) وقت العرض.
