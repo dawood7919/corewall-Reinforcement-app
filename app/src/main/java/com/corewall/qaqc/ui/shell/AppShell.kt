@@ -85,6 +85,7 @@ import com.corewall.qaqc.ui.manpower.ManpowerScreen
 import com.corewall.qaqc.ui.nav.Dest
 import com.corewall.qaqc.ui.notes.ImageViewerScreen
 import com.corewall.qaqc.ui.notes.NoteEditorScreen
+import com.corewall.qaqc.ui.pdf.PdfOrganizerScreen
 import com.corewall.qaqc.ui.pdf.PdfViewerScreen
 import com.corewall.qaqc.ui.pour.PourReadinessScreen
 import com.corewall.qaqc.ui.settings.SettingsScreen
@@ -264,6 +265,11 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
 
         // ملء الشاشة
         is Dest.PdfViewer -> PdfViewerScreen(vm = vm, path = dest.path, onClose = { vm.closePdf() })
+        is Dest.PdfOrganizer -> PdfOrganizerScreen(
+            path = dest.path,
+            onClose = { vm.back() },
+            onOpenFile = { vm.openPdf(it) }
+        )
         is Dest.CadViewer -> CadViewerScreen(path = dest.path, files = vm.files, onClose = { vm.closeCad() })
         is Dest.ImageViewer -> ImageViewerScreen(files = vm.files, path = dest.path, onClose = { vm.closeImage() })
         is Dest.AttendanceFile -> AttendanceFileDetailScreen(

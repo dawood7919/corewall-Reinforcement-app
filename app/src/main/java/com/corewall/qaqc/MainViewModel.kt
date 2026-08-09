@@ -1349,6 +1349,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
 
     fun openPdf(path: String) { navigator.push(Dest.PdfViewer(path)) }
+    fun openPdfOrganizer(path: String) { navigator.push(Dest.PdfOrganizer(path)) }
     fun closePdf() { back() }
 
     val pdfAnnotations: StateFlow<List<PdfAnnotationEntity>> = repo.pdfAnnotations

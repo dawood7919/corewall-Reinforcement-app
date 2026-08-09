@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 39
-        versionName = "9.3"
+        versionCode = 40
+        versionName = "9.4"
 
         // PDFium مكتبة أصلية، ومعاها ٤ معماريات = ١٨ ميجا. الأجهزة الحقيقية
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.
@@ -55,6 +55,21 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    // BouncyCastle بيشحن نسخ متعددة من نفس ملفات الميتاداتا (واحدة لكل
+    // إصدار Java)، والدمج بيقع عليها. مالهاش أي أثر وقت التشغيل.
+    packaging {
+        resources.excludes += setOf(
+            "META-INF/DEPENDENCIES",
+            "META-INF/LICENSE",
+            "META-INF/LICENSE.txt",
+            "META-INF/license.txt",
+            "META-INF/NOTICE",
+            "META-INF/NOTICE.txt",
+            "META-INF/notice.txt",
+            "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        )
     }
 }
 
@@ -125,4 +140,17 @@ dependencies {
     // مابتتقريش من كومبايلر أقدم، فالبناء بيقع. و1.0.30 كمان مابتجرّش
     // Guava وراها (اللي بعدها بيجرّوها).
     implementation("io.legere:pdfiumandroid:1.0.30")
+
+    // تحرير بنية المستند: PDFBox.
+    //
+    // PDFium بيرسم وبيقرا بس — الواجهة اللي المكتبة بتكشفها مافيهاش إنشاء
+    // تعليقات ولا دمج ولا علامة مائية. PDFBox بيشتغل على مستوى كائنات
+    // الـPDF نفسها، فهو اللي بيقدر يكتب `/Annots` حقيقية بمظهر (`/AP`)
+    // تفتح في Acrobat وتتعدّل، بدل ما نرستر الصفحة لصورة.
+    //
+    // التكلفة صريحة: ~٣ ميجا للمكتبة + ٤.٧ ميجا خطوط وموارد في الأصول +
+    // BouncyCastle (بييجي كاعتماد). سايبين BouncyCastle مكانه عن قصد —
+    // شيله بيوفّر مساحة بس بيخلّي أي ملف متشفّر يرمي `NoClassDefFoundError`
+    // في يد المستخدم بدل رسالة مفهومة.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }

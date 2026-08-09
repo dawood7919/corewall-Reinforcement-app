@@ -22,7 +22,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CallMerge
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Reorder
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -62,7 +66,9 @@ import com.corewall.qaqc.pdfengine.OutlineEntry
 import com.corewall.qaqc.pdfengine.PageLayout
 import com.corewall.qaqc.pdfengine.PdfCanvas
 import com.corewall.qaqc.pdfengine.PdfDocumentSession
+import com.corewall.qaqc.pdfengine.PdfImageExport
 import com.corewall.qaqc.pdfengine.PdfOpenException
+import com.corewall.qaqc.pdfengine.PdfOps
 import com.corewall.qaqc.pdfengine.PdfSearchState
 import com.corewall.qaqc.pdfengine.PdfSelectionState
 import com.corewall.qaqc.pdfengine.PdfSessionStore
@@ -168,6 +174,22 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
 
     var searchOpen by remember(path) { mutableStateOf(false) }
     var navOpen by remember(path) { mutableStateOf(false) }
+    var imagesOpen by remember(path) { mutableStateOf(false) }
+    var watermarkOpen by remember(path) { mutableStateOf(false) }
+    var mergeOpen by remember(path) { mutableStateOf(false) }
+    var opRunning by remember(path) { mutableStateOf(false) }
+    var opProgress by remember(path) { mutableStateOf<Pair<Int, Int>?>(null) }
+
+    LaunchedEffect(Unit) { PdfOps.ensureInit(context) }
+
+    /** ملفات PDF التانية في نفس المجلد — مرشّحات الدمج. */
+    val mergeCandidates = remember(path, mergeOpen) {
+        if (!mergeOpen) emptyList()
+        else file.parentFile?.listFiles()
+            ?.filter { it.isFile && it.extension.equals("pdf", true) && it.absolutePath != path }
+            ?.sortedBy { it.name.lowercase() }
+            .orEmpty()
+    }
 
     val bookmarks by vm.pdfBookmarks.collectAsStateWithLifecycle()
     val fileBookmarks = remember(bookmarks, path) { bookmarks.filter { it.filePath == path } }
@@ -270,17 +292,42 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
         ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri ->
         if (uri != null) scope.launch {
-            val result = runCatching {
-                exportAnnotatedPdf(context, active, uri) { page ->
-                    fileAnnotations.filter { it.page == page }
-                }
-            }
+            opRunning = true
+            val result = exportAnnotatedPdf(context, file, uri, fileAnnotations)
+            opRunning = false
             Toast.makeText(
                 context,
-                if (result.isSuccess) "تم تصدير النسخة المعلّقة ✓"
-                else "فشل التصدير: ${result.exceptionOrNull()?.message}",
+                result.fold(
+                    onSuccess = { "اتصدّرت نسخة فيها $it تعليق ✓" },
+                    onFailure = { "فشل التصدير: ${it.message}" }
+                ),
                 Toast.LENGTH_LONG
             ).show()
+        }
+    }
+
+    /**
+     * بيشغّل عملية مستند ويعرض نتيجتها.
+     *
+     * كل العمليات بتمرّ من هنا عشان يبقى فيه مكان واحد بيقفل الأزرار وقت
+     * الشغل وبيحوّل الفشل لرسالة. عملية على ملف ٣٠٠ صفحة بتاخد وقت،
+     * وواجهة ساكتة وقتها بتخلّي المستخدم يضغط تاني ويشغّلها مرتين.
+     */
+    fun runDocOp(label: String, openAfter: Boolean, block: suspend () -> Result<File>) {
+        if (opRunning) return
+        opRunning = true
+        scope.launch {
+            val result = block()
+            opRunning = false
+            opProgress = null
+            result
+                .onSuccess { out ->
+                    Toast.makeText(context, "$label ✓ — ${out.name}", Toast.LENGTH_LONG).show()
+                    if (openAfter) vm.openPdf(out.absolutePath)
+                }
+                .onFailure { e ->
+                    Toast.makeText(context, "فشل $label: ${e.message}", Toast.LENGTH_LONG).show()
+                }
         }
     }
 
@@ -373,6 +420,10 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     onClose = onClose,
                     onSearch = { searchOpen = true },
                     onNavigate = { navOpen = true },
+                    onOrganize = { vm.openPdfOrganizer(path) },
+                    onImages = { imagesOpen = true },
+                    onWatermark = { watermarkOpen = true },
+                    onMerge = { mergeOpen = true },
                     onToggleRail = { railVisible = !railVisible },
                     onToggleMode = {
                         state.setMode(
@@ -474,6 +525,94 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         modifier = Modifier.padding(bottom = Space.md)
                     )
                 }
+            }
+
+            if (imagesOpen) {
+                ImageExportSheet(
+                    currentPage = state.currentPage,
+                    pageCount = active.pageCount,
+                    running = opRunning,
+                    progress = opProgress,
+                    onExport = { pageScope, dpi, format, quality ->
+                        val pages =
+                            if (pageScope == PageScope.CURRENT) listOf(state.currentPage)
+                            else (0 until active.pageCount).toList()
+                        val dir = File(file.parentFile, "${file.nameWithoutExtension} — صور")
+                        opProgress = 0 to pages.size
+                        opRunning = true
+                        scope.launch {
+                            val result = PdfImageExport.export(
+                                session = active,
+                                pages = pages,
+                                dpi = dpi,
+                                format = format,
+                                quality = quality,
+                                dir = dir,
+                                baseName = file.nameWithoutExtension
+                            ) { done, total -> opProgress = done to total }
+                            opRunning = false
+                            opProgress = null
+                            imagesOpen = false
+                            result
+                                .onSuccess { outcome ->
+                                    val note = if (outcome.downscaled.isEmpty()) ""
+                                    else " (اتخفّضت لـ${outcome.downscaled.values.max()} نقطة/بوصة عشان الذاكرة)"
+                                    Toast.makeText(
+                                        context,
+                                        "اتصدّرت ${outcome.files.size} صورة في ${dir.name}$note",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                                .onFailure { e ->
+                                    Toast.makeText(
+                                        context, "فشل التصدير: ${e.message}", Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                        }
+                    },
+                    onDismiss = { if (!opRunning) imagesOpen = false }
+                )
+            }
+
+            if (watermarkOpen) {
+                WatermarkSheet(
+                    currentPage = state.currentPage,
+                    pageCount = active.pageCount,
+                    running = opRunning,
+                    onApply = { spec, pageScope, overwriteOriginal ->
+                        val pages =
+                            if (pageScope == PageScope.CURRENT) listOf(state.currentPage)
+                            else emptyList()
+                        val full = spec.copy(pages = pages)
+                        watermarkOpen = false
+                        if (overwriteOriginal) {
+                            runDocOp("العلامة المائية", openAfter = false) {
+                                overwrite(file) { temp -> PdfOps.watermark(file, temp, full) }
+                            }
+                        } else {
+                            runDocOp("العلامة المائية", openAfter = true) {
+                                val dest = uniqueSibling(file, "بعلامة")
+                                PdfOps.watermark(file, dest, full).map { dest }
+                            }
+                        }
+                    },
+                    onDismiss = { if (!opRunning) watermarkOpen = false }
+                )
+            }
+
+            if (mergeOpen) {
+                MergeSheet(
+                    candidates = mergeCandidates,
+                    running = opRunning,
+                    onMerge = { picked ->
+                        mergeOpen = false
+                        runDocOp("الدمج", openAfter = true) {
+                            val dest = uniqueSibling(file, "مدموج")
+                            PdfOps.merge(listOf(file) + picked, dest).map { dest }
+                        }
+                    },
+                    onDismiss = { if (!opRunning) mergeOpen = false }
+                )
             }
 
             if (navOpen) {
@@ -596,6 +735,10 @@ private fun TopChrome(
     onClose: () -> Unit,
     onSearch: () -> Unit,
     onNavigate: () -> Unit,
+    onOrganize: () -> Unit,
+    onImages: () -> Unit,
+    onWatermark: () -> Unit,
+    onMerge: () -> Unit,
     onToggleRail: () -> Unit,
     onToggleMode: () -> Unit,
     onExport: () -> Unit
@@ -659,6 +802,26 @@ private fun TopChrome(
                         onClick = { menuOpen = false; onToggleMode() }
                     )
                     DropdownMenuItem(
+                        text = { Text("تنظيم الصفحات") },
+                        leadingIcon = { Icon(Icons.Filled.Reorder, contentDescription = null) },
+                        onClick = { menuOpen = false; onOrganize() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("تصدير صور") },
+                        leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) },
+                        onClick = { menuOpen = false; onImages() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("علامة مائية") },
+                        leadingIcon = { Icon(Icons.Filled.WaterDrop, contentDescription = null) },
+                        onClick = { menuOpen = false; onWatermark() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("دمج مع ملفات تانية") },
+                        leadingIcon = { Icon(Icons.Filled.CallMerge, contentDescription = null) },
+                        onClick = { menuOpen = false; onMerge() }
+                    )
+                    DropdownMenuItem(
                         text = { Text("صدّر نسخة معلّقة") },
                         leadingIcon = {
                             Icon(Icons.Filled.IosShare, contentDescription = null)
@@ -674,63 +837,48 @@ private fun TopChrome(
 // ══════════════════════════════════════════════════════ التصدير
 
 /**
- * بيصدّر نسخة كل صفحة فيها مرسومة بتعليقاتها.
+ * بيصدّر نسخة فيها التعليقات كـ**تعليقات PDF حقيقية**.
  *
- * ملاحظة صريحة: التصدير ده **بيحوّل الصفحات لصور**، فالنسخة المصدَّرة مش
- * قابلة للبحث وحجمها أكبر. التصدير المتّجهي (اللي بيكتب التعليقات
- * كـ`/Annots` حقيقية تفتح في Acrobat) جاي في مرحلة عمليات المستندات.
+ * النسخة القديمة كانت بترستر كل صفحة لصورة وتلزقها في ملف جديد. ده كان
+ * بيخلّي الملف الناتج:
+ *   • أكبر بمرّات (رسمة متّجهة بقت صورة ٢٠٠٠ بكسل)،
+ *   • مش قابل للبحث (طبقة النص بتضيع خالص)،
+ *   • والتعليق نفسه بيبقى محبوس جوّه الصورة — مش تقدر تشيله ولا ترد عليه.
+ *
+ * دلوقتي كل علامة بتتكتب ككائن `/Annots` قياسي بمظهره (`/AP`): بتتفتح في
+ * Acrobat وFoxit وأي عارض، وتتحدّد وتتمسح، والمستند الأصلي بيفضل زي ما هو
+ * تحتها.
+ *
+ * بنكتب في ملف مؤقّت الأول وبعدين ننسخه للـURI اللي المستخدم اختاره —
+ * PDFBox محتاج `File` عشان يقدر يرجع للكتابة العشوائية، والـURI ممكن
+ * يكون على Google Drive أو أي مزوّد مش على القرص أصلاً.
  */
 private suspend fun exportAnnotatedPdf(
     context: android.content.Context,
-    session: PdfDocumentSession,
+    source: File,
     uri: android.net.Uri,
-    annotationsFor: (page: Int) -> List<PdfAnnotationEntity>
-) = withContext(Dispatchers.IO) {
-    val doc = android.graphics.pdf.PdfDocument()
+    annotations: List<PdfAnnotationEntity>
+): Result<Int> = withContext(Dispatchers.IO) {
+    val temp = File(context.cacheDir, "annotated-${System.currentTimeMillis()}.pdf")
     try {
-        for (i in 0 until session.pageCount) {
-            session.measure(i)
-            val size = session.sizeOrEstimate(i)
-            val width = EXPORT_WIDTH_PX
-            val height = (width * size.height / size.width).toInt().coerceAtLeast(1)
-            val pxPerPoint = width / size.width
+        PdfOps.ensureInit(context)
+        val written = PdfOps.writeAnnotations(
+            src = source,
+            dest = temp,
+            byPage = annotations.groupBy { it.page }
+        ) { entity ->
+            runCatching { json.decodeFromString<List<Float>>(entity.pointsJson) }
+                .getOrDefault(emptyList())
+        }.getOrThrow()
 
-            val bitmap = session.renderTile(
-                page = i,
-                gridWidth = width, gridHeight = height,
-                originX = 0, originY = 0,
-                tileWidth = width, tileHeight = height
-            ) ?: continue
+        context.contentResolver.openOutputStream(uri)?.use { out ->
+            temp.inputStream().use { input -> input.copyTo(out) }
+        } ?: error("مقدرناش نفتح الملف للكتابة")
 
-            val canvas = android.graphics.Canvas(bitmap)
-            annotationsFor(i).forEach { a ->
-                val flat = runCatching { json.decodeFromString<List<Float>>(a.pointsJson) }.getOrNull()
-                if (flat != null) {
-                    drawAnnotationAndroid(
-                        canvas, a, flat,
-                        bitmap.width.toFloat(), bitmap.height.toFloat(), pxPerPoint
-                    )
-                }
-            }
-
-            val pw = size.width.toInt().coerceAtLeast(1)
-            val ph = size.height.toInt().coerceAtLeast(1)
-            val pdfPage = doc.startPage(
-                android.graphics.pdf.PdfDocument.PageInfo.Builder(pw, ph, i + 1).create()
-            )
-            pdfPage.canvas.drawBitmap(
-                bitmap, null,
-                android.graphics.RectF(0f, 0f, pw.toFloat(), ph.toFloat()),
-                android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
-            )
-            doc.finishPage(pdfPage)
-            bitmap.recycle()
-        }
-        context.contentResolver.openOutputStream(uri)?.use { os -> doc.writeTo(os) }
-            ?: error("مقدرناش نفتح الملف للكتابة")
+        Result.success(written)
+    } catch (e: Exception) {
+        Result.failure(e)
     } finally {
-        doc.close()
+        temp.delete()
     }
 }
-
-private const val EXPORT_WIDTH_PX = 2000

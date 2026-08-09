@@ -159,6 +159,13 @@ sealed interface Dest {
         override val fullScreen = true
     }
 
+    /** تنظيم صفحات ملف PDF — شاشة كاملة زي العارض. */
+    @Immutable
+    data class PdfOrganizer(val path: String) : Dest {
+        override val title = "تنظيم الصفحات"
+        override val fullScreen = true
+    }
+
     @Immutable
     data class CadViewer(val path: String) : Dest {
         override val title = "عارض المخطط"
