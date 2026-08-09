@@ -17,7 +17,9 @@ import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.graphics.color.PDColor
 import com.tom_roush.pdfbox.pdmodel.graphics.color.PDDeviceRGB
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
+import com.tom_roush.pdfbox.pdmodel.font.PDType0Font
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
+import com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotation
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLine
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationMarkup
@@ -253,6 +255,78 @@ object PdfOps {
         return bitmap
     }
 
+    // ══════════════════════════════════════════════════ طبقة نص مخفية
+
+    /** كلمة من الـOCR بمكانها ببكسل الصورة اللي اتقريت. */
+    data class OcrWord(val text: String, val left: Int, val top: Int, val right: Int, val bottom: Int)
+
+    /**
+     * بيكتب نص الـOCR كطبقة **مخفية** فوق الصفحة.
+     *
+     * ده اللي بيحوّل الرسمة الممسوحة لمستند حقيقي: الصورة بتفضل زي ما هي
+     * بالظبط (مافيش أي تغيير في شكل الصفحة)، وفوقها نص بوضع رسم
+     * `NEITHER` — يعني مش بيتلوّن ولا بيترسم، لكن البحث والتحديد والنسخ
+     * بيشوفوه. نفس الطريقة اللي Acrobat بيعملها في "Recognise Text".
+     *
+     * الخط بيتضمّن من أصول التطبيق لأن العربي مستحيل يتكتب بخطوط PDF
+     * الأساسية (الأربعتاشر) — كلها Latin-1. والتضمين جزئي (subset) فمش
+     * بيزوّد الملف غير بالحروف المستخدمة فعلاً.
+     */
+    suspend fun writeTextLayer(
+        src: File,
+        dest: File,
+        fontStream: () -> java.io.InputStream,
+        /** لكل صفحة: كلماتها + مقاس الصورة اللي اتقريت بالبكسل. */
+        pages: Map<Int, OcrPage>
+    ): Result<Int> = io {
+        var written = 0
+        PDDocument.load(src).use { doc ->
+            val font = fontStream().use { PDType0Font.load(doc, it, true) }
+
+            for ((index, page) in pages) {
+                val target = doc.pages.getOrNull(index) ?: continue
+                if (page.words.isEmpty() || page.imageWidth <= 0 || page.imageHeight <= 0) continue
+
+                val box = target.cropBox ?: target.mediaBox
+                val sx = box.width / page.imageWidth
+                val sy = box.height / page.imageHeight
+
+                PDPageContentStream(
+                    doc, target, PDPageContentStream.AppendMode.APPEND, true, true
+                ).use { cs ->
+                    cs.beginText()
+                    cs.setRenderingMode(RenderingMode.NEITHER)
+                    for (word in page.words) {
+                        val heightPt = (word.bottom - word.top) * sy
+                        if (heightPt <= 0.5f) continue
+                        // حجم الخط من ارتفاع المربّع: التحديد بالإصبع
+                        // بيقع على مكان الكلمة الحقيقي، مش على سطر وهمي.
+                        val size = (heightPt * FONT_HEIGHT_RATIO).coerceIn(1f, 400f)
+                        val x = box.lowerLeftX + word.left * sx
+                        // أصل PDF أسفل-يسار، وأصل الصورة أعلى-يسار.
+                        val y = box.upperRightY - word.bottom * sy
+                        runCatching {
+                            cs.setFont(font, size)
+                            cs.setTextMatrix(Matrix.getTranslateInstance(x, y))
+                            cs.showText(word.text)
+                            written++
+                        }
+                    }
+                    cs.endText()
+                }
+            }
+            doc.save(dest)
+        }
+        written
+    }
+
+    /** صفحة واحدة من نتيجة الـOCR. */
+    data class OcrPage(
+        val words: List<OcrWord>,
+        val imageWidth: Float,
+        val imageHeight: Float
+    )
+
     // ══════════════════════════════════════════════════ التعليقات الحقيقية
 
     /**
@@ -438,4 +512,12 @@ object PdfOps {
     private const val STAMP_PAD = 24
     private const val CLOUD_INTENSITY = 2f
     private const val CLOUD_MARGIN_PT = 6f
+
+    /**
+     * نسبة حجم الخط لارتفاع المربّع.
+     *
+     * ارتفاع المربّع بيلمّ الحروف الطالعة والنازلة، وحجم الخط بيتقاس على
+     * الجسم. ٠.٨ بيخلّي النص المخفي يقع على الكلمة بدل ما يزحلق تحتيها.
+     */
+    private const val FONT_HEIGHT_RATIO = 0.8f
 }

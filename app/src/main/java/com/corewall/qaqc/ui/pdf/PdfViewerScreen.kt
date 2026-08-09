@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -69,6 +71,8 @@ import com.corewall.qaqc.pdfengine.OutlineEntry
 import com.corewall.qaqc.pdfengine.PageLayout
 import com.corewall.qaqc.pdfengine.PdfCanvas
 import com.corewall.qaqc.pdfengine.PdfDocumentSession
+import com.corewall.qaqc.ocr.OcrEngine
+import com.corewall.qaqc.ocr.OcrPacks
 import com.corewall.qaqc.pdfengine.MeasureKind
 import com.corewall.qaqc.pdfengine.MeasureUnit
 import com.corewall.qaqc.pdfengine.PdfImageExport
@@ -208,6 +212,30 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
 
     val pageScale = scaleFor(state.currentPage)
 
+    // ── الـOCR
+    var ocrOpen by remember(path) { mutableStateOf(false) }
+    var ocrRunning by remember { mutableStateOf(false) }
+    var ocrResult by remember(path) { mutableStateOf<OcrEngine.Outcome?>(null) }
+    var ocrImageSize by remember(path) { mutableStateOf(0 to 0) }
+    val ocrLanguages = remember { mutableStateListOf<OcrPacks.Language>() }
+    val packStates = remember { mutableStateMapOf<OcrPacks.Language, PackState>() }
+
+    fun refreshPacks() {
+        OcrPacks.Language.entries.forEach { language ->
+            val current = packStates[language]
+            if (current?.downloading != true) {
+                packStates[language] = PackState(OcrPacks.isInstalled(context, language))
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        refreshPacks()
+        // العربي مختار مبدئياً — التطبيق عربي والمستندات الممسوحة
+        // غالباً عربي أو مختلط.
+        if (ocrLanguages.isEmpty()) ocrLanguages += OcrPacks.Language.ARABIC
+    }
+
     var imagesOpen by remember(path) { mutableStateOf(false) }
     var watermarkOpen by remember(path) { mutableStateOf(false) }
     var mergeOpen by remember(path) { mutableStateOf(false) }
@@ -337,6 +365,51 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 ),
                 Toast.LENGTH_LONG
             ).show()
+        }
+    }
+
+    /**
+     * بيرسم الصفحة عند دقّة الـOCR وبيقراها.
+     *
+     * ٣٠٠ نقطة/بوصة مش رقم عشوائي: Tesseract متدرّب على مسح بالدقّة دي.
+     * أقل من كده الحروف الصغيرة بتضيع، وأكتر بيبطّئ من غير مكسب.
+     */
+    fun runOcr() {
+        if (ocrRunning) return
+        ocrRunning = true
+        ocrResult = null
+        scope.launch {
+            val page = state.currentPage
+            active.measure(page)
+            val size = active.sizeOrEstimate(page)
+            var scaleFactor = OCR_DPI / 72f
+            var width = (size.width * scaleFactor).toInt().coerceAtLeast(1)
+            var height = (size.height * scaleFactor).toInt().coerceAtLeast(1)
+            while (width.toLong() * height > OCR_MAX_PIXELS && scaleFactor > 0.5f) {
+                scaleFactor /= 2f
+                width = (size.width * scaleFactor).toInt().coerceAtLeast(1)
+                height = (size.height * scaleFactor).toInt().coerceAtLeast(1)
+            }
+
+            val bitmap = runCatching {
+                active.renderTile(page, width, height, 0, 0, width, height)
+            }.getOrNull()
+
+            if (bitmap == null) {
+                ocrRunning = false
+                Toast.makeText(context, "مقدرناش نجهّز الصفحة للقراية", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+
+            ocrImageSize = bitmap.width to bitmap.height
+            val outcome = OcrEngine.recognise(context, bitmap, ocrLanguages.toList())
+            bitmap.recycle()
+            ocrRunning = false
+            outcome
+                .onSuccess { ocrResult = it }
+                .onFailure {
+                    Toast.makeText(context, "فشل التعرّف: ${it.message}", Toast.LENGTH_LONG).show()
+                }
         }
     }
 
@@ -512,6 +585,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         if (measure.enabled) tool = PdfTool.PAN
                     },
                     onOrganize = { vm.openPdfOrganizer(path) },
+                    onOcr = { refreshPacks(); ocrOpen = true },
                     onImages = { imagesOpen = true },
                     onWatermark = { watermarkOpen = true },
                     onMerge = { mergeOpen = true },
@@ -739,6 +813,80 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 )
             }
 
+            if (ocrOpen) {
+                OcrSheet(
+                    currentPage = state.currentPage,
+                    packs = packStates,
+                    selected = ocrLanguages.toSet(),
+                    running = ocrRunning,
+                    result = ocrResult,
+                    onToggleLanguage = { language ->
+                        if (language in ocrLanguages) ocrLanguages.remove(language)
+                        else ocrLanguages.add(language)
+                    },
+                    onDownload = { language ->
+                        packStates[language] = PackState(installed = false, downloading = true)
+                        scope.launch {
+                            val outcome = OcrPacks.download(context, language) { done, total ->
+                                packStates[language] = PackState(
+                                    installed = false,
+                                    downloading = true,
+                                    progress = if (total > 0) done.toFloat() / total else 0f
+                                )
+                            }
+                            packStates[language] = PackState(OcrPacks.isInstalled(context, language))
+                            outcome.onFailure {
+                                Toast.makeText(
+                                    context, "فشل تحميل الحزمة: ${it.message}", Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    },
+                    onDelete = { language ->
+                        OcrPacks.delete(context, language)
+                        refreshPacks()
+                    },
+                    onRun = { runOcr() },
+                    onCopy = {
+                        clipboard.setText(AnnotatedString(ocrResult?.text.orEmpty()))
+                        Toast.makeText(context, "اتنسخ ✓", Toast.LENGTH_SHORT).show()
+                    },
+                    onMakeSearchable = {
+                        val outcome = ocrResult
+                        val (imgW, imgH) = ocrImageSize
+                        if (outcome != null && imgW > 0 && imgH > 0) {
+                            val page = state.currentPage
+                            ocrOpen = false
+                            runDocOp("طبقة النص", openAfter = true) {
+                                val dest = uniqueSibling(file, "قابل للبحث")
+                                PdfOps.writeTextLayer(
+                                    src = file,
+                                    dest = dest,
+                                    fontStream = {
+                                        context.resources.openRawResource(
+                                            com.corewall.qaqc.R.font.ibm_plex_sans_arabic_regular
+                                        )
+                                    },
+                                    pages = mapOf(
+                                        page to PdfOps.OcrPage(
+                                            words = outcome.words.map { w ->
+                                                PdfOps.OcrWord(
+                                                    w.text, w.box.left, w.box.top,
+                                                    w.box.right, w.box.bottom
+                                                )
+                                            },
+                                            imageWidth = imgW.toFloat(),
+                                            imageHeight = imgH.toFloat()
+                                        )
+                                    )
+                                ).map { dest }
+                            }
+                        }
+                    },
+                    onDismiss = { if (!ocrRunning) ocrOpen = false }
+                )
+            }
+
             if (calibrationOpen) {
                 MeasureCalibrationSheet(
                     current = pageScale,
@@ -818,6 +966,12 @@ private const val MAX_SEARCH_FROM_SELECTION = 40
  * الرقم يتقري فوراً على إنه قياس مش رسمة، ولا يتلخبط مع علامات التعليم.
  */
 private const val MEASURE_COLOR = 0xFF00897BL
+
+/** دقّة رسم الصفحة للـOCR — Tesseract متدرّب على المسح عند الرقم ده. */
+private const val OCR_DPI = 300f
+
+/** سقف بكسل الصورة اللي بتتقرا — رسمة A0 عند ٣٠٠ بتفوق أي ذاكرة. */
+private const val OCR_MAX_PIXELS = 40_000_000L
 
 /** الخريطة بتظهر لما تبقى شايف جزء صغير من الصفحة فعلاً. */
 private const val MINIMAP_FROM_ZOOM = 2.5f
@@ -917,6 +1071,7 @@ private fun TopChrome(
     measuring: Boolean,
     onToggleMeasure: () -> Unit,
     onOrganize: () -> Unit,
+    onOcr: () -> Unit,
     onImages: () -> Unit,
     onWatermark: () -> Unit,
     onMerge: () -> Unit,
@@ -990,6 +1145,11 @@ private fun TopChrome(
                         text = { Text("تنظيم الصفحات") },
                         leadingIcon = { Icon(Icons.Filled.Reorder, contentDescription = null) },
                         onClick = { menuOpen = false; onOrganize() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("استخراج النص (OCR)") },
+                        leadingIcon = { Icon(Icons.Filled.TextFields, contentDescription = null) },
+                        onClick = { menuOpen = false; onOcr() }
                     )
                     DropdownMenuItem(
                         text = { Text("تصدير صور") },
