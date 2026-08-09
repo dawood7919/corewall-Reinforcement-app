@@ -93,7 +93,6 @@ fun PlanScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val level by vm.currentLevel.collectAsStateWithLifecycle()
     val names by vm.names.collectAsStateWithLifecycle()
     val inspections by vm.inspections.collectAsStateWithLifecycle()
-    val schedule by vm.schedule.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val barCounts by vm.barCounts.collectAsStateWithLifecycle()
     val attachments by vm.attachments.collectAsStateWithLifecycle()
@@ -113,11 +112,8 @@ fun PlanScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     var showCountExport by remember { mutableStateOf(false) }
 
     // بيانات العدسات — كلها معزولة بالدور الشغّال بس
-    val activeByElement = remember(schedule, level, names) {
-        vm.planData.elements.associate { el ->
-            el.id to (names[el.id]?.let { vm.logic.activeRange(schedule, it, level) })
-        }
-    }
+    // محسوبة في الـViewModel على خيط خلفي — الشاشة بتعرض بس.
+    val activeByElement by vm.elementStates.collectAsStateWithLifecycle()
     val countsByElement = remember(barCounts, level) {
         barCounts.filter { it.level == level }.groupBy { it.elementId }
     }

@@ -62,7 +62,19 @@ fun InteractivePlanCanvas(
     onTapElement: (PlanElement) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val textMeasurer = rememberTextMeasurer()
+    /**
+     * قياس النص بكاش كبير.
+     *
+     * `measure()` بيتنادى **جوّه حلقة الرسم لكل عنصر** — يعني لحد ٦٣ تخطيط
+     * نص في كل إطار وانت بتزوّم. تخطيط النص من أغلى العمليات في Compose،
+     * والكاش الافتراضي (٨ مدخلات) بيفضى فوراً مع العدد ده.
+     *
+     * الكاش لوحده مش كفاية: مقاس الخط بيتغيّر مع الزوم بشكل مستمر، فكل
+     * إطار كان بيطلب مقاس جديد ومابيلاقيش حاجة في الكاش. علشان كده المقاس
+     * بيتقرّب لدرجات في [quantise] تحت — الفرق مش بيتشاف، والإطار اللي
+     * بعده بيلاقي التخطيط جاهز.
+     */
+    val textMeasurer = rememberTextMeasurer(cacheSize = LABEL_CACHE)
 
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -179,7 +191,7 @@ fun InteractivePlanCanvas(
             val layout = textMeasurer.measure(
                 AnnotatedString(label.text),
                 style = TextStyle(
-                    fontSize = (fontSizePx / density).sp / fontScale,
+                    fontSize = quantise((fontSizePx / density) / fontScale).sp,
                     fontWeight = if (label.bold) FontWeight.SemiBold else FontWeight.Normal,
                     color = label.color
                 )
@@ -197,3 +209,18 @@ fun InteractivePlanCanvas(
         }
     }
 }
+
+/**
+ * بيقرّب مقاس الخط لأقرب درجة.
+ *
+ * ٠.٥sp خطوة صغيرة كفاية إن العين ماتفرقش، وكبيرة كفاية إن الزوم المستمر
+ * يعدّي على نفس القيمة عشرات الإطارات — وده اللي بيحوّل تخطيط النص من
+ * حساب كل إطار لقراية من الكاش.
+ */
+private fun quantise(sp: Float): Float =
+    (kotlin.math.round(sp / LABEL_SIZE_STEP) * LABEL_SIZE_STEP).coerceAtLeast(LABEL_SIZE_STEP)
+
+private const val LABEL_SIZE_STEP = 0.5f
+
+/** يكفي كل ليبل في المسقط بكام مقاس — أرخص بكتير من إعادة التخطيط. */
+private const val LABEL_CACHE = 256

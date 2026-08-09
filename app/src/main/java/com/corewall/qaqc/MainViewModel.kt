@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.corewall.qaqc.data.model.PlanElement
 import com.corewall.qaqc.data.model.ScheduleData
+import com.corewall.qaqc.domain.ActiveRangeResult
 import com.corewall.qaqc.domain.AttentionDiff
 import com.corewall.qaqc.domain.AttentionItem
 import com.corewall.qaqc.data.FileLibrary
@@ -1326,6 +1327,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * التسمية ولا البحث. الحل إن كل حاجة تقرا من هنا، والقايمة دي بتتحدّث
      * لوحدها مع أي استيراد أو حذف.
      */
+    /**
+     * حالة كل عنصر في المسقط بالنسبة للدور الشغّال.
+     *
+     * كان بيتحسب في `PlanScreen` جوّه `remember` — يعني `activeRange`
+     * بتتنادى لكل عنصر من الـ٦٣ **على خيط الواجهة** وقت تركيب الشاشة
+     * الرئيسية، ومع كل تغيير دور أو اسم أو جدول. ده كان بيتحوّل مباشرة
+     * لتأخير ظاهر عند فتح الشاشة وعند تبديل الدور.
+     *
+     * دلوقتي بيتحسب في الخلفية، والشاشة بتقرا خريطة جاهزة.
+     */
+    val elementStates: StateFlow<Map<String, ActiveRangeResult?>> =
+        combine(schedule, names, _currentLevel) { sched, nm, level ->
+            planData.elements.associate { el ->
+                el.id to nm[el.id]?.let { logic.activeRange(sched, it, level) }
+            }
+        }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
     val marks: StateFlow<List<String>> = schedule
         .map { it.allMarks }
         .flowOn(Dispatchers.Default)
