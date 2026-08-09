@@ -189,6 +189,28 @@ data class PdfAnnotationEntity(
 }
 
 /**
+ * علامة مرجعية في ملف PDF — صفحة بعنوان يكتبه المستخدم.
+ *
+ * منفصلة عن فهرس المستند (outline) عن قصد: الفهرس بيجي من الملف نفسه
+ * ومش قابل للتعديل، والعلامات دي بتاعت المستخدم — "تفاصيل الكانات" في
+ * صفحة ٤٧ عمر ما هتكون مكتوبة في فهرس المكتب الاستشاري.
+ *
+ * الفهرس على `filePath` مطلوب: العارض بيفلتر بيه في كل فتحة ملف.
+ */
+@Serializable
+@Entity(
+    tableName = "pdf_bookmarks",
+    indices = [Index(value = ["filePath"])]
+)
+data class PdfBookmarkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val filePath: String,
+    val page: Int,
+    val label: String,
+    val createdAt: Long
+)
+
+/**
  * تعديل يدوي على صف من جدول التسليح المرجعي.
  * patchJson: خريطة {اسم الحقل -> القيمة الجديدة} بصيغة JSON،
  * بتتطبق فوق بيانات الأصول (read-only) وقت العرض.

@@ -3,7 +3,9 @@ package com.corewall.qaqc.pdfengine
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.ParcelFileDescriptor
+import io.legere.pdfiumandroid.FindFlags
 import io.legere.pdfiumandroid.PdfDocument
+import io.legere.pdfiumandroid.PdfTextPage
 import io.legere.pdfiumandroid.PdfiumCore
 import io.legere.pdfiumandroid.util.Config
 import kotlinx.coroutines.CoroutineDispatcher
@@ -147,14 +149,148 @@ class PdfDocumentSession private constructor(
     /** نص صفحة كامل — للبحث وللتحليل. */
     suspend fun pageText(page: Int): String = withContext(dispatcher) {
         if (closed || page !in 0 until pageCount) return@withContext ""
-        runCatching {
+        onTextPage(page) { t, _ ->
+            val n = t.textPageCountChars()
+            if (n <= 0) "" else t.readText(0, n)
+        } ?: ""
+    }
+
+    // ══════════════════════════════════════════════════════ طبقة النص
+
+    /**
+     * بيفتح صفحة نصّها ويدّي معاها **ارتفاع الصفحة بالنقط**.
+     *
+     * الارتفاع مش زيادة: إحداثيات PDFium النصّية أصلها **أسفل يسار** والمحور
+     * الرأسي بيزيد لفوق، بينما المحرّك كله شغّال بأصل **أعلى يسار**. من غير
+     * القلب ده، كل مستطيل بحث بيتحطّ مقلوب رأسياً على الصفحة.
+     */
+    private fun <T> onTextPage(page: Int, block: (PdfTextPage, Float) -> T): T? {
+        if (closed || page !in 0 until pageCount) return null
+        return runCatching {
             doc.openPage(page).use { p ->
-                p.openTextPage().use { t ->
-                    val n = t.textPageCountChars()
-                    if (n <= 0) "" else t.textPageGetText(0, n).orEmpty()
+                val height = p.getPageHeightPoint().toFloat()
+                p.openTextPage().use { t -> block(t, height) }
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * عدد الحروف في صفحة. **صفر معناه إن الصفحة صورة** — رسمة ممسوحة ضوئياً
+     * مش متولّدة من CAD. البحث والتحديد فيها مش ناقصين، هما مستحيلين من غير
+     * OCR (جايّ في مرحلة القياس والـOCR).
+     */
+    suspend fun charCount(page: Int): Int = withContext(dispatcher) {
+        onTextPage(page) { t, _ -> t.textPageCountChars() }?.coerceAtLeast(0) ?: 0
+    }
+
+    /**
+     * بيدوّر على [query] في صفحة واحدة.
+     *
+     * البحث بيتعمل بمحرّك PDFium نفسه مش بمقارنة نصوص في Kotlin، وده مقصود:
+     * PDFium بيعرف يوصّل الكلمة المقطوعة بين سطرين، وبيعرف الحروف اللي في
+     * الملف بترميز غريب، وبيدّينا **مستطيلات** الكلمة على الصفحة — وده اللي
+     * بيخلّي التظليل يقع في مكانه بالظبط.
+     */
+    suspend fun searchPage(
+        page: Int,
+        query: String,
+        matchCase: Boolean = false,
+        wholeWord: Boolean = false,
+        maxHits: Int = MAX_HITS_PER_PAGE
+    ): PageSearch = withContext(dispatcher) {
+        if (query.isBlank()) return@withContext PageSearch.EMPTY
+        onTextPage(page) { t, pageHeight ->
+            val total = t.textPageCountChars()
+            if (total <= 0) return@onTextPage PageSearch.EMPTY
+
+            val flags = buildSet {
+                if (matchCase) add(FindFlags.MatchCase)
+                if (wholeWord) add(FindFlags.MatchWholeWord)
+            }
+            val finder = t.findStart(query, flags, 0)
+                ?: return@onTextPage PageSearch(emptyList(), total)
+
+            val out = ArrayList<SearchHit>()
+            finder.use { f ->
+                while (out.size < maxHits && f.findNext()) {
+                    val index = f.getSchResultIndex()
+                    val count = f.getSchCount()
+                    if (index < 0 || count <= 0) break
+                    out += SearchHit(
+                        page = page,
+                        charIndex = index,
+                        charCount = count,
+                        snippet = t.snippet(total, index, count),
+                        quads = t.quads(page, pageHeight, index, count)
+                    )
                 }
             }
-        }.getOrDefault("")
+            PageSearch(out, total)
+        } ?: PageSearch.EMPTY
+    }
+
+    /** مستطيلات مدى حروف — للتحديد ولتظليل نتيجة البحث. */
+    suspend fun quadsFor(page: Int, start: Int, count: Int): List<TextQuad> =
+        withContext(dispatcher) {
+            if (count <= 0) return@withContext emptyList()
+            onTextPage(page) { t, h -> t.quads(page, h, start, count) } ?: emptyList()
+        }
+
+    /** نص مدى حروف — ده اللي بيتنسخ للحافظة. */
+    suspend fun textRange(page: Int, start: Int, count: Int): String = withContext(dispatcher) {
+        if (count <= 0) return@withContext ""
+        onTextPage(page) { t, _ ->
+            val total = t.textPageCountChars()
+            if (total <= 0) return@onTextPage ""
+            val from = start.coerceIn(0, total - 1)
+            val len = count.coerceAtMost(total - from)
+            t.readText(from, len)
+        } ?: ""
+    }
+
+    /**
+     * الحرف اللي تحت نقطة معيّنة. [yPtFromTop] بأصل أعلى-يسار زي باقي المحرّك.
+     * بيرجّع −١ لو مفيش نص قريب.
+     */
+    suspend fun charIndexAt(
+        page: Int,
+        xPt: Float,
+        yPtFromTop: Float,
+        tolerancePt: Float = HIT_TOLERANCE_PT
+    ): Int = withContext(dispatcher) {
+        onTextPage(page) { t, height ->
+            t.textPageGetCharIndexAtPos(
+                xPt.toDouble(),
+                (height - yPtFromTop).toDouble(),
+                tolerancePt.toDouble(),
+                tolerancePt.toDouble()
+            )
+        } ?: -1
+    }
+
+    /**
+     * الكلمة اللي فيها الحرف ده.
+     *
+     * بنجيب **نافذة** حوالين الحرف بنداء واحد وبنوسّع في Kotlin، مش بنسأل
+     * PDFium عن كل حرف لوحده. الفرق مش تحسين نظري: كل نداء أصلي بياخد قفل
+     * عام، ومئة نداء وسط ضغطة مطوّلة بتحسّ كأن التطبيق واقف.
+     */
+    suspend fun wordAt(page: Int, index: Int): IntRange? = withContext(dispatcher) {
+        onTextPage(page) { t, _ ->
+            val total = t.textPageCountChars()
+            if (total <= 0 || index !in 0 until total) return@onTextPage null
+            val from = (index - WORD_WINDOW).coerceAtLeast(0)
+            val to = (index + WORD_WINDOW).coerceAtMost(total)
+            val text = t.readText(from, to - from)
+            val local = index - from
+            if (local !in text.indices) return@onTextPage index..index
+            if (!text[local].isWordChar()) return@onTextPage index..index
+            var s = local
+            while (s > 0 && text[s - 1].isWordChar()) s--
+            var e = local
+            while (e < text.lastIndex && text[e + 1].isWordChar()) e++
+            (from + s)..(from + e)
+        }
     }
 
     /** فهرس المستند (outline) — مسطّح بمستوى العمق للعرض. */
@@ -189,6 +325,59 @@ class PdfDocumentSession private constructor(
         }.getOrDefault(emptyMap())
     }
 
+    /**
+     * قراءة نص بمدى.
+     *
+     * بنستخدم `textPageGetTextLegacy` مش `textPageGetText` عن قصد: التانية
+     * بتحجز مصفوفة بطول الحروف بالظبط، و`FPDFText_GetText` الأصلية بتكتب
+     * حرف زيادة (الـNUL الخاتم) — يعني كتابة برّه المصفوفة. الأولى بتحجز
+     * `length + 1` وبتقصّ الـNUL بعد القراية، وده السلوك الصح.
+     */
+    private fun PdfTextPage.readText(start: Int, length: Int): String {
+        if (length <= 0) return ""
+        return runCatching { textPageGetTextLegacy(start, length) }.getOrNull().orEmpty()
+    }
+
+    /** سطر معاينة حوالين النتيجة — عشان المستخدم يعرف النتيجة دي إيه قبل ما يروحلها. */
+    private fun PdfTextPage.snippet(total: Int, index: Int, count: Int): String {
+        val from = (index - SNIPPET_LEAD).coerceAtLeast(0)
+        val to = (index + count + SNIPPET_TRAIL).coerceAtMost(total)
+        return readText(from, to - from)
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .replace(WHITESPACE, " ")
+            .trim()
+    }
+
+    /**
+     * مستطيلات مدى حروف، مقلوبة لأصل أعلى-يسار.
+     *
+     * ترتيب النداءات مش اختياري: `FPDFText_CountRects` هي اللي بتحضّر المدى
+     * جوّه PDFium، و`FPDFText_GetRect` بترجّع من آخر مدى اتحضّر. لو ناديت
+     * الرسم من غير العدّ الأول بترجع مستطيلات من بحث قديم.
+     */
+    private fun PdfTextPage.quads(
+        page: Int,
+        pageHeight: Float,
+        start: Int,
+        count: Int
+    ): List<TextQuad> {
+        val n = runCatching { textPageCountRects(start, count) }.getOrDefault(0)
+        if (n <= 0) return emptyList()
+        val out = ArrayList<TextQuad>(n)
+        for (i in 0 until n) {
+            val r = runCatching { textPageGetRect(i) }.getOrNull() ?: continue
+            val left = minOf(r.left, r.right)
+            val right = maxOf(r.left, r.right)
+            // القلب: y من أسفل ← y من أعلى. الأعلى في PDF هو الأكبر رقماً.
+            val top = pageHeight - maxOf(r.top, r.bottom)
+            val bottom = pageHeight - minOf(r.top, r.bottom)
+            if (right - left <= 0f || bottom - top <= 0f) continue
+            out += TextQuad(page, left, top, right, bottom)
+        }
+        return out
+    }
+
     /** بيدّي وصول مباشر للمستند لعمليات متخصّصة — دايماً على الخيط الصح. */
     suspend fun <T> withDocument(block: (PdfDocument) -> T): T? = withContext(dispatcher) {
         if (closed) null else runCatching { block(doc) }.getOrNull()
@@ -210,6 +399,26 @@ class PdfDocumentSession private constructor(
 
     companion object {
         private const val WHITE = 0xFFFFFFFF.toInt()
+
+        /**
+         * سقف نتائج الصفحة الواحدة.
+         *
+         * جدول تسليح فيه "T10" مية مرة في صفحة واحدة نتيجته إن الشاشة بتبقى
+         * صفرا بالكامل — يعني ولا نتيجة مفيدة، وتلات آلاف مستطيل بيترسموا كل
+         * إطار. السقف بيحمي الاتنين.
+         */
+        private const val MAX_HITS_PER_PAGE = 300
+
+        /** نصف قطر البحث عن حرف تحت الإصبع، بنقط الصفحة. */
+        private const val HIT_TOLERANCE_PT = 6f
+
+        /** نص النافذة اللي بنجيبها حوالين الحرف عشان نوسّع للكلمة. */
+        private const val WORD_WINDOW = 48
+
+        private const val SNIPPET_LEAD = 32
+        private const val SNIPPET_TRAIL = 48
+
+        private val WHITESPACE = Regex("\\s+")
 
         /**
          * بيفتح ملف. بيرمي [PdfOpenException] برسالة مفهومة بدل استثناء خام —
@@ -279,6 +488,16 @@ class PdfDocumentSession private constructor(
         }
     }
 }
+
+/**
+ * حرف بيتعدّ جزء من "كلمة" وقت التحديد بضغطة مطوّلة.
+ *
+ * الشرطة والشرطة السفلية داخلة عن قصد: أكواد المشروع نفسها (`T1-FGN-B1`،
+ * `2LT10-200`) هي أكتر حاجة المهندس بيحدّدها، ولو الشرطة قطعت الكلمة
+ * كل تحديد هيرجّع نتفة من الكود مش الكود كله.
+ */
+private fun Char.isWordChar(): Boolean =
+    isLetterOrDigit() || this == '_' || this == '-' || this == '/'
 
 /** عنصر في فهرس المستند. */
 data class OutlineEntry(val title: String, val page: Int, val depth: Int)

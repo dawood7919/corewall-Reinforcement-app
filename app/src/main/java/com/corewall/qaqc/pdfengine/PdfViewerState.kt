@@ -70,6 +70,20 @@ class PdfViewerState(
         return Rect(l, t, l + viewport.width / zoom, t + viewport.height / zoom)
     }
 
+    /**
+     * مستطيل **بنقط الصفحة** (أصل أعلى-يسار للصفحة نفسها) → مساحة المستند.
+     * ده الجسر بين مستطيلات النص اللي جاية من PDFium وبين التمرير.
+     */
+    fun pageRectToDoc(page: Int, left: Float, top: Float, right: Float, bottom: Float): Rect? {
+        val slot = layout.slotAt(page) ?: return null
+        return Rect(
+            slot.left + left,
+            slot.top + top,
+            slot.left + right,
+            slot.top + bottom
+        )
+    }
+
     fun docToScreenX(x: Float) = x * zoom + panX
     fun docToScreenY(y: Float) = y * zoom + panY
     fun screenToDoc(p: Offset) = Offset((p.x - panX) / zoom, (p.y - panY) / zoom)
@@ -178,6 +192,36 @@ class PdfViewerState(
         bump()
     }
 
+    /**
+     * بيرجّع المستخدم لآخر مكان كان واقف فيه.
+     *
+     * بيقفل الملاءمة التلقائية (`hasFramed`) عن قصد: من غير كده أول ما
+     * الرصّ يخلص أو المقاس يتعرف، `fitWidth()` بتشتغل وبتمسح الاسترجاع —
+     * فالمستخدم بيشوف مكانه القديم لجزء من الثانية وبعدين بيتنطّ برّه.
+     */
+    fun restore(page: Int, savedZoom: Float) {
+        if (layout.slots.isEmpty() || viewport.width == 0) return
+        zoom = savedZoom.coerceIn(ZoomLadder.MIN_ZOOM, ZoomLadder.MAX_ZOOM)
+        hasFramed = true
+        goToPage(page)
+    }
+
+    /**
+     * بيودّي المستخدم لمستطيل من مساحة المستند **من غير ما يغيّر التكبير**.
+     *
+     * الفرق عن [zoomToRect] مهم في البحث: لو كل نتيجة غيّرت التكبير، المستخدم
+     * بيفقد إحساسه بالمقياس مع كل ضغطة "التالي". هنا التكبير بيفضل زي ما هو
+     * والنتيجة بتيجي في **الثلث العلوي** من الشاشة — مكان طبيعي للقراية،
+     * ومش مغطّى بالشريط العلوي ولا بالإصبع.
+     */
+    fun revealRect(rect: Rect) {
+        if (viewport.width == 0 || viewport.height == 0) return
+        panX = viewport.width / 2f - rect.center.x * zoom
+        panY = viewport.height * REVEAL_Y_FRACTION - rect.center.y * zoom
+        clamp()
+        bump()
+    }
+
     /** بيحطّ الصفحة في المشهد: أعلى الصفحة فوق، ومتمركزة أفقياً. */
     private fun centreOn(slot: PageSlot) {
         panY = -slot.top * zoom + PAGE_TOP_MARGIN_PX
@@ -267,5 +311,8 @@ class PdfViewerState(
     companion object {
         private const val EDGE_SLACK_PX = 48f
         private const val PAGE_TOP_MARGIN_PX = 16f
+
+        /** ارتفاع النتيجة على الشاشة: الثلث العلوي تقريباً. */
+        private const val REVEAL_Y_FRACTION = 0.38f
     }
 }

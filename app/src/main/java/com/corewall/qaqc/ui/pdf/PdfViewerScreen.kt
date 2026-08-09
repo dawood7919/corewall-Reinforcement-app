@@ -20,12 +20,18 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Icon
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,22 +45,33 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
+import com.corewall.qaqc.pdfengine.OutlineEntry
 import com.corewall.qaqc.pdfengine.PageLayout
 import com.corewall.qaqc.pdfengine.PdfCanvas
 import com.corewall.qaqc.pdfengine.PdfDocumentSession
 import com.corewall.qaqc.pdfengine.PdfOpenException
+import com.corewall.qaqc.pdfengine.PdfSearchState
+import com.corewall.qaqc.pdfengine.PdfSelectionState
+import com.corewall.qaqc.pdfengine.PdfSessionStore
 import com.corewall.qaqc.pdfengine.PdfViewerState
+import com.corewall.qaqc.pdfengine.SearchHit
+import com.corewall.qaqc.pdfengine.TextQuad
 import com.corewall.qaqc.pdfengine.TileEngine
 import com.corewall.qaqc.pdfengine.ViewMode
+import com.corewall.qaqc.pdfengine.bounds
 import com.corewall.qaqc.pdfengine.pageHit
 import com.corewall.qaqc.pdfengine.pagePointToScreen
 import com.corewall.qaqc.ui.design.CwIconButton
@@ -62,6 +79,7 @@ import com.corewall.qaqc.ui.design.CwText
 import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Space
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -81,6 +99,7 @@ private val json = Json
 fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     val c = LocalCwColors.current
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val file = remember(path) { File(path) }
 
@@ -124,6 +143,66 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
         val from = (state.currentPage - 4).coerceAtLeast(0)
         val to = (state.currentPage + 8).coerceAtMost(active.pageCount - 1)
         for (p in from..to) active.measure(p)
+    }
+
+    // ── طبقة النص: البحث والتحديد والفهرس
+    val search = remember(active) { PdfSearchState(active) }
+    val selection = remember(active) { PdfSelectionState(active) }
+    DisposableEffect(active) {
+        onDispose { search.dispose(); selection.dispose() }
+    }
+
+    var outline by remember(active) { mutableStateOf<List<OutlineEntry>>(emptyList()) }
+    LaunchedEffect(active) { outline = active.outline() }
+
+    /**
+     * النتائج مجمّعة بالصفحة.
+     *
+     * الرسم بيحصل ٦٠ مرة في الثانية؛ لو فلترنا ألفين نتيجة في كل إطار عشان
+     * نلاقي بتوع الصفحتين الظاهرين، البحث نفسه بيبقى سبب التهتهة. التجميع
+     * بيتعمل مرة كل ما النتايج تتغيّر.
+     */
+    val hitsByPage = remember(search.hits.size, search.query) {
+        search.hits.groupBy { it.page }
+    }
+
+    var searchOpen by remember(path) { mutableStateOf(false) }
+    var navOpen by remember(path) { mutableStateOf(false) }
+
+    val bookmarks by vm.pdfBookmarks.collectAsStateWithLifecycle()
+    val fileBookmarks = remember(bookmarks, path) { bookmarks.filter { it.filePath == path } }
+
+    /**
+     * استرجاع آخر موقع — بيشتغل مرة واحدة عند فتح الملف.
+     *
+     * `snapshotFlow { … }.first { it }` مش تعقيد زيادة: الاسترجاع محتاج
+     * الرصّ **والمشهد** يبقوا جاهزين، والاتنين بيوصلوا في أوقات مختلفة.
+     * لو ربطنا التأثير بيهم كمفاتيح، أي قياس صفحة جديد كان هيلغي التأثير
+     * وهو نصّه — والمستخدم كان هيفتح الملف من أوله بشكل عشوائي.
+     */
+    LaunchedEffect(active) {
+        val spot = PdfSessionStore.load(context, path) ?: return@LaunchedEffect
+        // بنقيس الصفحة وجيرانها الأول عشان الرصّ يبقى بمقاسات حقيقية،
+        // وإلا الاسترجاع بيقع على تقدير ويطلع مزحلق شوية.
+        for (p in (spot.page - 1).coerceAtLeast(0)..
+            (spot.page + 1).coerceAtMost(active.pageCount - 1)) {
+            active.measure(p)
+        }
+        snapshotFlow { state.layout.slots.isNotEmpty() && state.viewport.width > 0 }
+            .first { it }
+        state.restore(spot.page, spot.zoom)
+    }
+
+    DisposableEffect(path, active) {
+        onDispose { PdfSessionStore.save(context, path, state.currentPage, state.zoom) }
+    }
+
+    /** بيودّي المستخدم لنتيجة: بيقيس صفحتها الأول عشان المكان يطلع مظبوط. */
+    fun jumpTo(hit: SearchHit) = scope.launch {
+        active.measure(hit.page)
+        val rect = hit.bounds() ?: run { state.goToPage(hit.page); return@launch }
+        val doc = state.pageRectToDoc(hit.page, rect.left, rect.top, rect.right, rect.bottom)
+        if (doc == null) state.goToPage(hit.page) else state.revealRect(doc)
     }
 
     // ── التعليقات والأدوات
@@ -224,8 +303,33 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     }
                 },
                 onDrawEnd = { commitDraft() },
-                onTap = { chromeVisible = !chromeVisible },
+                onTap = {
+                    // أي نقرة بتلغي التحديد الأول. النقرة اللي بتخفي
+                    // الواجهة وسايبة تحديد معلّق بتبان كأنها باج.
+                    if (selection.isActive) selection.clear() else chromeVisible = !chromeVisible
+                },
+                onLongPress = { point ->
+                    val hit = state.pageHit(point)
+                    val slot = hit?.let { state.layout.slotAt(it.page) }
+                    if (hit != null && slot != null) {
+                        selection.selectWordAt(
+                            page = hit.page,
+                            xPt = hit.nx * slot.size.width,
+                            yPtFromTop = hit.ny * slot.size.height
+                        ) { found ->
+                            if (!found) {
+                                Toast.makeText(context, "مفيش نص في المكان ده", Toast.LENGTH_SHORT)
+                                    .show()
+                            }
+                        }
+                    }
+                },
                 overlay = { s ->
+                    // ترتيب الطبقات: البحث تحت، التعليقات فوقه، التحديد فوق
+                    // الكل — التحديد حاجة لحظية والمستخدم لازم يشوف حدودها.
+                    if (searchOpen) {
+                        drawSearchLayer(s, hitsByPage, search.activeHit, c.warning.solid, c.accent)
+                    }
                     drawAnnotations(s, fileAnnotations)
                     if (draft.size >= 2) {
                         drawAnnotation(
@@ -233,12 +337,29 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                             style.widthPt, style.opacity, s.zoom
                         )
                     }
+                    if (selection.isActive) drawSelection(s, selection.quads, c.accent)
                 }
+            )
+
+            SelectionHandles(
+                state = state,
+                selection = selection,
+                onCopy = {
+                    clipboard.setText(AnnotatedString(selection.text))
+                    Toast.makeText(context, "اتنسخ ✓", Toast.LENGTH_SHORT).show()
+                    selection.clear()
+                },
+                onSearch = { text ->
+                    searchOpen = true
+                    search.setQuery(text.trim().take(MAX_SEARCH_FROM_SELECTION), state.currentPage)
+                    selection.clear()
+                },
+                onDismiss = { selection.clear() }
             )
 
             // ── الشريط العلوي
             AnimatedVisibility(
-                visible = chromeVisible,
+                visible = chromeVisible && !searchOpen,
                 enter = fadeIn() + slideInVertically { -it },
                 exit = fadeOut() + slideOutVertically { -it },
                 modifier = Modifier.align(Alignment.TopCenter)
@@ -250,6 +371,8 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     mode = state.mode,
                     railOpen = railVisible,
                     onClose = onClose,
+                    onSearch = { searchOpen = true },
+                    onNavigate = { navOpen = true },
                     onToggleRail = { railVisible = !railVisible },
                     onToggleMode = {
                         state.setMode(
@@ -259,6 +382,21 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         )
                     },
                     onExport = { exportLauncher.launch("${file.nameWithoutExtension}-معلّق.pdf") }
+                )
+            }
+
+            AnimatedVisibility(
+                visible = searchOpen,
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                PdfSearchBar(
+                    search = search,
+                    pageCount = active.pageCount,
+                    currentPage = state.currentPage,
+                    onJump = { jumpTo(it) },
+                    onClose = { searchOpen = false; search.clear() }
                 )
             }
 
@@ -337,9 +475,31 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     )
                 }
             }
+
+            if (navOpen) {
+                PdfOutlineSheet(
+                    outline = outline,
+                    bookmarks = fileBookmarks,
+                    currentPage = state.currentPage,
+                    onGoTo = { page -> state.goToPage(page); navOpen = false },
+                    onAddBookmark = {
+                        vm.addPdfBookmark(path, state.currentPage, "صفحة ${state.currentPage + 1}")
+                    },
+                    onDeleteBookmark = { vm.deletePdfBookmark(it) },
+                    onDismiss = { navOpen = false }
+                )
+            }
         }
     }
 }
+
+/**
+ * أكبر طول نأخده من نص محدَّد كاستعلام بحث.
+ *
+ * فقرة كاملة كاستعلام مش هتلاقي نفسها حتى — PDFium بيدوّر على تطابق حرفي،
+ * وأي فرق في مسافة أو سطر بيلغي النتيجة. أول كام حرف هي اللي بتنفع.
+ */
+private const val MAX_SEARCH_FROM_SELECTION = 40
 
 /** الخريطة بتظهر لما تبقى شايف جزء صغير من الصفحة فعلاً. */
 private const val MINIMAP_FROM_ZOOM = 2.5f
@@ -348,6 +508,33 @@ private const val MINIMAP_FROM_ZOOM = 2.5f
 private val MINIMAP_TOP_PAD = Space.huge + Space.xl
 
 // ══════════════════════════════════════════════════════ الرسم فوق الصفحات
+
+/** بيرسم تظليل نتائج البحث للصفحات الظاهرة بس. */
+private fun DrawScope.drawSearchLayer(
+    state: PdfViewerState,
+    hitsByPage: Map<Int, List<SearchHit>>,
+    activeHit: SearchHit?,
+    base: Color,
+    active: Color
+) {
+    if (hitsByPage.isEmpty()) return
+    val rect = state.visibleDocRect()
+    val visible = state.layout
+        .visible(rect.left, rect.top, rect.right, rect.bottom)
+        .map { it.index }
+
+    val quads = ArrayList<TextQuad>()
+    visible.forEach { page -> hitsByPage[page]?.forEach { quads += it.quads } }
+    if (quads.isEmpty() && activeHit == null) return
+
+    drawSearchHighlights(
+        state = state,
+        quads = quads,
+        activeQuads = activeHit?.quads.orEmpty(),
+        base = base,
+        active = active
+    )
+}
 
 /** بيرسم تعليقات كل صفحة مرئية في مكانها الصح. */
 private fun DrawScope.drawAnnotations(
@@ -407,11 +594,14 @@ private fun TopChrome(
     mode: ViewMode,
     railOpen: Boolean,
     onClose: () -> Unit,
+    onSearch: () -> Unit,
+    onNavigate: () -> Unit,
     onToggleRail: () -> Unit,
     onToggleMode: () -> Unit,
     onExport: () -> Unit
 ) {
     val c = LocalCwColors.current
+    var menuOpen by remember { mutableStateOf(false) }
     Surface(Modifier.fillMaxWidth(), color = c.surface.copy(alpha = 0.94f)) {
         Row(
             Modifier
@@ -430,7 +620,8 @@ private fun TopChrome(
                     name,
                     style = MaterialTheme.typography.titleSmall,
                     color = c.textPrimary,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     "صفحة $page من $pageCount",
@@ -439,16 +630,43 @@ private fun TopChrome(
                     maxLines = 1
                 )
             }
-            CwIconButton(
-                if (mode == ViewMode.CONTINUOUS_HORIZONTAL) Icons.Filled.SwapHoriz else Icons.Filled.SwapVert,
-                if (mode == ViewMode.CONTINUOUS_HORIZONTAL) "بدّل لتمرير رأسي" else "بدّل لتمرير أفقي",
-                onToggleMode
-            )
+            CwIconButton(Icons.Filled.Search, "دوّر في الملف", onSearch)
+            CwIconButton(Icons.Filled.Bookmarks, "الفهرس والعلامات", onNavigate)
             CwIconButton(
                 Icons.Filled.GridView, "الصفحات", onToggleRail,
                 active = railOpen
             )
-            CwIconButton(Icons.Filled.IosShare, "صدّر نسخة معلّقة", onExport)
+
+            // الباقي في قائمة: ستة زراير في شريط عرضه ٣٦٠dp معناها إن اسم
+            // الملف مابقاش ليه مكان — واسم الملف هو أهم حاجة في الشريط.
+            Box {
+                CwIconButton(Icons.Filled.MoreVert, "خيارات أكتر", { menuOpen = true })
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (mode == ViewMode.CONTINUOUS_HORIZONTAL) "تمرير رأسي"
+                                else "تمرير أفقي"
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (mode == ViewMode.CONTINUOUS_HORIZONTAL) Icons.Filled.SwapVert
+                                else Icons.Filled.SwapHoriz,
+                                contentDescription = null
+                            )
+                        },
+                        onClick = { menuOpen = false; onToggleMode() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("صدّر نسخة معلّقة") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.IosShare, contentDescription = null)
+                        },
+                        onClick = { menuOpen = false; onExport() }
+                    )
+                }
+            }
         }
     }
 }

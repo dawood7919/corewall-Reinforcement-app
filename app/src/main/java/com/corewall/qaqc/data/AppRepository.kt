@@ -282,6 +282,11 @@ class AppRepository(context: Context) {
     suspend fun clearPdfPage(filePath: String, page: Int) =
         db.pdfAnnotationDao().clearPage(filePath, page)
 
+    val pdfBookmarks: Flow<List<PdfBookmarkEntity>> = db.pdfBookmarkDao().observeAll()
+
+    suspend fun addPdfBookmark(entity: PdfBookmarkEntity) = db.pdfBookmarkDao().upsert(entity)
+    suspend fun deletePdfBookmark(id: Long) = db.pdfBookmarkDao().delete(id)
+
     // ---------- نسخة احتياطية ----------
 
     @Serializable
@@ -303,7 +308,8 @@ class AppRepository(context: Context) {
         // القيم الافتراضية بتخلّي النسخ القديمة تتقري عادي — من غيرها
         // كل نسخة اتصدّرت قبل النهاردة كانت هتبقى غير قابلة للاستيراد.
         val prompts: List<PromptEntity> = emptyList(),
-        val importedMarks: List<ImportedMarkEntity> = emptyList()
+        val importedMarks: List<ImportedMarkEntity> = emptyList(),
+        val pdfBookmarks: List<PdfBookmarkEntity> = emptyList()
     )
 
     suspend fun exportBackupJson(): String = json.encodeToString(
@@ -322,7 +328,8 @@ class AppRepository(context: Context) {
             dailyAttendance = db.dailyAttendanceDao().getAll(),
             sitePhotos = db.sitePhotoDao().getAll(),
             prompts = db.promptDao().getAll(),
-            importedMarks = db.importedMarkDao().getAll()
+            importedMarks = db.importedMarkDao().getAll(),
+            pdfBookmarks = db.pdfBookmarkDao().getAll()
         )
     )
 
@@ -343,6 +350,7 @@ class AppRepository(context: Context) {
         db.sitePhotoDao().upsertAll(backup.sitePhotos.map { it.copy(id = 0) })
         backup.prompts.forEach { db.promptDao().upsert(it.copy(id = 0)) }
         db.importedMarkDao().upsertAll(backup.importedMarks)
+        db.pdfBookmarkDao().upsertAll(backup.pdfBookmarks.map { it.copy(id = 0) })
         "تم استيراد ${backup.names.size} اسم و${backup.inspections.size} حالة فحص " +
             "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ و${backup.tasks.size} مهمة " +
             "و${backup.sitePhotos.size} صورة موقع و${backup.prompts.size} برومبت " +

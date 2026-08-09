@@ -30,9 +30,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LinkEntity::class,
         NoteRevisionEntity::class,
         PromptEntity::class,
-        ImportedMarkEntity::class
+        ImportedMarkEntity::class,
+        PdfBookmarkEntity::class
     ],
-    version = 14,
+    version = 15,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -59,6 +60,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun noteRevisionDao(): NoteRevisionDao
     abstract fun promptDao(): PromptDao
     abstract fun importedMarkDao(): ImportedMarkDao
+    abstract fun pdfBookmarkDao(): PdfBookmarkDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -318,6 +320,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * العلامات المرجعية على ملفات الـPDF.
+         *
+         * اسم الفهرس هنا مش اختياري — لازم يبقى بالظبط `index_pdf_bookmarks_filePath`،
+         * وده الاسم اللي Room بيولّده لـ`@Index(value = ["filePath"])`. أي اسم
+         * تاني وRoom بيقارن المخطط وقت التشغيل، بيلاقي اختلاف، ويرمي — والتطبيق
+         * بيقفل أول ما يلمس القاعدة. حصلت قبل كده مرتين، وعلشان كده فيه سكربت
+         * `tools/check_room_schema.py` بيقارن الاتنين في الـCI.
+         */
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pdf_bookmarks` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`filePath` TEXT NOT NULL, `page` INTEGER NOT NULL, " +
+                        "`label` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_pdf_bookmarks_filePath` " +
+                        "ON `pdf_bookmarks` (`filePath`)"
+                )
+            }
+        }
+
         // طبقة المعرفة: مستندات محلّلة + حقائق مستخرجة (knowledge graph) + محادثة.
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -362,7 +388,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
-                    MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14
+                    MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
+                    MIGRATION_14_15
                 ).build().also { instance = it }
             }
     }

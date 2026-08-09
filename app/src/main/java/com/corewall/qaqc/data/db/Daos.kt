@@ -196,6 +196,24 @@ interface PdfAnnotationDao {
 }
 
 @Dao
+interface PdfBookmarkDao {
+    @Query("SELECT * FROM pdf_bookmarks ORDER BY filePath, page")
+    fun observeAll(): Flow<List<PdfBookmarkEntity>>
+
+    @Query("SELECT * FROM pdf_bookmarks ORDER BY filePath, page")
+    suspend fun getAll(): List<PdfBookmarkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: PdfBookmarkEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<PdfBookmarkEntity>)
+
+    @Query("DELETE FROM pdf_bookmarks WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
 interface RangeEditDao {
     @Query("SELECT * FROM range_edits")
     fun observeAll(): Flow<List<RangeEditEntity>>

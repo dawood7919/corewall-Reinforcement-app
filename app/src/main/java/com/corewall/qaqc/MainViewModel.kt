@@ -16,6 +16,7 @@ import com.corewall.qaqc.data.db.DailyAttendanceEntity
 import com.corewall.qaqc.data.db.ElementAttachmentEntity
 import com.corewall.qaqc.data.db.NoteEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
+import com.corewall.qaqc.data.db.PdfBookmarkEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
 import kotlinx.coroutines.Dispatchers
@@ -1368,6 +1369,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearPdfPage(filePath: String, page: Int) {
         viewModelScope.launch { repo.clearPdfPage(filePath, page) }
+    }
+
+    /** علامات مرجعية على صفحات الـPDF — بيكتبها المستخدم بنفسه. */
+    val pdfBookmarks: StateFlow<List<PdfBookmarkEntity>> = repo.pdfBookmarks
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addPdfBookmark(filePath: String, page: Int, label: String) {
+        val title = label.trim().ifBlank { "صفحة ${page + 1}" }
+        viewModelScope.launch {
+            repo.addPdfBookmark(
+                PdfBookmarkEntity(
+                    filePath = filePath,
+                    page = page,
+                    label = title,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun deletePdfBookmark(id: Long) {
+        viewModelScope.launch { repo.deletePdfBookmark(id) }
     }
 
     // -------- عارض CAD (DXF/DWG قياس) --------

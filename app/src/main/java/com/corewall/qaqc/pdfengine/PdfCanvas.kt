@@ -58,6 +58,8 @@ fun PdfCanvas(
     onDrawMove: (Offset) -> Unit = {},
     onDrawEnd: () -> Unit = {},
     onTap: (Offset) -> Unit = {},
+    /** ضغطة مطوّلة — بيبدأ بيها تحديد النص. */
+    onLongPress: (Offset) -> Unit = {},
     /** بيترسم فوق الصفحات — التعليقات والقياسات. */
     overlay: DrawScope.(PdfViewerState) -> Unit = {}
 ) {
@@ -115,6 +117,7 @@ fun PdfCanvas(
                 if (!drawingActive) {
                     detectTapGestures(
                         onTap = { onTap(it) },
+                        onLongPress = { onLongPress(it) },
                         onDoubleTap = { point -> state.cycleZoom(point) }
                     )
                 }
