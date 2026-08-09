@@ -337,10 +337,7 @@ abstract class AppDatabase : RoomDatabase() {
                         "`filePath` TEXT NOT NULL, `page` INTEGER NOT NULL, " +
                         "`label` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
                 )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_pdf_bookmarks_filePath` " +
-                        "ON `pdf_bookmarks` (`filePath`)"
-                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_bookmarks_filePath` ON `pdf_bookmarks` (`filePath`)")
             }
         }
 

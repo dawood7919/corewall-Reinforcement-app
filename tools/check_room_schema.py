@@ -72,8 +72,24 @@ def from_schema(path: pathlib.Path) -> set[tuple]:
     return found
 
 
+# نصّين ملزوقين بـ`+` في Kotlin: `"…" +\n    "…"`. بيتشالوا قبل البحث.
+KOTLIN_CONCAT = re.compile(r'"\s*\+\s*"')
+
+
+def join_literals(src: str) -> str:
+    """
+    بيلزق النصوص المقسومة على أكتر من سطر في Kotlin.
+
+    من غير ده، `CREATE INDEX … ` + `ON …` مكتوبة على سطرين مابتتشافش —
+    والفحص بيقول إن الترحيل مش بيعمل الفهرس وهو بيعمله. الاتجاه العكسي
+    أخطر: فهرس **بيتعمل** في ترحيل ومش معلَن على الكيان بيعدّي من غير ما
+    حد ياخد باله، والتطبيق بيقفل عند المستخدم.
+    """
+    return KOTLIN_CONCAT.sub("", src)
+
+
 def from_migrations(path: pathlib.Path) -> set[tuple]:
-    src = path.read_text(encoding="utf-8")
+    src = join_literals(path.read_text(encoding="utf-8"))
     return {
         normalise(bool(m.group("unique")), m.group("name"), m.group("table"), m.group("cols"))
         for m in CREATE_INDEX.finditer(src)
