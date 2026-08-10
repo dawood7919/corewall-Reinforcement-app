@@ -27,6 +27,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build debug APK
+        env:
+          # بيتحط في BuildConfig.BUILD_COMMIT فشاشة "عن التطبيق" بتقول
+          # الكوميت اللي البناء اللي على الجهاز جاي منه بالظبط.
+          BUILD_COMMIT: ${{ github.sha }}
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon

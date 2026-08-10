@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
+import com.corewall.qaqc.BuildConfig
 import com.corewall.qaqc.ui.design.CwCard
 import com.corewall.qaqc.ui.design.CwKeyValue
 import com.corewall.qaqc.ui.design.CwKeyValueList
@@ -76,9 +77,20 @@ fun AboutScreen(modifier: Modifier = Modifier) {
                     color = c.textPrimary
                 )
                 Spacer(Modifier.height(Space.xs))
+                // الرقم جاي من البناء نفسه مش مكتوب بالإيد.
+                //
+                // كان مكتوب نصّاً ("الإصدار 8.1 (Build 33)") وفضل مكانه
+                // ٩ إصدارات — يعني الشاشة كانت بتقول رقم غلط للمستخدم،
+                // وهو أسوأ من ما تقولش حاجة. دلوقتي مستحيل يقدم.
                 Text(
-                    "الإصدار 8.1 (Build 33)",
+                    "الإصدار ${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
                     style = CwText.code,
+                    color = c.textTertiary
+                )
+                Spacer(Modifier.height(Space.xxs))
+                Text(
+                    "بناء ${BuildConfig.BUILD_COMMIT}",
+                    style = CwText.codeSmall,
                     color = c.textTertiary
                 )
             }

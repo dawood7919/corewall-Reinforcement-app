@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 44
-        versionName = "9.8"
+        versionCode = 45
+        versionName = "9.9"
 
         // PDFium مكتبة أصلية، ومعاها ٤ معماريات = ١٨ ميجا. الأجهزة الحقيقية
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.
@@ -23,6 +23,18 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+
+        // بصمة الكوميت جوّه التطبيق.
+        //
+        // السبب عملي: النسخ بتتوزّع كملف APK مباشر، والسؤال "انت شغّال على
+        // أنهي بناء؟" بيتكرر في كل مرة. الكوميت في شاشة "عن التطبيق"
+        // بيجاوبه من غير تخمين، وبيربط اللي على الجهاز باللي في الريبو.
+        // الـCI بيبعت `BUILD_COMMIT`؛ البناء المحلي بيكتب "local".
+        buildConfigField(
+            "String",
+            "BUILD_COMMIT",
+            "\"${System.getenv("BUILD_COMMIT") ?: "local"}\""
+        )
     }
 
     // مفتاح توقيع ثابت متسجّل في الريبو — كل بناء بيتوقّع بنفس المفتاح،
@@ -55,6 +67,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // مطلوب من AGP 8: من غيره `BuildConfig` مابيتولّدش أصلاً.
+        buildConfig = true
     }
 
     // BouncyCastle بيشحن نسخ متعددة من نفس ملفات الميتاداتا (واحدة لكل
