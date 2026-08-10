@@ -219,7 +219,9 @@ private fun CalloutCard(b: NoteBlock.Callout, ic: InlineColors) {
 
 @Composable
 fun ImageCard(path: String, caption: String, onOpen: () -> Unit) {
-    val bmp = rememberThumb(path)
+    // ملاحظة فيها عشر صور كانت بتفكّ ترميز عشر صور من الأول في كل مرة
+    // تفتحها. Coil بيكاش في الذاكرة وعلى القرص وبيلغي وقت التمرير.
+    val file = remember(path) { java.io.File(path) }
     val dim = rememberImageDim(path)
     val meta = rememberFileMeta(path)
     Surface(
@@ -230,23 +232,14 @@ fun ImageCard(path: String, caption: String, onOpen: () -> Unit) {
     ) {
         Column {
             Box {
-                if (bmp != null) {
-                    Image(
-                        bitmap = bmp.asImageBitmap(),
-                        contentDescription = caption,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                    )
-                } else {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
-                        contentAlignment = Alignment.Center
-                    ) { Icon(Icons.Filled.Fullscreen, contentDescription = null) }
-                }
+                coil3.compose.AsyncImage(
+                    model = file,
+                    contentDescription = caption,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                )
                 Surface(
                     color = Color.Black.copy(alpha = 0.45f),
                     contentColor = Color.White,

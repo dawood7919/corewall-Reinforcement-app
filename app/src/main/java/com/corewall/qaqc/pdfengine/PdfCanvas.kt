@@ -13,6 +13,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.conflate
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -28,6 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
@@ -67,13 +70,33 @@ fun PdfCanvas(
     val flingJob = remember { arrayOfNulls<Job>(1) }
     val measured by session.measuredCount.collectAsState()
 
-    // إعادة حساب المربّعات المطلوبة مع كل حركة. `revision` بيتغيّر مع كل
-    // تمرير أو تكبير، فده بيمشي مع الإيماءة من غير مؤقتات ولا تخمين.
-    LaunchedEffect(state.revision, measured, state.mode) {
-        val required = state.requiredTiles(session)
-        val previews = previewTilesFor(state, session)
-        // المعاينة الأول في الطابور: صفحة طرية أحسن من صفحة بيضا
-        engine.sync(previews + required)
+    /**
+     * إعادة حساب المربّعات المطلوبة مع كل حركة.
+     *
+     * `revision` بيتغيّر مع كل إطار وقت التمرير أو التكبير. لو ربطناه
+     * كمفتاح لـ`LaunchedEffect`، كل إطار كان بيلغي كوروتين ويطلق واحد
+     * جديد — ستّين إلغاء وإطلاق في الثانية وسط الإيماءة بالظبط، يعني
+     * ضغط تخصيص وGC في أسوأ لحظة ممكنة.
+     *
+     * `snapshotFlow` بيخلّي كوروتين **واحد** يعيش طول عمر الشاشة ويستقبل
+     * التغيّرات، و`conflate` بيرمي الإطارات اللي فاتت لو المزامنة اتأخّرت
+     * — واللي إحنا عايزينه فعلاً هو آخر وضع للشاشة مش تاريخها.
+     *
+     * `measured` لسه مفتاح لأنه بيتغيّر نادراً (لما صفحة تتقاس) ووقتها
+     * لازم نعيد الحساب من الأول بمقاسات حقيقية.
+     */
+    LaunchedEffect(engine, session, measured) {
+        snapshotFlow { state.revision to state.mode }
+            .conflate()
+            .collect {
+                // المعاينة الأول في الطابور: صفحة طرية أحسن من صفحة بيضا
+                val previews = previewTilesFor(state, session)
+                val required = state.requiredTiles(session)
+                val all = ArrayList<TileKey>(previews.size + required.size)
+                all.addAll(previews)
+                all.addAll(required)
+                engine.sync(all)
+            }
     }
 
     // بعد ما التكبير يستقر، نرمي المستويات البعيدة
@@ -264,6 +287,15 @@ private fun DrawScope.drawPages(
  * التقريب هنا مش تفصيلة: بنقرّب **الحافتين** (البداية والنهاية) مش البداية
  * والعرض. لو قرّبنا العرض، مربّعين متجاورين ممكن يبقى بينهم بكسل فاضي —
  * وعلى رسمة فيها خطوط رفيعة، الشبكة الرمادية دي بتبان بشكل فاضح.
+ *
+ * **الحلقة بتلفّ على المربّعات المرئية بس.** ده مش تجميل: صفحة A1 عند ٦٤×
+ * شبكتها ٥٣ عمود × ٧٥ صف = قرابة أربعة آلاف مربّع. الحلقة القديمة كانت
+ * بتلفّ عليهم كلهم **في كل إطار ولكل طبقة**، وكل لفّة فيها بحث في
+ * `SnapshotStateMap` — يعني تمانية آلاف قراءة مراقَبة في الإطار الواحد
+ * وقت التكبير. اللي بيتقاطع مع الشاشة فعلاً عشرات قليلة.
+ *
+ * القصّ ده **مابيغيّرش اللي بيترسم**: الفحص الدقيق للحدود لسه مكانه جوّه،
+ * والحدود المحسوبة هنا أوسع منه بمربّع. اللي بيتغيّر هو عدد اللفّات بس.
  */
 private fun DrawScope.drawTileLayer(
     engine: TileEngine,
@@ -279,8 +311,18 @@ private fun DrawScope.drawTileLayer(
     // بكسل المربّع → بكسل الشاشة
     val factor = zoom / grid.scale
 
-    for (row in 0 until grid.rows) {
-        for (col in 0 until grid.cols) {
+    // خطوة المربّع على الشاشة. موضع المربّع دايماً `index × step` بالظبط
+    // (العرض هو اللي بيقلّ على الحافة، مش الموضع) — فالحساب ده مضبوط.
+    val step = TILE_SIZE * factor
+    if (step <= 0f) return
+
+    val c0 = floor(-pageLeft / step).toInt().coerceIn(0, grid.cols - 1)
+    val c1 = floor((size.width - pageLeft) / step).toInt().coerceIn(0, grid.cols - 1)
+    val r0 = floor(-pageTop / step).toInt().coerceIn(0, grid.rows - 1)
+    val r1 = floor((size.height - pageTop) / step).toInt().coerceIn(0, grid.rows - 1)
+
+    for (row in r0..r1) {
+        for (col in c0..c1) {
             val image = engine.tiles[TileKey.of(page, level, row, col).packed] ?: continue
 
             val x0 = pageLeft + col * TILE_SIZE * factor

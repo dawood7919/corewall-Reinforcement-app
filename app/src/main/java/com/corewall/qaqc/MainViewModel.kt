@@ -78,6 +78,31 @@ private data class PourReadinessInputs(
     val barCounts: List<BarCountEntity>
 )
 
+/**
+ * ### سياسة الاشتراك في التدفّقات
+ *
+ * الـViewModel ده بيعرّف ٣١ `StateFlow`، وتسعتاشر منهم مبنيين فوق استعلام
+ * `Flow` من Room. `stateIn(..., Eagerly)` بيفتح الاستعلام **لحظة إنشاء
+ * الـViewModel** — يعني فتح التطبيق كان بيشغّل تسعتاشر استعلام `SELECT *`
+ * وبيسيبهم مشتركين للأبد، حتى الشاشات اللي المستخدم مافتحهاش. وأسوأ من
+ * كده: كل كتابة في أي جدول منهم بتعيد تشغيل الاستعلام وكل الحسابات اللي
+ * فوقه، والنتيجة بتترمي لأن مفيش شاشة بتعرضها.
+ *
+ * فبقى فيه صنفين:
+ *
+ * • **مباشر (`= …stateIn`)** — التدفّقات اللي بيتقرا منها `‎.value` بشكل
+ *   أمري من برّه أي اشتراك: `AgentHost` بيقرا `names` و`inspections`
+ *   و`tasks` و`notes` وغيرها كـلقطة لحظية عشان يبني سياق المساعد الذكي.
+ *   التدفّق ده لازم يكون مليان **قبل** أول قراية، فبيفضل مباشر.
+ *
+ * • **مؤجّل (`by lazy { …stateIn }`)** — التدفّقات اللي شاشة واحدة بتعرضها
+ *   ومحدش بيقرا `‎.value` منها: علامات الـPDF والقياسات، مكتبة الملفات،
+ *   تصنيفات الملاحظات، ملخّص الدور، مكتبة البرومبت. أول قراية بتفتح
+ *   الاستعلام، وقبلها التطبيق مش دافع تمنه.
+ *
+ * القاعدة لما تضيف تدفّق جديد: **مؤجّل افتراضياً**. خلّيه مباشر بس لو
+ * فيه كود بيقرا `‎.value` منه من غير ما يكون مشترك.
+ */
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val appContext: android.content.Context = app.applicationContext
@@ -154,10 +179,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val comments: StateFlow<List<CommentEntity>> = repo.comments
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val editedRowKeys: StateFlow<Set<Pair<String, Int>>> = repo.rangeEdits
-        .map { edits -> edits.map { it.mark to it.rowIndex }.toSet() }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    val editedRowKeys: StateFlow<Set<Pair<String, Int>>> by lazy {
+        repo.rangeEdits
+            .map { edits -> edits.map { it.mark to it.rowIndex }.toSet() }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    }
 
     fun setLens(lens: Lens) {
         _lens.value = lens
@@ -360,11 +387,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ══════════════════════════════════════════════ نظام الملاحظات
 
-    val noteLabels: StateFlow<List<NoteLabelEntity>> = repo.noteLabels
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val noteLabels: StateFlow<List<NoteLabelEntity>> by lazy {
+        repo.noteLabels.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
-    private val noteLabelLinks: StateFlow<List<NoteLabelLinkEntity>> = repo.noteLabelLinks
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val noteLabelLinks: StateFlow<List<NoteLabelLinkEntity>> by lazy {
+        repo.noteLabelLinks.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
     /**
      * تصنيفات كل ملاحظة، مبنية مرة واحدة.
@@ -372,7 +401,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * لو الشاشة حسبتها لكل كارت، عرض ٥٠٠ ملاحظة معناه ٥٠٠ بحث في جدول
      * الروابط في كل إطار. الخريطة بتتبني مرة مع كل تغيير وبتتقري بمفتاح.
      */
-    val labelsByNote: StateFlow<Map<Long, List<NoteLabelEntity>>> =
+    val labelsByNote: StateFlow<Map<Long, List<NoteLabelEntity>>> by lazy {
         combine(noteLabels, noteLabelLinks) { labels, links ->
             val byId = labels.associateBy { it.id }
             links.groupBy { it.noteId }
@@ -380,6 +409,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    }
 
     private val _notesView = MutableStateFlow(NotesView.ACTIVE)
     val notesView: StateFlow<NotesView> = _notesView
@@ -399,25 +429,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * ده اللي بيخلّي البحث يفضل سلس على ألف ملاحظة: كل ضغطة زرار بتعيد
      * الفلترة على `Dispatchers.Default` والشاشة بتستلم النتيجة جاهزة.
      */
-    val visibleNotes: StateFlow<List<NoteEntity>> =
+    val visibleNotes: StateFlow<List<NoteEntity>> by lazy {
         combine(notes, _notesView, _notesLabelFilter, _notesQuery, labelsByNote) {
             all, view, label, query, labels ->
             NotesLogic.visible(all, view, label, query) { id -> labels[id].orEmpty() }
         }
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
     /** عدّادات الأقسام — بتظهر جنب أسماءها في القايمة الجانبية. */
-    val notesCounts: StateFlow<Map<NotesView, Int>> = notes
-        .map { all ->
-            mapOf(
-                NotesView.ACTIVE to all.count { it.isActive },
-                NotesView.ARCHIVE to all.count { it.archived && !it.isTrashed },
-                NotesView.TRASH to all.count { it.isTrashed }
-            )
-        }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    val notesCounts: StateFlow<Map<NotesView, Int>> by lazy {
+        notes
+            .map { all ->
+                mapOf(
+                    NotesView.ACTIVE to all.count { it.isActive },
+                    NotesView.ARCHIVE to all.count { it.archived && !it.isTrashed },
+                    NotesView.TRASH to all.count { it.isTrashed }
+                )
+            }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    }
 
     fun setNotesView(view: NotesView) {
         _notesView.value = view
@@ -978,8 +1011,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------- مكتبة البرومبت
 
-    val prompts: StateFlow<List<com.corewall.qaqc.data.db.PromptEntity>> = repo.prompts
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val prompts: StateFlow<List<com.corewall.qaqc.data.db.PromptEntity>> by lazy {
+        repo.prompts.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
     private suspend fun resolvePrompt(id: Long?): com.corewall.qaqc.ai.PromptChoice {
         if (id == null) return com.corewall.qaqc.ai.PromptChoice.Default
@@ -1601,8 +1635,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openPdfOrganizer(path: String) { navigator.push(Dest.PdfOrganizer(path)) }
     fun closePdf() { back() }
 
-    val pdfAnnotations: StateFlow<List<PdfAnnotationEntity>> = repo.pdfAnnotations
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val pdfAnnotations: StateFlow<List<PdfAnnotationEntity>> by lazy {
+        repo.pdfAnnotations.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
     fun addPdfAnnotation(entity: PdfAnnotationEntity) {
         viewModelScope.launch { repo.addPdfAnnotation(entity) }
@@ -1622,8 +1657,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** علامات مرجعية على صفحات الـPDF — بيكتبها المستخدم بنفسه. */
-    val pdfBookmarks: StateFlow<List<PdfBookmarkEntity>> = repo.pdfBookmarks
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val pdfBookmarks: StateFlow<List<PdfBookmarkEntity>> by lazy {
+        repo.pdfBookmarks.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
     fun addPdfBookmark(filePath: String, page: Int, label: String) {
         val title = label.trim().ifBlank { "صفحة ${page + 1}" }
@@ -1645,11 +1681,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // -------- القياس على الرسمة --------
 
-    val pdfMeasurements: StateFlow<List<PdfMeasurementEntity>> = repo.pdfMeasurements
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val pdfMeasurements: StateFlow<List<PdfMeasurementEntity>> by lazy {
+        repo.pdfMeasurements.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
-    val pdfScales: StateFlow<List<PdfScaleEntity>> = repo.pdfScales
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val pdfScales: StateFlow<List<PdfScaleEntity>> by lazy {
+        repo.pdfScales.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
     fun addPdfMeasurement(entity: PdfMeasurementEntity) {
         viewModelScope.launch { repo.addPdfMeasurement(entity) }
@@ -1701,17 +1739,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** بيانات الملفات: وسوم، مفضّلة، نصّ مستخرج، روابط. */
     val fileLibrary: FileLibrary = (app as CoreWallApp).fileLibrary
 
-    val fileMeta: StateFlow<Map<String, FileMetaEntity>> = fileLibrary.allMeta
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    val fileMeta: StateFlow<Map<String, FileMetaEntity>> by lazy {
+        fileLibrary.allMeta.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    }
 
-    val fileFavourites: StateFlow<List<FileMetaEntity>> = fileLibrary.favourites
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val fileFavourites: StateFlow<List<FileMetaEntity>> by lazy {
+        fileLibrary.favourites.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
-    val fileRecent: StateFlow<List<FileMetaEntity>> = fileLibrary.recent
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val fileRecent: StateFlow<List<FileMetaEntity>> by lazy {
+        fileLibrary.recent.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
-    val fileTags: StateFlow<List<String>> = fileLibrary.allTags
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val fileTags: StateFlow<List<String>> by lazy {
+        fileLibrary.allTags.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
 
     private val _fileQuery = MutableStateFlow("")
     val fileQuery: StateFlow<String> = _fileQuery
@@ -1764,7 +1806,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * ملخّص الدور — محسوب هنا مرّة واحدة وكل الشاشات بتقراه.
      * القاعدة: احسب في الـViewModel، الشاشة تعرض بس.
      */
-    val floorSummary: StateFlow<FloorSummary> = run {
+    val floorSummary: StateFlow<FloorSummary> by lazy {
         val core = combine(_currentLevel, names, inspections, schedule) { l, n, i, s ->
             FloorCore(l, n, i, s)
         }

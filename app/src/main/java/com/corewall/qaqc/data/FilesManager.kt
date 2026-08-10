@@ -14,13 +14,35 @@ import java.io.File
  */
 class FilesManager(private val context: Context) {
 
+    /**
+     * المجلدات اللي اتعمِلت في العملية دي.
+     *
+     * كل دالة مجلد هنا كانت بتنده `mkdirs()` في كل استدعاء، و`root` كانت
+     * `get()` بتنده `getExternalFilesDir()` كمان — والاتنين عمليات نظام
+     * ملفات حقيقية. الدوال دي بتتنده من التركيب (شاشة الملفات وصور
+     * الموقع)، يعني قراية قرص على خيط الواجهة مع كل إعادة تركيب.
+     *
+     * المجلد لو اتعمل مرة فهو موجود، فبنفتكره. السلوك زي ما هو — المجلد
+     * مضمون إنه موجود قبل أي كتابة — بس التكلفة بقت بحث في `HashSet`.
+     *
+     * لو المستخدم مسح المجلد من برّه التطبيق، الكتابة الجاية هتفشل زي ما
+     * كانت هتفشل لو الـSD اتشالت؛ الحالة دي متعامَل معاها في مكان
+     * الكتابة أصلاً.
+     */
+    private val ensured = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    private fun File.ensure(): File {
+        if (ensured.add(absolutePath)) mkdirs()
+        return this
+    }
+
     val root: File
         get() = File(context.getExternalFilesDir(null) ?: context.filesDir, "corewall-files")
-            .apply { mkdirs() }
+            .ensure()
 
     /** مجلد ملفات الدور (قسم "الملفات"). */
     fun levelDir(level: String): File =
-        File(root, "levels/${sanitize(level)}").apply { mkdirs() }
+        File(root, "levels/${sanitize(level)}").ensure()
 
     /**
      * مجلد المكتبة المشتركة بين كل الأدوار.
@@ -28,17 +50,17 @@ class FilesManager(private val context: Context) {
      * واضح، ومايحصلش خلط بين ملف دور وملف مشترك.
      */
     fun projectKnowledgeDir(): File =
-        File(root, "project-knowledge").apply { mkdirs() }
+        File(root, "project-knowledge").ensure()
 
     /** مجلد مرفقات عنصر في دور (قسم "بلان فيل"). */
     fun attachmentsDir(level: String, elementId: String): File =
-        File(root, "attachments/${sanitize(level)}/${sanitize(elementId)}").apply { mkdirs() }
+        File(root, "attachments/${sanitize(level)}/${sanitize(elementId)}").ensure()
 
     /** مجلد صور الموقع (Site Photos) لكل دور — يدعم مجلدات فرعية. */
     fun sitePhotosDir(level: String, folder: String = ""): File {
         val base = File(root, "site-photos/${sanitize(level)}")
         val dir = if (folder.isBlank()) base else File(base, sanitizeFolderPath(folder))
-        return dir.apply { mkdirs() }
+        return dir.ensure()
     }
 
     private fun sanitize(name: String) = name.replace(Regex("[^A-Za-z0-9._\\- ]"), "_")
@@ -67,7 +89,24 @@ class FilesManager(private val context: Context) {
         return createFolder(parent, name)
     }
 
-    fun delete(file: File): Boolean = file.deleteRecursively()
+    /**
+     * بينسى مجلد (وكل اللي جوّاه) من [ensured].
+     *
+     * لازم يتنده مع أي حذف أو نقل أو إعادة تسمية، وإلا `ensure()` هيفتكر
+     * إن المجلد لسه موجود ويعدّي من غير ما يعمله تاني — وأول كتابة جوّاه
+     * بعد كده هتفشل من غير سبب واضح.
+     */
+    private fun forget(file: File) {
+        val prefix = file.absolutePath
+        synchronized(ensured) {
+            ensured.removeAll { it == prefix || it.startsWith("$prefix/") }
+        }
+    }
+
+    fun delete(file: File): Boolean {
+        forget(file)
+        return file.deleteRecursively()
+    }
 
     /** إعادة تسمية مع الحفاظ على الامتداد لو المستخدم مكتبوش. */
     fun rename(file: File, newName: String): Boolean {
@@ -78,6 +117,7 @@ class FilesManager(private val context: Context) {
         val finalName = sanitize(if (hasExt || file.isDirectory || ext.isEmpty()) trimmed else "$trimmed.$ext")
         val target = File(file.parentFile, finalName)
         if (target.exists()) return false
+        forget(file)
         return file.renameTo(target)
     }
 
@@ -110,7 +150,7 @@ class FilesManager(private val context: Context) {
     /** نقل ملف/مجلد لمجلد هدف. */
     fun moveInto(file: File, targetDir: File): Boolean {
         if (targetDir.absolutePath.startsWith(file.absolutePath)) return false
-        return if (copyInto(file, targetDir)) file.deleteRecursively() else false
+        return if (copyInto(file, targetDir)) delete(file) else false
     }
 
     /** تكرار الملف/المجلد في نفس المكان. */
@@ -149,7 +189,7 @@ class FilesManager(private val context: Context) {
 
     /** ملف صورة جديد فاضي لالتقاط صورة بالكاميرا (جوّه مجلد صور الملاحظات). */
     fun newImageFile(level: String, elementId: String): File {
-        val dir = File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").apply { mkdirs() }
+        val dir = File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").ensure()
         return File(dir, "IMG_${System.currentTimeMillis()}.jpg")
     }
 
@@ -161,7 +201,7 @@ class FilesManager(private val context: Context) {
 
     /** نسخ صور مختارة من المعرض لمجلد صور الملاحظات — بترجع مساراتها. */
     fun importNoteImages(uris: List<Uri>, level: String, elementId: String): List<File> {
-        val dir = File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").apply { mkdirs() }
+        val dir = File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").ensure()
         return importUris(uris, dir)
     }
 

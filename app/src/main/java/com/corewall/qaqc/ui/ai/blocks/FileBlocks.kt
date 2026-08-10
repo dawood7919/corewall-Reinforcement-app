@@ -40,7 +40,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.corewall.qaqc.ai.model.AnswerFile
 import com.corewall.qaqc.ui.notes.rememberPdfThumb
-import com.corewall.qaqc.ui.notes.rememberThumb
 import com.corewall.qaqc.ui.theme.LocalSrtColors
 import java.io.File
 
@@ -99,24 +98,32 @@ private fun FileRow(af: AnswerFile, onOpen: (String) -> Unit) {
                 Modifier.size(46.dp).clip(RoundedCornerShape(10.dp)).background(srt.blueTint),
                 contentAlignment = Alignment.Center
             ) {
-                val thumb = when {
-                    isImage -> rememberThumb(af.path, 160)
-                    ext == "pdf" -> rememberPdfThumb(af.path, 120)
-                    else -> null
-                }
-                if (thumb != null) {
-                    androidx.compose.foundation.Image(
-                        bitmap = thumb.asImageBitmap(),
+                // الأيقونة تحت الصورة دايماً: بتغطّي وقت التحميل وحالة
+                // الملف اللي مابيتفكّش ترميزه، من غير فرع فاضي.
+                Icon(
+                    if (f.isDirectory) Icons.Filled.Folder else iconFor(ext),
+                    contentDescription = null, tint = srt.blue,
+                    modifier = Modifier.size(22.dp)
+                )
+                // الصور من Coil (كاش + إلغاء)، والـPDF لسه محتاج
+                // `PdfRenderer` عشان يطلع أول صفحة — مفيش فاكّ ترميز
+                // جاهز ليه في Coil.
+                if (isImage) {
+                    coil3.compose.AsyncImage(
+                        model = f,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
-                } else {
-                    Icon(
-                        if (f.isDirectory) Icons.Filled.Folder else iconFor(ext),
-                        contentDescription = null, tint = srt.blue,
-                        modifier = Modifier.size(22.dp)
-                    )
+                } else if (ext == "pdf") {
+                    rememberPdfThumb(af.path, 120)?.let { thumb ->
+                        androidx.compose.foundation.Image(
+                            bitmap = thumb.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
             Spacer(Modifier.width(10.dp))
@@ -182,28 +189,25 @@ fun ImageGallery(files: List<AnswerFile>, onOpen: (String) -> Unit, modifier: Mo
 
 @Composable
 private fun Thumb(af: AnswerFile, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
-    val bmp = rememberThumb(af.path, 300)
+    val file = remember(af.path) { File(af.path) }
     Surface(
         onClick = { onOpen(af.path) },
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = modifier.aspectRatio(1f)
     ) {
-        if (bmp != null) {
-            androidx.compose.foundation.Image(
-                bitmap = bmp.asImageBitmap(),
-                contentDescription = af.caption.ifBlank { File(af.path).name },
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Filled.Image, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+            coil3.compose.AsyncImage(
+                model = file,
+                contentDescription = af.caption.ifBlank { file.name },
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
-        } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Filled.Image, contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
         }
     }
 }

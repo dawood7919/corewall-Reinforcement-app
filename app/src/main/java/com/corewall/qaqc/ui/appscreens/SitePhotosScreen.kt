@@ -66,7 +66,7 @@ import com.corewall.qaqc.ui.design.Sizes
 import com.corewall.qaqc.ui.design.Space
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.ui.EmptyState
-import com.corewall.qaqc.ui.notes.rememberThumb
+import coil3.compose.AsyncImage
 import com.corewall.qaqc.ui.theme.LocalSrtColors
 import java.io.File
 import java.text.SimpleDateFormat
@@ -373,7 +373,11 @@ private fun SitePhotoCard(
     onDelete: () -> Unit
 ) {
     val srt = LocalSrtColors.current
-    val bmp = rememberThumb(photo.filePath, targetPx = 700)
+    // Coil مش `rememberThumb`: الكارت ده في شبكة بتتمرّر، والقديم كان
+    // بيفكّ ترميز الصورة من الملف من الأول كل مرة الكارت يرجع للشاشة —
+    // من غير كاش ومن غير إلغاء لما يخرج منها. مجلد فيه ٢٠٠ صورة موقع كان
+    // بيهتهت ويضغط الذاكرة بلا داعي.
+    val photoFile = remember(photo.filePath) { File(photo.filePath) }
     val dateText = remember(photo.timestamp) { photoDateFmt.format(Date(photo.timestamp)) }
 
     Surface(
@@ -390,19 +394,24 @@ private fun SitePhotoCard(
                 .clip(Radius.shapeLg)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            if (bmp != null) {
-                Surface(onClick = onOpen, modifier = Modifier.fillMaxSize()) {
-                    Image(
-                        bitmap = bmp.asImageBitmap(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Image, contentDescription = null, tint = srt.text3, modifier = Modifier.size(40.dp))
-                }
+            // أيقونة تحت الصورة: بتبان وقت التحميل ولو الملف اتشال من
+            // برّه التطبيق. الفحص القديم `exists()` كان قراية قرص جوّه
+            // التركيب — مرة لكل كارت في كل إطار تمرير.
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Filled.Image,
+                    contentDescription = null,
+                    tint = srt.text3,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+            Surface(onClick = onOpen, modifier = Modifier.fillMaxSize()) {
+                AsyncImage(
+                    model = photoFile,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
             }
 
             // تدرج سفلي + النص مكتوب على الصورة

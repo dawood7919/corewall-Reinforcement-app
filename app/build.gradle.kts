@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 46
-        versionName = "10.0"
+        versionCode = 47
+        versionName = "10.1"
 
         // PDFium مكتبة أصلية، ومعاها ٤ معماريات = ١٨ ميجا. الأجهزة الحقيقية
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.
@@ -96,6 +96,10 @@ ksp {
 }
 
 dependencies {
+    // اختبارات وحدة على الـJVM — من غير أندرويد. الغرض تثبيت محرّك
+    // الحساب وهندسة الـPDF: أي تحسين أداء لازم يفضل بيطلع نفس الأرقام.
+    testImplementation("junit:junit:4.13.2")
+
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.2")
