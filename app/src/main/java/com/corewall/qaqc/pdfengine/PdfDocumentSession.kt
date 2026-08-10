@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.os.ParcelFileDescriptor
 import io.legere.pdfiumandroid.FindFlags
 import io.legere.pdfiumandroid.PdfDocument
+import io.legere.pdfiumandroid.PdfPage
 import io.legere.pdfiumandroid.PdfTextPage
 import io.legere.pdfiumandroid.PdfiumCore
 import io.legere.pdfiumandroid.util.Config
@@ -51,6 +52,51 @@ class PdfDocumentSession private constructor(
     private var closed = false
 
     /**
+     * صفحات PDFium المفتوحة — كاش صغير بترتيب الاستخدام.
+     *
+     * `doc.openPage(n)` مش استدعاء رخيص: PDFium بيفكّ محتوى الصفحة ويبني
+     * شجرة الكائنات بتاعتها. الكود كان بينده `openPage(…).use { }` **لكل
+     * مربّع على حدة**، يعني صفحة رسمة فيها اتناشر مربّع مرئي كانت بتتفتح
+     * وتتقفل اتناشر مرة لكل مستوى تكبير — وده أغلى بكتير من الرسم نفسه.
+     *
+     * الكاش هنا **مش محتاج أقفال**: كل الدوال اللي بتلمسه `withContext
+     * (dispatcher)`، والـdispatcher خيط واحد. ده نفس السبب اللي خلّى
+     * المستند كله على خيط واحد من الأصل.
+     *
+     * السقف تلات صفحات: الصفحة اللي انت عليها واللي فوقها واللي تحتها —
+     * ودول اللي التمرير المستمر بيلمسهم فعلاً.
+     */
+    private val openPages = LinkedHashMap<Int, PdfPage>(4, 0.75f, true)
+
+    /**
+     * بيرجّع صفحة مفتوحة (من الكاش أو بيفتحها). **ممنوع تقفلها** — الكاش
+     * هو اللي بيقفل، وقفلها من برّه بيسيب مؤشّر ميت جوّه الخريطة.
+     *
+     * لازم يتنده من على [dispatcher] بس.
+     */
+    private fun pageHandle(index: Int): PdfPage? {
+        if (closed || index !in 0 until pageCount) return null
+        openPages[index]?.let { return it }
+        val opened = runCatching { doc.openPage(index) }.getOrNull() ?: return null
+        openPages[index] = opened
+        if (openPages.size > MAX_OPEN_PAGES) {
+            val oldest = openPages.entries.iterator()
+            if (oldest.hasNext()) {
+                val entry = oldest.next()
+                oldest.remove()
+                runCatching { entry.value.close() }
+            }
+        }
+        return opened
+    }
+
+    /** بيقفل كل الصفحات المفتوحة. لازم يتنده من على [dispatcher]. */
+    private fun closeOpenPages() {
+        openPages.values.forEach { runCatching { it.close() } }
+        openPages.clear()
+    }
+
+    /**
      * مقاسات الصفحات — بتتقاس **عند الطلب** مش كلها عند الفتح.
      *
      * مستند ٢٠٠٠ صفحة لو قِسنا كل صفحاته وقت الفتح هيستنى ثواني قبل ما يبان
@@ -85,10 +131,9 @@ class PdfDocumentSession private constructor(
     suspend fun measure(page: Int): Boolean = withContext(dispatcher) {
         if (closed || page !in 0 until pageCount) return@withContext false
         if (sizes[page] != null) return@withContext false
+        val handle = pageHandle(page) ?: return@withContext false
         val measured = runCatching {
-            doc.openPage(page).use { p ->
-                SizePt(p.getPageWidthPoint().toFloat(), p.getPageHeightPoint().toFloat())
-            }
+            SizePt(handle.getPageWidthPoint().toFloat(), handle.getPageHeightPoint().toFloat())
         }.getOrNull() ?: return@withContext false
         if (measured.width <= 0f || measured.height <= 0f) return@withContext false
         sizes[page] = measured
@@ -127,19 +172,18 @@ class PdfDocumentSession private constructor(
         }.getOrNull() ?: return@withContext null
 
         val ok = runCatching {
-            doc.openPage(page).use { p ->
-                p.renderPageBitmap(
-                    bitmap = bitmap,
-                    startX = -originX,
-                    startY = -originY,
-                    drawSizeX = gridWidth,
-                    drawSizeY = gridHeight,
-                    renderAnnot = true,
-                    textMask = false,
-                    canvasColor = WHITE,
-                    pageBackgroundColor = WHITE
-                )
-            }
+            val p = pageHandle(page) ?: return@runCatching false
+            p.renderPageBitmap(
+                bitmap = bitmap,
+                startX = -originX,
+                startY = -originY,
+                drawSizeX = gridWidth,
+                drawSizeY = gridHeight,
+                renderAnnot = true,
+                textMask = false,
+                canvasColor = WHITE,
+                pageBackgroundColor = WHITE
+            )
             true
         }.getOrDefault(false)
 
@@ -167,10 +211,11 @@ class PdfDocumentSession private constructor(
     private fun <T> onTextPage(page: Int, block: (PdfTextPage, Float) -> T): T? {
         if (closed || page !in 0 until pageCount) return null
         return runCatching {
-            doc.openPage(page).use { p ->
-                val height = p.getPageHeightPoint().toFloat()
-                p.openTextPage().use { t -> block(t, height) }
-            }
+            val p = pageHandle(page) ?: return null
+            val height = p.getPageHeightPoint().toFloat()
+            // صفحة النص نفسها بتفضل قصيرة العمر: البحث والتحديد بيحصلوا
+            // على دفعات، ومسكها مفتوحة بيشيل ذاكرة من غير مكسب.
+            p.openTextPage().use { t -> block(t, height) }
         }.getOrNull()
     }
 
@@ -389,6 +434,9 @@ class PdfDocumentSession private constructor(
         // القفل نفسه لازم يحصل على خيط PDFium، وبعدين نطفّي الخيط.
         runCatching {
             executor.submit {
+                // الصفحات الأول: قفل المستند وفيه صفحات مفتوحة تسريب
+                // للذاكرة الأصلية (والمكتبة مش بتتشكى).
+                closeOpenPages()
                 runCatching { doc.close() }
                 runCatching { pfd.close() }
             }.get()
@@ -399,6 +447,9 @@ class PdfDocumentSession private constructor(
 
     companion object {
         private const val WHITE = 0xFFFFFFFF.toInt()
+
+        /** أقصى عدد صفحات PDFium مفتوحة في وقت واحد لكل مستند. */
+        private const val MAX_OPEN_PAGES = 3
 
         /**
          * سقف نتائج الصفحة الواحدة.

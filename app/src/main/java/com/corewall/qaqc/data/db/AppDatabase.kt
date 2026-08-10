@@ -37,7 +37,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NoteLabelEntity::class,
         NoteLabelLinkEntity::class
     ],
-    version = 17,
+    version = 18,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -388,6 +388,19 @@ abstract class AppDatabase : RoomDatabase() {
          * `tools/check_room_schema.py` بيقارنهم في الـCI، والاختلاف معناه
          * تطبيق بيقفل أول ما يفتح عند اللي بيحدّث.
          */
+        /**
+         * فهرس على `pdf_annotations.filePath`.
+         *
+         * الاستعلام بقى بيفلتر بالملف بدل ما يقرا الجدول كله ويفلتر في
+         * Kotlin — ومن غير فهرس ده مسح كامل للجدول مع كل فتحة رسمة.
+         * مفيش تغيير في أي بيانات.
+         */
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_filePath` ON `pdf_annotations` (`filePath`)")
+            }
+        }
+
         private val MIGRATION_16_17 = object : Migration(16, 17) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `notes` ADD COLUMN `pinned` INTEGER NOT NULL DEFAULT 0")
@@ -465,7 +478,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
-                    MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17
+                    MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
+                    MIGRATION_17_18
                 ).build().also { instance = it }
             }
     }

@@ -255,7 +255,7 @@ data class TaskEntity(
  * النقط متخزنة منسّبة (0..1) لأبعاد الصفحة عشان تثبت مع أي زوم أو تصدير.
  */
 @Serializable
-@Entity(tableName = "pdf_annotations")
+@Entity(tableName = "pdf_annotations", indices = [Index(value = ["filePath"])])
 data class PdfAnnotationEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val filePath: String,

@@ -1635,9 +1635,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openPdfOrganizer(path: String) { navigator.push(Dest.PdfOrganizer(path)) }
     fun closePdf() { back() }
 
-    val pdfAnnotations: StateFlow<List<PdfAnnotationEntity>> by lazy {
-        repo.pdfAnnotations.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    }
+    /**
+     * بيانات رسمة واحدة — تدفّق لكل ملف مش تدفّق للجدول كله.
+     *
+     * قبل كده كان فيه `StateFlow` واحد بكل تعليقات كل الملفات، والشاشة
+     * بتفلتره في Kotlin. يعني فتح رسمة = قراية الجدول كله، وأي تعديل على
+     * أي ملف تانٍ = إعادة بناء القايمة. دلوقتي الاستعلام بيفلتر في SQL
+     * (وفيه فهرس على `filePath`)، والاشتراك بيعيش مع الشاشة بس.
+     */
+    fun pdfAnnotationsFor(filePath: String) = repo.pdfAnnotationsFor(filePath)
 
     fun addPdfAnnotation(entity: PdfAnnotationEntity) {
         viewModelScope.launch { repo.addPdfAnnotation(entity) }
@@ -1657,9 +1663,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** علامات مرجعية على صفحات الـPDF — بيكتبها المستخدم بنفسه. */
-    val pdfBookmarks: StateFlow<List<PdfBookmarkEntity>> by lazy {
-        repo.pdfBookmarks.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    }
+    fun pdfBookmarksFor(filePath: String) = repo.pdfBookmarksFor(filePath)
 
     fun addPdfBookmark(filePath: String, page: Int, label: String) {
         val title = label.trim().ifBlank { "صفحة ${page + 1}" }
@@ -1681,13 +1685,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // -------- القياس على الرسمة --------
 
-    val pdfMeasurements: StateFlow<List<PdfMeasurementEntity>> by lazy {
-        repo.pdfMeasurements.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    }
+    fun pdfMeasurementsFor(filePath: String) = repo.pdfMeasurementsFor(filePath)
 
-    val pdfScales: StateFlow<List<PdfScaleEntity>> by lazy {
-        repo.pdfScales.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    }
+    fun pdfScalesFor(filePath: String) = repo.pdfScalesFor(filePath)
 
     fun addPdfMeasurement(entity: PdfMeasurementEntity) {
         viewModelScope.launch { repo.addPdfMeasurement(entity) }

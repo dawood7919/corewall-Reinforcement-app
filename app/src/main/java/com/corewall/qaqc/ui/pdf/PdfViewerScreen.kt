@@ -189,11 +189,13 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     val measure = remember(path) { MeasureSession() }
     var calibrationOpen by remember(path) { mutableStateOf(false) }
 
-    val allMeasurements by vm.pdfMeasurements.collectAsStateWithLifecycle()
-    val fileMeasurements = remember(allMeasurements, path) {
-        allMeasurements.filter { it.filePath == path }
-    }
-    val allScales by vm.pdfScales.collectAsStateWithLifecycle()
+    // الاستعلام بقى مفلتر بالملف في SQL، فمفيش فلترة في Kotlin ومفيش
+    // اشتراك في بيانات ملفات المستخدم مش فاتحها. `remember(path)` عشان
+    // التدفّق ما يتبنيش من الأول مع كل إعادة تركيب.
+    val fileMeasurements by remember(path) { vm.pdfMeasurementsFor(path) }
+        .collectAsStateWithLifecycle(emptyList())
+    val allScales by remember(path) { vm.pdfScalesFor(path) }
+        .collectAsStateWithLifecycle(emptyList())
 
     /**
      * معايرة الصفحة: الأخصّ الأول.
@@ -253,8 +255,8 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
             .orEmpty()
     }
 
-    val bookmarks by vm.pdfBookmarks.collectAsStateWithLifecycle()
-    val fileBookmarks = remember(bookmarks, path) { bookmarks.filter { it.filePath == path } }
+    val fileBookmarks by remember(path) { vm.pdfBookmarksFor(path) }
+        .collectAsStateWithLifecycle(emptyList())
 
     /**
      * استرجاع آخر موقع — بيشتغل مرة واحدة عند فتح الملف.
@@ -290,10 +292,8 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     }
 
     // ── التعليقات والأدوات
-    val allAnnotations by vm.pdfAnnotations.collectAsStateWithLifecycle()
-    val fileAnnotations = remember(allAnnotations, path) {
-        allAnnotations.filter { it.filePath == path }
-    }
+    val fileAnnotations by remember(path) { vm.pdfAnnotationsFor(path) }
+        .collectAsStateWithLifecycle(emptyList())
 
     var tool by remember { mutableStateOf(PdfTool.PAN) }
     var style by remember { mutableStateOf(ToolStyle()) }
@@ -337,7 +337,11 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
         draftPage = -1
     }
 
-    val pageAnnotations = fileAnnotations.filter { it.page == state.currentPage }
+    // فلترة بتتعاد مع كل إعادة تركيب لو مااتحفظتش — و`currentPage` بيتغيّر
+    // مع التمرير، يعني الشاشة دي بتعيد التركيب كتير وهي فاتحة.
+    val pageAnnotations = remember(fileAnnotations, state.currentPage) {
+        fileAnnotations.filter { it.page == state.currentPage }
+    }
 
     fun undo() {
         val last = pageAnnotations.maxByOrNull { it.id } ?: return

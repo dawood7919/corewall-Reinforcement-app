@@ -340,6 +340,15 @@ class AppRepository(context: Context) {
 
     val pdfAnnotations: Flow<List<PdfAnnotationEntity>> = db.pdfAnnotationDao().observeAll()
 
+    /**
+     * بيانات رسمة واحدة.
+     *
+     * العارض بيفتح ملف واحد، فمالوش لازمة يشترك في تعليقات وعلامات
+     * وقياسات كل الملفات. الاشتراك بيبدأ مع فتح الملف وبيقف مع قفله.
+     */
+    fun pdfAnnotationsFor(filePath: String): Flow<List<PdfAnnotationEntity>> =
+        db.pdfAnnotationDao().observeForFile(filePath)
+
     suspend fun addPdfAnnotation(entity: PdfAnnotationEntity) = db.pdfAnnotationDao().upsert(entity)
     suspend fun undoLastPdfAnnotation(filePath: String, page: Int) =
         db.pdfAnnotationDao().deleteLast(filePath, page)
@@ -350,11 +359,20 @@ class AppRepository(context: Context) {
 
     val pdfBookmarks: Flow<List<PdfBookmarkEntity>> = db.pdfBookmarkDao().observeAll()
 
+    fun pdfBookmarksFor(filePath: String): Flow<List<PdfBookmarkEntity>> =
+        db.pdfBookmarkDao().observeForFile(filePath)
+
     suspend fun addPdfBookmark(entity: PdfBookmarkEntity) = db.pdfBookmarkDao().upsert(entity)
     suspend fun deletePdfBookmark(id: Long) = db.pdfBookmarkDao().delete(id)
 
     val pdfMeasurements: Flow<List<PdfMeasurementEntity>> = db.pdfMeasurementDao().observeAll()
     val pdfScales: Flow<List<PdfScaleEntity>> = db.pdfScaleDao().observeAll()
+
+    fun pdfMeasurementsFor(filePath: String): Flow<List<PdfMeasurementEntity>> =
+        db.pdfMeasurementDao().observeForFile(filePath)
+
+    fun pdfScalesFor(filePath: String): Flow<List<PdfScaleEntity>> =
+        db.pdfScaleDao().observeForFile(filePath)
 
     suspend fun addPdfMeasurement(entity: PdfMeasurementEntity) =
         db.pdfMeasurementDao().upsert(entity)

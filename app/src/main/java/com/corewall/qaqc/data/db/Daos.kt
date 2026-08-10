@@ -227,6 +227,16 @@ interface PdfAnnotationDao {
     @Query("SELECT * FROM pdf_annotations")
     fun observeAll(): Flow<List<PdfAnnotationEntity>>
 
+    /**
+     * تعليقات ملف واحد.
+     *
+     * الشاشة كانت بتحمّل تعليقات **كل** الملفات وتفلتر في Kotlin. على
+     * مشروع فيه مئات الرسمات ده معناه إن فتح رسمة واحدة بيقرا الجدول كله،
+     * وأي تعليقة على أي ملف تانٍ بتعيد بناء القايمة كلها.
+     */
+    @Query("SELECT * FROM pdf_annotations WHERE filePath = :filePath")
+    fun observeForFile(filePath: String): Flow<List<PdfAnnotationEntity>>
+
     @Query("SELECT * FROM pdf_annotations")
     suspend fun getAll(): List<PdfAnnotationEntity>
 
@@ -251,6 +261,9 @@ interface PdfBookmarkDao {
     @Query("SELECT * FROM pdf_bookmarks ORDER BY filePath, page")
     fun observeAll(): Flow<List<PdfBookmarkEntity>>
 
+    @Query("SELECT * FROM pdf_bookmarks WHERE filePath = :filePath ORDER BY page")
+    fun observeForFile(filePath: String): Flow<List<PdfBookmarkEntity>>
+
     @Query("SELECT * FROM pdf_bookmarks ORDER BY filePath, page")
     suspend fun getAll(): List<PdfBookmarkEntity>
 
@@ -268,6 +281,9 @@ interface PdfBookmarkDao {
 interface PdfMeasurementDao {
     @Query("SELECT * FROM pdf_measurements ORDER BY id")
     fun observeAll(): Flow<List<PdfMeasurementEntity>>
+
+    @Query("SELECT * FROM pdf_measurements WHERE filePath = :filePath ORDER BY id")
+    fun observeForFile(filePath: String): Flow<List<PdfMeasurementEntity>>
 
     @Query("SELECT * FROM pdf_measurements ORDER BY id")
     suspend fun getAll(): List<PdfMeasurementEntity>
@@ -289,6 +305,9 @@ interface PdfMeasurementDao {
 interface PdfScaleDao {
     @Query("SELECT * FROM pdf_scales")
     fun observeAll(): Flow<List<PdfScaleEntity>>
+
+    @Query("SELECT * FROM pdf_scales WHERE filePath = :filePath")
+    fun observeForFile(filePath: String): Flow<List<PdfScaleEntity>>
 
     @Query("SELECT * FROM pdf_scales")
     suspend fun getAll(): List<PdfScaleEntity>
