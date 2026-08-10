@@ -15,8 +15,6 @@ import com.corewall.qaqc.data.db.CommentEntity
 import com.corewall.qaqc.data.db.DailyAttendanceEntity
 import com.corewall.qaqc.data.db.ElementAttachmentEntity
 import com.corewall.qaqc.data.db.NoteEntity
-import com.corewall.qaqc.data.db.NoteLabelEntity
-import com.corewall.qaqc.data.db.NoteLabelLinkEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.PdfBookmarkEntity
 import com.corewall.qaqc.data.db.PdfMeasurementEntity
@@ -28,9 +26,6 @@ import kotlinx.coroutines.withContext
 import com.corewall.qaqc.data.model.PlanElement
 import com.corewall.qaqc.data.model.ScheduleData
 import com.corewall.qaqc.domain.ActiveRangeResult
-import com.corewall.qaqc.domain.NotesLayout
-import com.corewall.qaqc.domain.NotesLogic
-import com.corewall.qaqc.domain.NotesView
 import com.corewall.qaqc.domain.AttentionDiff
 import com.corewall.qaqc.domain.AttentionItem
 import com.corewall.qaqc.data.FileLibrary
@@ -41,6 +36,7 @@ import com.corewall.qaqc.domain.startOfDay
 import com.corewall.qaqc.domain.startOfToday
 import com.corewall.qaqc.domain.PourReadiness
 import com.corewall.qaqc.domain.ScheduleLogic
+import com.corewall.qaqc.notes.NotesStore
 import com.corewall.qaqc.notify.NoteReminders
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -387,180 +383,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ══════════════════════════════════════════════ نظام الملاحظات
 
-    val noteLabels: StateFlow<List<NoteLabelEntity>> by lazy {
-        repo.noteLabels.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    }
-
-    private val noteLabelLinks: StateFlow<List<NoteLabelLinkEntity>> by lazy {
-        repo.noteLabelLinks.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    }
-
     /**
-     * تصنيفات كل ملاحظة، مبنية مرة واحدة.
+     * حالة الملاحظات وأفعالها — في [NotesStore] مش هنا.
      *
-     * لو الشاشة حسبتها لكل كارت، عرض ٥٠٠ ملاحظة معناه ٥٠٠ بحث في جدول
-     * الروابط في كل إطار. الخريطة بتتبني مرة مع كل تغيير وبتتقري بمفتاح.
+     * `by lazy` مقصود: المستخدم اللي فتح التطبيق وفضل على المسقط مش دافع
+     * تمن استعلامات التصنيفات ولا خرايطها ولا الفلترة. أول ما شاشة
+     * الملاحظات تتفتح، الماسك بيتبني وبيبدأ يشتغل.
      */
-    val labelsByNote: StateFlow<Map<Long, List<NoteLabelEntity>>> by lazy {
-        combine(noteLabels, noteLabelLinks) { labels, links ->
-            val byId = labels.associateBy { it.id }
-            links.groupBy { it.noteId }
-                .mapValues { (_, rows) -> rows.mapNotNull { byId[it.labelId] } }
-        }
-            .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-    }
-
-    private val _notesView = MutableStateFlow(NotesView.ACTIVE)
-    val notesView: StateFlow<NotesView> = _notesView
-
-    private val _notesQuery = MutableStateFlow("")
-    val notesQuery: StateFlow<String> = _notesQuery
-
-    private val _notesLabelFilter = MutableStateFlow<Long?>(null)
-    val notesLabelFilter: StateFlow<Long?> = _notesLabelFilter
-
-    private val _notesLayout = MutableStateFlow(NotesLayout.GRID)
-    val notesLayout: StateFlow<NotesLayout> = _notesLayout
-
-    /**
-     * الملاحظات المعروضة — الفلترة والبحث والترتيب في الخلفية.
-     *
-     * ده اللي بيخلّي البحث يفضل سلس على ألف ملاحظة: كل ضغطة زرار بتعيد
-     * الفلترة على `Dispatchers.Default` والشاشة بتستلم النتيجة جاهزة.
-     */
-    val visibleNotes: StateFlow<List<NoteEntity>> by lazy {
-        combine(notes, _notesView, _notesLabelFilter, _notesQuery, labelsByNote) {
-            all, view, label, query, labels ->
-            NotesLogic.visible(all, view, label, query) { id -> labels[id].orEmpty() }
-        }
-            .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    }
-
-    /** عدّادات الأقسام — بتظهر جنب أسماءها في القايمة الجانبية. */
-    val notesCounts: StateFlow<Map<NotesView, Int>> by lazy {
-        notes
-            .map { all ->
-                mapOf(
-                    NotesView.ACTIVE to all.count { it.isActive },
-                    NotesView.ARCHIVE to all.count { it.archived && !it.isTrashed },
-                    NotesView.TRASH to all.count { it.isTrashed }
-                )
-            }
-            .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-    }
-
-    fun setNotesView(view: NotesView) {
-        _notesView.value = view
-        _notesLabelFilter.value = null
-    }
-
-    fun setNotesQuery(query: String) { _notesQuery.value = query }
-    fun setNotesLabelFilter(id: Long?) { _notesLabelFilter.value = id }
-    fun toggleNotesLayout() {
-        _notesLayout.value =
-            if (_notesLayout.value == NotesLayout.GRID) NotesLayout.LIST else NotesLayout.GRID
-    }
-
-    // ── أفعال على ملاحظة. كلها بتحدّث `updatedAt` عشان الترتيب يفضل صادق.
-
-    /**
-     * تعديل ملاحظة واحدة.
-     *
-     * كله بيعدّي من هنا عشان حاجتين: `updatedAt` بيتحدّث دايماً (الترتيب
-     * بيعتمد عليه)، والملاحظة المفتوحة في المحرّر بتتزامن. من غير التزامن
-     * ده، تغيير اللون والملاحظة مفتوحة كان الحفظ التلقائي بيرجّع اللون
-     * القديم فوقه بعد أقل من ثانية.
-     */
-    private fun mutate(note: NoteEntity, transform: (NoteEntity) -> NoteEntity) {
-        val updated = transform(note).copy(updatedAt = System.currentTimeMillis())
-        if (updated.id != 0L && _editingNote.value?.id == updated.id) {
-            _editingNote.value = updated
-        }
-        viewModelScope.launch {
-            repo.saveNote(updated)
-            // المنبّه بيتزامن مع كل تعديل: الأرشفة والحذف بيلغوه، وتغيير
-            // الميعاد بيعيد جدولته. `schedule` نفسه بيلغي لو الملاحظة
-            // مابقتش تستاهل تذكير.
-            NoteReminders.schedule(appContext, updated)
-        }
-    }
-
-    fun togglePinNote(note: NoteEntity) = mutate(note) { it.copy(pinned = !it.pinned) }
-
-    // الأرشفة بتفكّ التثبيت: ملاحظة مثبّتة ومؤرشفة حالة متناقضة —
-    // التثبيت معناه "خليها قدّامي" والأرشفة معناها "شيلها من قدّامي".
-    fun setNoteArchived(note: NoteEntity, archived: Boolean) =
-        mutate(note) { it.copy(archived = archived, pinned = false) }
-
-    /** الحذف بينقل للمهملات. المسح النهائي فعل منفصل ومقصود. */
-    fun trashNote(note: NoteEntity) = mutate(note) {
-        it.copy(deletedAt = System.currentTimeMillis(), pinned = false)
-    }
-
-    fun restoreNote(note: NoteEntity) = mutate(note) { it.copy(deletedAt = null) }
-
-    fun deleteNoteForever(note: NoteEntity) {
-        viewModelScope.launch {
-            NoteReminders.cancel(appContext, note.id)
-            repo.deleteNote(note)
-        }
-    }
-
-    fun emptyNoteTrash() {
-        viewModelScope.launch {
-            notes.value.filter { it.isTrashed }
-                .forEach { NoteReminders.cancel(appContext, it.id) }
-            repo.emptyNoteTrash()
-        }
-    }
-
-    fun setNoteColor(note: NoteEntity, argb: Long) = mutate(note) { it.copy(colorArgb = argb) }
-
-    fun setNoteReminder(note: NoteEntity, at: Long?) = mutate(note) { it.copy(reminderAt = at) }
-
-    fun setNoteKind(note: NoteEntity, kind: String) = mutate(note) {
-        it.copy(
-            kind = kind,
-            body = when (kind) {
-                NoteEntity.KIND_CHECKLIST -> NotesLogic.toChecklist(it.body)
-                else -> NotesLogic.toPlainText(it.body)
+    val notesStore: NotesStore by lazy {
+        NotesStore(
+            repo = repo,
+            scope = viewModelScope,
+            appContext = appContext,
+            notes = notes,
+            currentLevel = _currentLevel,
+            // الملاحظة المفتوحة في المحرّر لازم تشوف أي تعديل جاي من ورقة
+            // الخيارات، وإلا الحفظ التلقائي بيرجّع القيمة القديمة فوقها.
+            onMutated = { updated ->
+                if (updated.id != 0L && _editingNote.value?.id == updated.id) {
+                    _editingNote.value = updated
+                }
             }
         )
-    }
-
-    fun setNoteMeta(note: NoteEntity, noteType: String, priority: Int) =
-        mutate(note) { it.copy(noteType = noteType, priority = priority) }
-
-    // ── تصنيفات
-
-    fun createNoteLabel(name: String) {
-        val clean = name.trim()
-        if (clean.isEmpty()) return
-        viewModelScope.launch {
-            repo.upsertNoteLabel(
-                NoteLabelEntity(name = clean, createdAt = System.currentTimeMillis())
-            )
-        }
-    }
-
-    fun renameNoteLabel(label: NoteLabelEntity, name: String) {
-        val clean = name.trim()
-        if (clean.isEmpty()) return
-        viewModelScope.launch { repo.upsertNoteLabel(label.copy(name = clean)) }
-    }
-
-    fun deleteNoteLabel(label: NoteLabelEntity) {
-        viewModelScope.launch {
-            repo.deleteNoteLabel(label.id)
-            if (_notesLabelFilter.value == label.id) _notesLabelFilter.value = null
-        }
-    }
-
-    fun setNoteLabel(noteId: Long, labelId: Long, attached: Boolean) {
-        viewModelScope.launch { repo.setNoteLabel(noteId, labelId, attached) }
     }
 
     /**
@@ -572,15 +416,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun createNote(kind: String = NoteEntity.KIND_TEXT, elementId: String = FLOOR_NOTE_ID) {
         viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            val draft = NoteEntity(
-                elementId = elementId,
-                level = _currentLevel.value,
-                body = if (kind == NoteEntity.KIND_CHECKLIST) "- [ ] " else "",
-                kind = kind,
-                createdAt = now,
-                updatedAt = now
-            )
+            val draft = notesStore.draft(kind, elementId)
             val id = repo.saveNote(draft)
             _editingNote.value = draft.copy(id = id)
             navigator.push(Dest.NoteEditor)

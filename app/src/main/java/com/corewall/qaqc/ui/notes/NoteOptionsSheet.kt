@@ -76,8 +76,8 @@ fun NoteOptionsSheet(
 ) {
     val c = LocalCwColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val labels by vm.noteLabels.collectAsStateWithLifecycle()
-    val labelsByNote by vm.labelsByNote.collectAsStateWithLifecycle()
+    val labels by vm.notesStore.noteLabels.collectAsStateWithLifecycle()
+    val labelsByNote by vm.notesStore.labelsByNote.collectAsStateWithLifecycle()
     val attached = remember(labelsByNote, note.id) {
         labelsByNote[note.id].orEmpty().map { it.id }.toSet()
     }
@@ -108,7 +108,7 @@ fun NoteOptionsSheet(
                         icon = Icons.Filled.Restore,
                         label = "رجّعها",
                         active = false,
-                        onClick = { vm.restoreNote(note); onNoteGone() },
+                        onClick = { vm.notesStore.restore(note); onNoteGone() },
                         modifier = Modifier.weight(1f)
                     )
                     ActionTile(
@@ -116,7 +116,7 @@ fun NoteOptionsSheet(
                         label = "امسحها نهائي",
                         active = false,
                         danger = true,
-                        onClick = { vm.deleteNoteForever(note); onNoteGone() },
+                        onClick = { vm.notesStore.deleteForever(note); onNoteGone() },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -140,14 +140,14 @@ fun NoteOptionsSheet(
                     icon = Icons.Filled.PushPin,
                     label = if (note.pinned) "إلغاء التثبيت" else "تثبيت",
                     active = note.pinned,
-                    onClick = { vm.togglePinNote(note) },
+                    onClick = { vm.notesStore.togglePin(note) },
                     modifier = Modifier.weight(1f)
                 )
                 ActionTile(
                     icon = if (note.archived) Icons.Filled.Unarchive else Icons.Filled.Archive,
                     label = if (note.archived) "رجّع من الأرشيف" else "أرشفة",
                     active = false,
-                    onClick = { vm.setNoteArchived(note, !note.archived); onNoteGone() },
+                    onClick = { vm.notesStore.setArchived(note, !note.archived); onNoteGone() },
                     modifier = Modifier.weight(1f)
                 )
                 ActionTile(
@@ -162,7 +162,7 @@ fun NoteOptionsSheet(
                     label = "حذف",
                     active = false,
                     danger = true,
-                    onClick = { vm.trashNote(note); onNoteGone() },
+                    onClick = { vm.notesStore.trash(note); onNoteGone() },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -188,7 +188,7 @@ fun NoteOptionsSheet(
                                 if (chosen) c.accent else c.outline,
                                 CircleShape
                             )
-                            .clickable { vm.setNoteColor(note, argb) },
+                            .clickable { vm.notesStore.setColor(note, argb) },
                         contentAlignment = Alignment.Center
                     ) {
                         if (chosen) {
@@ -223,7 +223,7 @@ fun NoteOptionsSheet(
                         CwChip(
                             label = label.name,
                             selected = on,
-                            onClick = { vm.setNoteLabel(note.id, label.id, !on) }
+                            onClick = { vm.notesStore.setLabel(note.id, label.id, !on) }
                         )
                     }
                 }
@@ -248,7 +248,7 @@ fun NoteOptionsSheet(
                     CwChip(
                         label = label,
                         selected = note.noteType == value,
-                        onClick = { vm.setNoteMeta(note, value, note.priority) }
+                        onClick = { vm.notesStore.setMeta(note, value, note.priority) }
                     )
                 }
             }
@@ -262,7 +262,7 @@ fun NoteOptionsSheet(
                     CwChip(
                         label = label,
                         selected = note.priority == value,
-                        onClick = { vm.setNoteMeta(note, note.noteType, value) }
+                        onClick = { vm.notesStore.setMeta(note, note.noteType, value) }
                     )
                 }
             }
@@ -272,7 +272,7 @@ fun NoteOptionsSheet(
     if (reminderOpen) {
         NoteReminderSheet(
             current = note.reminderAt,
-            onPick = { at -> vm.setNoteReminder(note, at); reminderOpen = false },
+            onPick = { at -> vm.notesStore.setReminder(note, at); reminderOpen = false },
             onDismiss = { reminderOpen = false }
         )
     }

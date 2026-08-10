@@ -69,14 +69,14 @@ import com.corewall.qaqc.ui.design.Space
  */
 @Composable
 fun NotesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
-    val notes by vm.visibleNotes.collectAsStateWithLifecycle()
-    val labelsByNote by vm.labelsByNote.collectAsStateWithLifecycle()
-    val labels by vm.noteLabels.collectAsStateWithLifecycle()
-    val view by vm.notesView.collectAsStateWithLifecycle()
-    val layout by vm.notesLayout.collectAsStateWithLifecycle()
-    val labelFilter by vm.notesLabelFilter.collectAsStateWithLifecycle()
-    val counts by vm.notesCounts.collectAsStateWithLifecycle()
-    val query by vm.notesQuery.collectAsStateWithLifecycle()
+    val notes by vm.notesStore.visible.collectAsStateWithLifecycle()
+    val labelsByNote by vm.notesStore.labelsByNote.collectAsStateWithLifecycle()
+    val labels by vm.notesStore.noteLabels.collectAsStateWithLifecycle()
+    val view by vm.notesStore.view.collectAsStateWithLifecycle()
+    val layout by vm.notesStore.layout.collectAsStateWithLifecycle()
+    val labelFilter by vm.notesStore.labelFilter.collectAsStateWithLifecycle()
+    val counts by vm.notesStore.counts.collectAsStateWithLifecycle()
+    val query by vm.notesStore.query.collectAsStateWithLifecycle()
 
     var searchOpen by remember { mutableStateOf(false) }
     var labelsOpen by remember { mutableStateOf(false) }
@@ -104,10 +104,10 @@ fun NotesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 layout = layout,
                 counts = counts,
                 onSearch = { searchOpen = true },
-                onToggleLayout = { vm.toggleNotesLayout() },
+                onToggleLayout = { vm.notesStore.toggleLayout() },
                 onLabels = { labelsOpen = true },
-                onView = { vm.setNotesView(it) },
-                onEmptyTrash = { vm.emptyNoteTrash() }
+                onView = { vm.notesStore.setView(it) },
+                onEmptyTrash = { vm.notesStore.emptyTrash() }
             )
 
             if (labels.isNotEmpty() && view == NotesView.ACTIVE) {
@@ -120,14 +120,14 @@ fun NotesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     CwChip(
                         label = "الكل",
                         selected = labelFilter == null,
-                        onClick = { vm.setNotesLabelFilter(null) }
+                        onClick = { vm.notesStore.setLabelFilter(null) }
                     )
                     labels.forEach { label ->
                         CwChip(
                             label = label.name,
                             selected = labelFilter == label.id,
                             onClick = {
-                                vm.setNotesLabelFilter(if (labelFilter == label.id) null else label.id)
+                                vm.notesStore.setLabelFilter(if (labelFilter == label.id) null else label.id)
                             }
                         )
                     }
@@ -140,8 +140,8 @@ fun NotesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     filtered = labelFilter != null || query.isNotBlank(),
                     onCreate = { vm.createNote() },
                     onClearFilter = {
-                        vm.setNotesLabelFilter(null)
-                        vm.setNotesQuery("")
+                        vm.notesStore.setLabelFilter(null)
+                        vm.notesStore.setQuery("")
                     }
                 )
             } else if (layout == NotesLayout.GRID) {

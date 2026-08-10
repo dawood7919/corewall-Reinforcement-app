@@ -155,7 +155,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
         if (to == NoteEntity.KIND_CHECKLIST) mode = Mode.EDIT
         body = TextFieldValue(converted, androidx.compose.ui.text.TextRange(converted.length))
         savedState = "بيحفظ…"
-        vm.setNoteKind(currentNote().copy(body = converted), to)
+        vm.notesStore.setKind(currentNote().copy(body = converted), to)
     }
 
     // حفظ تلقائي بعد سكون بسيط
@@ -243,7 +243,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                         CwIconButton(
                             Icons.Filled.PushPin,
                             if (liveNote.pinned) "إلغاء التثبيت" else "تثبيت",
-                            { vm.togglePinNote(currentNote()) },
+                            { vm.notesStore.togglePin(currentNote()) },
                             active = liveNote.pinned
                         )
                         Box {

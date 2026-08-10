@@ -164,9 +164,9 @@ fun NotesTopBar(
 @Composable
 fun NoteSearchScreen(vm: MainViewModel, onClose: () -> Unit) {
     val c = LocalCwColors.current
-    val notes by vm.visibleNotes.collectAsStateWithLifecycle()
-    val labelsByNote by vm.labelsByNote.collectAsStateWithLifecycle()
-    val query by vm.notesQuery.collectAsStateWithLifecycle()
+    val notes by vm.notesStore.visible.collectAsStateWithLifecycle()
+    val labelsByNote by vm.notesStore.labelsByNote.collectAsStateWithLifecycle()
+    val query by vm.notesStore.query.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }
 
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -175,7 +175,7 @@ fun NoteSearchScreen(vm: MainViewModel, onClose: () -> Unit) {
     // نفس الفلتر، وسيبانه شغّال معناه إن المستخدم يقفل البحث ويلاقي
     // ملاحظاته ناقصة من غير ما يعرف ليه.
     androidx.activity.compose.BackHandler(enabled = true) {
-        vm.setNotesQuery("")
+        vm.notesStore.setQuery("")
         onClose()
     }
 
@@ -191,7 +191,7 @@ fun NoteSearchScreen(vm: MainViewModel, onClose: () -> Unit) {
                 ) {
                     CwIconButton(
                         Icons.AutoMirrored.Filled.ArrowBack, "رجوع",
-                        { vm.setNotesQuery(""); onClose() }
+                        { vm.notesStore.setQuery(""); onClose() }
                     )
                     Box(
                         Modifier
@@ -209,7 +209,7 @@ fun NoteSearchScreen(vm: MainViewModel, onClose: () -> Unit) {
                         }
                         BasicTextField(
                             value = query,
-                            onValueChange = { vm.setNotesQuery(it) },
+                            onValueChange = { vm.notesStore.setQuery(it) },
                             singleLine = true,
                             textStyle = MaterialTheme.typography.bodyMedium
                                 .copy(color = c.textPrimary),
@@ -220,7 +220,7 @@ fun NoteSearchScreen(vm: MainViewModel, onClose: () -> Unit) {
                         )
                     }
                     if (query.isNotEmpty()) {
-                        CwIconButton(Icons.Filled.Close, "امسح", { vm.setNotesQuery("") })
+                        CwIconButton(Icons.Filled.Close, "امسح", { vm.notesStore.setQuery("") })
                     }
                 }
             }
@@ -253,7 +253,7 @@ fun NoteSearchScreen(vm: MainViewModel, onClose: () -> Unit) {
                             labels = labelsByNote[note.id].orEmpty(),
                             compact = false,
                             onClick = {
-                                vm.setNotesQuery("")
+                                vm.notesStore.setQuery("")
                                 onClose()
                                 vm.openNoteEditor(note.elementId, note)
                             }
@@ -271,7 +271,7 @@ fun NoteSearchScreen(vm: MainViewModel, onClose: () -> Unit) {
 fun NoteLabelsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
     val c = LocalCwColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val labels by vm.noteLabels.collectAsStateWithLifecycle()
+    val labels by vm.notesStore.noteLabels.collectAsStateWithLifecycle()
     var newLabel by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<NoteLabelEntity?>(null) }
     var editText by remember { mutableStateOf("") }
@@ -305,7 +305,7 @@ fun NoteLabelsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                 )
                 CwIconButton(
                     Icons.Filled.Add, "أضف",
-                    { vm.createNoteLabel(newLabel); newLabel = "" },
+                    { vm.notesStore.createLabel(newLabel); newLabel = "" },
                     tint = c.accent,
                     enabled = newLabel.isNotBlank()
                 )
@@ -344,7 +344,7 @@ fun NoteLabelsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                                 CwIconButton(
                                     Icons.Filled.Add, "احفظ الاسم",
                                     {
-                                        vm.renameNoteLabel(label, editText)
+                                        vm.notesStore.renameLabel(label, editText)
                                         editing = null
                                     },
                                     tint = c.accent
@@ -363,7 +363,7 @@ fun NoteLabelsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                                 )
                                 CwIconButton(
                                     Icons.Filled.Delete, "احذف التصنيف",
-                                    { vm.deleteNoteLabel(label) },
+                                    { vm.notesStore.deleteLabel(label) },
                                     tint = c.danger.fg
                                 )
                             }
