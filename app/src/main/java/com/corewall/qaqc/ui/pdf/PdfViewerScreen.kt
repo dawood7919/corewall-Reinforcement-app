@@ -71,6 +71,7 @@ import com.corewall.qaqc.pdfengine.OutlineEntry
 import com.corewall.qaqc.pdfengine.PageLayout
 import com.corewall.qaqc.pdfengine.PdfCanvas
 import com.corewall.qaqc.pdfengine.PdfDocumentSession
+import com.corewall.qaqc.pdfengine.PdfSessionHolder
 import com.corewall.qaqc.ocr.OcrEngine
 import com.corewall.qaqc.ocr.OcrPacks
 import com.corewall.qaqc.pdfengine.MeasureKind
@@ -122,19 +123,22 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
 
     // ── فتح المستند
     var session by remember(path) { mutableStateOf<PdfDocumentSession?>(null) }
+    val holder = remember(path) { PdfSessionHolder() }
     var openError by remember(path) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(path) {
         val opened = withContext(Dispatchers.IO) {
             runCatching { PdfDocumentSession.open(context, file) }
         }
-        opened.onSuccess { session = it }
+        // الماسك بيتصرّف لو الشاشة اتقفلت والمستند لسه بيتفتح — من غيره
+        // المستند الأصلي وخيط الرندر بيفضلوا عايشين للأبد.
+        opened.onSuccess { if (holder.accept(it)) session = it }
         opened.onFailure { e ->
             openError = (e as? PdfOpenException)?.userMessage ?: "مقدرناش نفتح الملف ده"
         }
     }
 
-    DisposableEffect(path) { onDispose { session?.close() } }
+    DisposableEffect(path) { onDispose { holder.dispose() } }
 
     val active = session
     if (openError != null || active == null) {

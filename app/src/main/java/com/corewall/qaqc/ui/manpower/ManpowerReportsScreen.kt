@@ -51,23 +51,54 @@ fun ManpowerReportsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val files by vm.attendanceFiles.collectAsStateWithLifecycle()
     val allDaily by vm.dailyAttendance.collectAsStateWithLifecycle()
 
-    val fileIds = files.map { it.id }.toSet()
+    val fileIds = remember(files) { files.map { it.id }.toSet() }
     val records = remember(allDaily, fileIds) { allDaily.filter { it.fileId in fileIds } }
 
-    val totalWorkers = records.sumOf { it.workers }
-    val totalForemen = records.sumOf { it.foremen }
-    val days = records.map { dayStart(it.date) }.distinct()
-    val perDay = days.map { d -> records.filter { dayStart(it.date) == d }.sumOf { r -> r.workers } }
+    /**
+     * كل أرقام التقرير في مرور واحد على السجلات.
+     *
+     * الكود القديم كان `days.map { d -> records.filter { … } }` — يعني
+     * مرور كامل على السجلات لكل يوم، وكمان `records.filter` جوّه كل
+     * مجموعة تخصّص وشركة. على تلات شهور بيانات ده تربيعي، **وبيتعاد مع
+     * كل إعادة تركيب** لأنه مكانش محفوظ.
+     *
+     * الترتيب زي ما هو بالظبط: `days` بترتيب أول ظهور في `records`
+     * (والاستعلام بيرجّع الأحدث الأول)، عشان الرسم البياني ما يتقلبش.
+     */
+    val stats = remember(records, files) {
+        var totalWorkers = 0
+        var totalForemen = 0
+        val workersByDay = LinkedHashMap<Long, Int>()
+        val workersByFile = HashMap<Long, Int>()
+        records.forEach { r ->
+            totalWorkers += r.workers
+            totalForemen += r.foremen
+            val day = dayStart(r.date)
+            workersByDay[day] = (workersByDay[day] ?: 0) + r.workers
+            workersByFile[r.fileId] = (workersByFile[r.fileId] ?: 0) + r.workers
+        }
+        val perDay = workersByDay.values.toList()
+
+        ReportStats(
+            totalWorkers = totalWorkers,
+            totalForemen = totalForemen,
+            perDay = perDay,
+            byTrade = files.groupBy { Trade.from(it.trade) }
+                .mapValues { (_, fs) -> fs.sumOf { workersByFile[it.id] ?: 0 } }
+                .filterValues { it > 0 }.toList().sortedByDescending { it.second },
+            byCompany = files.groupBy { it.company.trim() }
+                .mapValues { (_, fs) -> fs.sumOf { workersByFile[it.id] ?: 0 } }
+                .filterValues { it > 0 }.toList().sortedByDescending { it.second }
+        )
+    }
+    val totalWorkers = stats.totalWorkers
+    val totalForemen = stats.totalForemen
+    val perDay = stats.perDay
     val avg = if (perDay.isNotEmpty()) perDay.average() else 0.0
     val maxW = perDay.maxOrNull() ?: 0
     val minW = perDay.minOrNull() ?: 0
-
-    val byTrade = files.groupBy { Trade.from(it.trade) }
-        .mapValues { (_, fs) -> records.filter { r -> fs.any { it.id == r.fileId } }.sumOf { it.workers } }
-        .filterValues { it > 0 }.toList().sortedByDescending { it.second }
-    val byCompany = files.groupBy { it.company.trim() }
-        .mapValues { (_, fs) -> records.filter { r -> fs.any { it.id == r.fileId } }.sumOf { it.workers } }
-        .filterValues { it > 0 }.toList().sortedByDescending { it.second }
+    val byTrade = stats.byTrade
+    val byCompany = stats.byCompany
 
     val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) scope.launch {
@@ -187,3 +218,12 @@ fun DistributionCard(title: String, data: List<Pair<String, Int>>) {
         }
     }
 }
+
+/** أرقام التقرير — محسوبة مرة واحدة في [ManpowerReportsScreen]. */
+private data class ReportStats(
+    val totalWorkers: Int,
+    val totalForemen: Int,
+    val perDay: List<Int>,
+    val byTrade: List<Pair<Trade, Int>>,
+    val byCompany: List<Pair<String, Int>>
+)

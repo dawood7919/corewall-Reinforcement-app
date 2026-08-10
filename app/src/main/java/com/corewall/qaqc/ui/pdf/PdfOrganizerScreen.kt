@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.corewall.qaqc.pdfengine.PdfDocumentSession
+import com.corewall.qaqc.pdfengine.PdfSessionHolder
 import com.corewall.qaqc.pdfengine.PdfOpenException
 import com.corewall.qaqc.pdfengine.PdfOps
 import com.corewall.qaqc.ui.design.CwIconButton
@@ -89,6 +90,7 @@ fun PdfOrganizerScreen(
     val file = remember(path) { File(path) }
 
     var session by remember(path) { mutableStateOf<PdfDocumentSession?>(null) }
+    val holder = remember(path) { PdfSessionHolder() }
     var error by remember(path) { mutableStateOf<String?>(null) }
     var busy by remember(path) { mutableStateOf(false) }
 
@@ -97,13 +99,15 @@ fun PdfOrganizerScreen(
         val opened = withContext(Dispatchers.IO) {
             runCatching { PdfDocumentSession.open(context, file) }
         }
-        opened.onSuccess { session = it }
+        // الماسك بيتصرّف لو الشاشة اتقفلت والمستند لسه بيتفتح — من غيره
+        // المستند الأصلي وخيط الرندر بيفضلوا عايشين للأبد.
+        opened.onSuccess { if (holder.accept(it)) session = it }
         opened.onFailure { e ->
             error = (e as? PdfOpenException)?.userMessage ?: "مقدرناش نفتح الملف ده"
         }
     }
 
-    DisposableEffect(path) { onDispose { session?.close() } }
+    DisposableEffect(path) { onDispose { holder.dispose() } }
 
     val active = session
     if (error != null || active == null) {

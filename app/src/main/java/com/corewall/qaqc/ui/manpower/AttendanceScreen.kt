@@ -59,14 +59,41 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     var showDialog by remember { mutableStateOf(false) }
 
     val today = dayStart(System.currentTimeMillis())
-    val fileIds = files.map { it.id }.toSet()
-    val todayRecords = daily.filter { it.fileId in fileIds && dayStart(it.date) == today }
-    val workersToday = todayRecords.sumOf { it.workers }
-    val foremenToday = todayRecords.sumOf { it.foremen }
-    val engineersToday = todayRecords.sumOf { it.engineers }
-    val helpersToday = todayRecords.sumOf { it.supervisors }
+
+    /**
+     * حسابات النهاردة + خرايط لكل ملف.
+     *
+     * كل كارت ملف كان بيعمل `todayRecords.filter { … }` و`daily.filter
+     * { … }.maxByOrNull { … }` — يعني مرور كامل على جدول الحضور **لكل
+     * صف**، وبيتعاد مع كل إعادة تركيب وقت التمرير. بقى مرور واحد بيبني
+     * خريطتين، والكارت بيقرا بالمفتاح.
+     */
+    val today0 = remember(files, daily, today) {
+        val ids = files.mapTo(HashSet()) { it.id }
+        val todayRecords = daily.filter { it.fileId in ids && dayStart(it.date) == today }
+        val lastUpdate = HashMap<Long, Long>()
+        daily.forEach { r ->
+            val prev = lastUpdate[r.fileId]
+            if (prev == null || r.updatedAt > prev) lastUpdate[r.fileId] = r.updatedAt
+        }
+        TodayCrew(
+            records = todayRecords,
+            byFile = todayRecords.groupBy { it.fileId },
+            lastUpdateByFile = lastUpdate,
+            workers = todayRecords.sumOf { it.workers },
+            foremen = todayRecords.sumOf { it.foremen },
+            engineers = todayRecords.sumOf { it.engineers },
+            helpers = todayRecords.sumOf { it.supervisors },
+            companies = todayRecords.mapTo(HashSet()) { it.fileId }.size
+        )
+    }
+    val todayRecords = today0.records
+    val workersToday = today0.workers
+    val foremenToday = today0.foremen
+    val engineersToday = today0.engineers
+    val helpersToday = today0.helpers
     val totalLaborToday = workersToday + foremenToday + engineersToday + helpersToday
-    val companiesActive = todayRecords.map { it.fileId }.distinct().size
+    val companiesActive = today0.companies
 
     Scaffold(
         modifier = modifier,
@@ -141,13 +168,13 @@ fun AttendanceScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     }
                 }
                 items(files, key = { it.id }) { file ->
-                    val fileToday = todayRecords.filter { it.fileId == file.id }
-                    val lastUpdate = daily.filter { it.fileId == file.id }.maxByOrNull { it.updatedAt }
+                    val fileToday = today0.byFile[file.id].orEmpty()
+                    val lastUpdatedAt = today0.lastUpdateByFile[file.id]
                     AttendanceFileCard(
                         file = file,
                         workersToday = fileToday.sumOf { it.workers },
                         foremenToday = fileToday.sumOf { it.foremen },
-                        lastUpdated = lastUpdate?.updatedAt,
+                        lastUpdated = lastUpdatedAt,
                         onClick = { vm.openAttendanceFile(file.id) }
                     )
                 }
@@ -301,3 +328,15 @@ private fun AttendanceFileCard(
         }
     }
 }
+
+/** عمالة النهاردة — محسوبة مرة واحدة في [AttendanceScreen]. */
+private data class TodayCrew(
+    val records: List<com.corewall.qaqc.data.db.DailyAttendanceEntity>,
+    val byFile: Map<Long, List<com.corewall.qaqc.data.db.DailyAttendanceEntity>>,
+    val lastUpdateByFile: Map<Long, Long>,
+    val workers: Int,
+    val foremen: Int,
+    val engineers: Int,
+    val helpers: Int,
+    val companies: Int
+)

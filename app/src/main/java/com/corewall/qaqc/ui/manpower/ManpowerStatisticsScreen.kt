@@ -59,18 +59,43 @@ fun ManpowerStatisticsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     var period by remember { mutableIntStateOf(1) } // 0 أسبوع, 1 شهر, 2 ثلاثة شهور
     val window = when (period) { 0 -> 7; 1 -> 30; else -> 90 }
-    val days = records.map { dayStart(it.date) }.distinct().sorted().takeLast(window)
-    val windowRecords = records.filter { dayStart(it.date) in days.toSet() }
-    val dailyWorkers = days.map { d -> d to records.filter { dayStart(it.date) == d }.sumOf { r -> r.workers } }
+    /**
+     * إحصاءات النافذة في مرورين على السجلات بدل حلقات متداخلة.
+     *
+     * القديم كان فيه تلات أنماط تربيعية في نفس الشاشة: `days.map { … 
+     * records.filter { … } }`، و`days.toSet()` بتتبني من جديد **جوّه**
+     * شرط الفلترة (يعني لكل سجل)، و`windowRecords.filter { fs.any { … } }`
+     * لكل مجموعة تخصّص وشركة. وكله من غير `remember`.
+     */
+    val stats = remember(records, files, window) {
+        val allDays = records.mapTo(HashSet()) { dayStart(it.date) }.sorted()
+        val days = allDays.takeLast(window)
+        val inWindow = days.toHashSet()
+
+        val workersByDay = HashMap<Long, Int>(days.size * 2)
+        val workersByFile = HashMap<Long, Int>()
+        records.forEach { r ->
+            val day = dayStart(r.date)
+            workersByDay[day] = (workersByDay[day] ?: 0) + r.workers
+            if (day in inWindow) {
+                workersByFile[r.fileId] = (workersByFile[r.fileId] ?: 0) + r.workers
+            }
+        }
+        StatsBundle(
+            dailyWorkers = days.map { d -> d to (workersByDay[d] ?: 0) },
+            byTrade = files.groupBy { Trade.from(it.trade) }
+                .mapValues { (_, fs) -> fs.sumOf { workersByFile[it.id] ?: 0 } }
+                .filterValues { it > 0 }.toList().sortedByDescending { it.second },
+            topCompanies = files.groupBy { it.company.trim() }.filterKeys { it.isNotEmpty() }
+                .mapValues { (_, fs) -> fs.sumOf { workersByFile[it.id] ?: 0 } }
+                .filterValues { it > 0 }.toList().sortedByDescending { it.second }.take(5)
+        )
+    }
+    val dailyWorkers = stats.dailyWorkers
     val peak = dailyWorkers.maxOfOrNull { it.second } ?: 0
     val avg = if (dailyWorkers.isNotEmpty()) dailyWorkers.map { it.second }.average() else 0.0
-
-    val byTrade = files.groupBy { Trade.from(it.trade) }
-        .mapValues { (_, fs) -> windowRecords.filter { r -> fs.any { it.id == r.fileId } }.sumOf { it.workers } }
-        .filterValues { it > 0 }.toList().sortedByDescending { it.second }
-    val topCompanies = files.groupBy { it.company.trim() }.filterKeys { it.isNotEmpty() }
-        .mapValues { (_, fs) -> windowRecords.filter { r -> fs.any { it.id == r.fileId } }.sumOf { it.workers } }
-        .filterValues { it > 0 }.toList().sortedByDescending { it.second }.take(5)
+    val byTrade = stats.byTrade
+    val topCompanies = stats.topCompanies
 
     LazyColumn(modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(Space.md)) {
         item {
@@ -200,3 +225,10 @@ private fun BarChart(values: List<Int>, color: Color) {
         }
     }
 }
+
+/** إحصاءات نافذة زمنية — محسوبة مرة واحدة في [ManpowerStatisticsScreen]. */
+private data class StatsBundle(
+    val dailyWorkers: List<Pair<Long, Int>>,
+    val byTrade: List<Pair<Trade, Int>>,
+    val topCompanies: List<Pair<String, Int>>
+)

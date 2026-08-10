@@ -76,10 +76,17 @@ fun DataSheetContent(vm: MainViewModel, element: PlanElement) {
     val notes by vm.notes.collectAsStateWithLifecycle()
     val names by vm.names.collectAsStateWithLifecycle()
 
-    val files = attachments.filter {
-        it.elementId == element.id && it.level == level && it.type == ElementAttachmentEntity.TYPE_FILE
+    // الورقة دي بتتفتح فوق المسقط وبتعيد التركيب مع كل لمسة. من غير
+    // `remember` الفلترتين دول بيمسحوا جدولين كاملين في كل مرة.
+    val files = remember(attachments, element.id, level) {
+        attachments.filter {
+            it.elementId == element.id && it.level == level &&
+                it.type == ElementAttachmentEntity.TYPE_FILE
+        }
     }
-    val elementNotes = notes.filter { it.elementId == element.id && it.level == level }
+    val elementNotes = remember(notes, element.id, level) {
+        notes.filter { it.elementId == element.id && it.level == level }
+    }
 
     val pickFiles = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()

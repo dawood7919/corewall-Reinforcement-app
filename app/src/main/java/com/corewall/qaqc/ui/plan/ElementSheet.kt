@@ -268,7 +268,9 @@ private fun DetailsContent(vm: MainViewModel, element: PlanElement) {
         Spacer(Modifier.height(Space.lg))
         Text("الكومنتات — دور $level", style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.height(Space.sm))
-        val comments = allComments.filter { it.elementId == element.id && it.level == level }
+        val comments = remember(allComments, element.id, level) {
+            allComments.filter { it.elementId == element.id && it.level == level }
+        }
         comments.forEach { c ->
             Row(
                 Modifier

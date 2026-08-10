@@ -200,19 +200,29 @@ private fun LevelSummarySection(vm: MainViewModel) {
         return
     }
 
-    val activeWalls = schedule.walls.count { (_, rows) -> vm.logic.activeWallRow(rows, levelIdx) != null }
-    val activeBeams = schedule.beams.count { (_, rows) -> vm.logic.activeBeamRow(rows, levelIdx) != null }
-    val gapWalls = schedule.walls.filter { (_, rows) -> vm.logic.wallGapAt(rows, levelIdx) }.keys
-    val gapBeams = schedule.beams.filter { (_, rows) -> vm.logic.beamGapAt(rows, levelIdx) }.keys
-    val gaps = gapWalls + gapBeams
+    // المحرّك الهندسي كان بيتنفّذ كامل في كل إعادة تركيب: ٣١ علامة حيطة
+    // و٤٩ كمرة × صفوفهم، أربع مرات (نشط/فجوة لكل نوع)، وبعدها عدّ الحالات
+    // على ٦٣ عنصر × ٤ حالات. كله بيعتمد على (الجدول، الدور) بس.
+    val scheduleStats = remember(schedule, levelIdx) {
+        val walls = schedule.walls.count { (_, rows) -> vm.logic.activeWallRow(rows, levelIdx) != null }
+        val beams = schedule.beams.count { (_, rows) -> vm.logic.activeBeamRow(rows, levelIdx) != null }
+        val gapKeys = schedule.walls.filter { (_, rows) -> vm.logic.wallGapAt(rows, levelIdx) }.keys +
+            schedule.beams.filter { (_, rows) -> vm.logic.beamGapAt(rows, levelIdx) }.keys
+        Triple(walls, beams, gapKeys)
+    }
+    val activeWalls = scheduleStats.first
+    val activeBeams = scheduleStats.second
+    val gaps = scheduleStats.third
 
-    val statusCounts = InspectionStatus.entries
-        .filter { it != InspectionStatus.NONE }
-        .associateWith { status ->
-            vm.planData.elements.count { el ->
-                InspectionStatus.from(inspections[el.id to level]) == status
+    val statusCounts = remember(inspections, level) {
+        InspectionStatus.entries
+            .filter { it != InspectionStatus.NONE }
+            .associateWith { status ->
+                vm.planData.elements.count { el ->
+                    InspectionStatus.from(inspections[el.id to level]) == status
+                }
             }
-        }
+    }
 
     CwCard(
         style = if (gaps.isEmpty()) CwCardStyle.Plain else CwCardStyle.Accent,
