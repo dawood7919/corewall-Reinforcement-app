@@ -33,9 +33,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ImportedMarkEntity::class,
         PdfBookmarkEntity::class,
         PdfMeasurementEntity::class,
-        PdfScaleEntity::class
+        PdfScaleEntity::class,
+        NoteLabelEntity::class,
+        NoteLabelLinkEntity::class
     ],
-    version = 16,
+    version = 17,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -65,6 +67,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pdfBookmarkDao(): PdfBookmarkDao
     abstract fun pdfMeasurementDao(): PdfMeasurementDao
     abstract fun pdfScaleDao(): PdfScaleDao
+    abstract fun noteLabelDao(): NoteLabelDao
+    abstract fun noteLabelLinkDao(): NoteLabelLinkDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -374,6 +378,48 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * نظام الملاحظات: تثبيت وأرشفة ومهملات وألوان وتصنيفات وتذكير.
+         *
+         * كل الأعمدة الجديدة بقيم افتراضية، فالملاحظات الموجودة بتفضل زي
+         * ما هي بالظبط: مش مثبّتة، مش مؤرشفة، مش محذوفة، لون الثيم.
+         *
+         * أسماء الفهارس هنا لازم تطابق اللي Room بيولّده بالحرف —
+         * `tools/check_room_schema.py` بيقارنهم في الـCI، والاختلاف معناه
+         * تطبيق بيقفل أول ما يفتح عند اللي بيحدّث.
+         */
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `pinned` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `archived` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `deletedAt` INTEGER")
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `colorArgb` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `kind` TEXT NOT NULL DEFAULT 'TEXT'")
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `reminderAt` INTEGER")
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `noteType` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `priority` INTEGER NOT NULL DEFAULT 0")
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_archived_deletedAt` ON `notes` (`archived`, `deletedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_pinned` ON `notes` (`pinned`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_level` ON `notes` (`level`)")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `note_labels` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, `colorArgb` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_note_labels_name` ON `note_labels` (`name`)")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `note_label_links` (" +
+                        "`noteId` INTEGER NOT NULL, `labelId` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`noteId`, `labelId`))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_note_label_links_labelId` ON `note_label_links` (`labelId`)")
+            }
+        }
+
         // طبقة المعرفة: مستندات محلّلة + حقائق مستخرجة (knowledge graph) + محادثة.
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -419,7 +465,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
-                    MIGRATION_14_15, MIGRATION_15_16
+                    MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17
                 ).build().also { instance = it }
             }
     }

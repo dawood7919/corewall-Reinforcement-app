@@ -169,6 +169,57 @@ interface NoteDao {
 
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun delete(id: Long)
+
+    /** مسح نهائي لكل المهملات. */
+    @Query("DELETE FROM notes WHERE deletedAt IS NOT NULL")
+    suspend fun emptyTrash()
+
+    /** تنظيف تلقائي: بيشيل اللي قعد في المهملات أكتر من المدة المسموحة. */
+    @Query("DELETE FROM notes WHERE deletedAt IS NOT NULL AND deletedAt < :before")
+    suspend fun purgeTrashOlderThan(before: Long): Int
+}
+
+@Dao
+interface NoteLabelDao {
+    @Query("SELECT * FROM note_labels ORDER BY name")
+    fun observeAll(): Flow<List<NoteLabelEntity>>
+
+    @Query("SELECT * FROM note_labels ORDER BY name")
+    suspend fun getAll(): List<NoteLabelEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: NoteLabelEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<NoteLabelEntity>)
+
+    @Query("DELETE FROM note_labels WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface NoteLabelLinkDao {
+    @Query("SELECT * FROM note_label_links")
+    fun observeAll(): Flow<List<NoteLabelLinkEntity>>
+
+    @Query("SELECT * FROM note_label_links")
+    suspend fun getAll(): List<NoteLabelLinkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun link(entity: NoteLabelLinkEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun linkAll(entities: List<NoteLabelLinkEntity>)
+
+    @Query("DELETE FROM note_label_links WHERE noteId = :noteId AND labelId = :labelId")
+    suspend fun unlink(noteId: Long, labelId: Long)
+
+    /** بيتنادى مع حذف التصنيف — الروابط اليتيمة بتخلّي الفلترة تكدب. */
+    @Query("DELETE FROM note_label_links WHERE labelId = :labelId")
+    suspend fun unlinkLabel(labelId: Long)
+
+    @Query("DELETE FROM note_label_links WHERE noteId = :noteId")
+    suspend fun unlinkNote(noteId: Long)
 }
 
 @Dao

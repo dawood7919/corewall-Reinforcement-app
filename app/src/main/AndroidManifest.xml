@@ -8,6 +8,14 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      تذكيرات الملاحظات. الإشعار بيتطلب بالصلاحية دي من أندرويد ١٣،
+      والاستقبال بعد الإقلاع عشان المنبّهات ما تضيعش مع إعادة التشغيل.
+      مفيش SCHEDULE_EXACT_ALARM بقصد — التذكير مش منبّه حرج.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:name=".CoreWallApp"
         android:allowBackup="true"
@@ -37,6 +45,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".notify.NoteReminderReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".notify.BootReceiver"
+            android:exported="true"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

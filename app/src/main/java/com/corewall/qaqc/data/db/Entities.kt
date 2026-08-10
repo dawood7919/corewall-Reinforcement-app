@@ -117,16 +117,119 @@ data class DailyAttendanceEntity(
  * نص قابل للتنسيق (Markdown) + صور مرفقة (مسارات ملفات) + عنوان.
  */
 @Serializable
-@Entity(tableName = "notes")
+@Entity(
+    tableName = "notes",
+    // الفهارس دي بتخدم استعلامات الشاشة الرئيسية: التثبيت أولاً، بعدين
+    // المؤرشف والمهملات مستبعدين. من غيرها كل فتحة للملاحظات بتمسح
+    // الجدول كله — وده بيبان مع أول ٥٠٠ ملاحظة.
+    indices = [
+        Index(value = ["archived", "deletedAt"]),
+        Index(value = ["pinned"]),
+        Index(value = ["level"])
+    ]
+)
 data class NoteEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /**
+     * العنصر اللي الملاحظة متعلّقة بيه، أو [com.corewall.qaqc.FLOOR_NOTE_ID]
+     * للملاحظة الحرّة (اللي مش مربوطة بعنصر).
+     *
+     * الحقل ده **مش اختياري** عن قصد: هو اللي بيربط الملاحظة بسياق
+     * المشروع، وهو اللي بيخلّي المساعد الذكي يعرف الملاحظة دي بتتكلم عن
+     * إيه. الملاحظة الحرّة مجرد حالة خاصة منه.
+     */
     val elementId: String,
     val level: String,
     val title: String = "",
     val body: String = "",
     val imagePathsJson: String = "[]",
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+
+    // ─────────────────────────────────────────────────────────────
+    // تنظيم الملاحظات
+    // ─────────────────────────────────────────────────────────────
+
+    val pinned: Boolean = false,
+    val archived: Boolean = false,
+
+    /**
+     * وقت الحذف — `null` يعني الملاحظة حيّة.
+     *
+     * الحذف بينقل للمهملات مش بيمسح. الوقت متخزّن مش مجرد علم عشان
+     * التنظيف التلقائي بعد [TRASH_RETENTION_DAYS] يوم يبقى ممكن، وعشان
+     * المستخدم يشوف "اتحذفت امبارح".
+     */
+    val deletedAt: Long? = null,
+
+    /** ٠ = لون الثيم الافتراضي. غير كده ARGB من لوحة محدودة. */
+    val colorArgb: Long = 0,
+
+    /** TEXT أو CHECKLIST — بيحدّد المحرّر اللي بيتفتح، مش شكل التخزين. */
+    val kind: String = KIND_TEXT,
+
+    /** وقت التذكير بالميلي ثانية، أو `null`. */
+    val reminderAt: Long? = null,
+
+    // ─────────────────────────────────────────────────────────────
+    // حقول هندسية — كلها اختيارية
+    //
+    // موجودة عشان الملاحظة في الموقع تقدر تبقى ملاحظة **هندسية**: ملاحظة
+    // جودة، أو RFI، أو نتيجة تفتيش. سايبينها فاضية افتراضياً عشان إنشاء
+    // ملاحظة سريعة يفضل ضغطة وكتابة.
+    // ─────────────────────────────────────────────────────────────
+
+    /** QA / RFI / INSPECTION / SAFETY / "" */
+    val noteType: String = "",
+
+    /** ٠ عادي · ١ مهم · ٢ عاجل — نفس سلّم المهام. */
+    val priority: Int = 0
+) {
+    val isTrashed: Boolean get() = deletedAt != null
+
+    /** ملاحظة حيّة تظهر في الشاشة الرئيسية. */
+    val isActive: Boolean get() = !archived && deletedAt == null
+
+    companion object {
+        const val KIND_TEXT = "TEXT"
+        const val KIND_CHECKLIST = "CHECKLIST"
+
+        const val TYPE_QA = "QA"
+        const val TYPE_RFI = "RFI"
+        const val TYPE_INSPECTION = "INSPECTION"
+        const val TYPE_SAFETY = "SAFETY"
+
+        /** بعدها الملاحظة المحذوفة بتتشال نهائياً. */
+        const val TRASH_RETENTION_DAYS = 30
+    }
+}
+
+/**
+ * تصنيف ملاحظات.
+ *
+ * جدول حقيقي مش نصّ في الملاحظة: التسمية لازم يكون ليها **هوية**. من
+ * غيرها، إعادة تسمية "جودة" لـ"QA/QC" معناها تعديل كل ملاحظة فيها الكلمة
+ * دي، والحذف معناه بحث نصّي في كل الجدول.
+ */
+@Serializable
+@Entity(tableName = "note_labels", indices = [Index(value = ["name"], unique = true)])
+data class NoteLabelEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val colorArgb: Long = 0,
+    val createdAt: Long
+)
+
+/** ربط ملاحظة بتصنيف — علاقة متعدّد لمتعدّد. */
+@Serializable
+@Entity(
+    tableName = "note_label_links",
+    primaryKeys = ["noteId", "labelId"],
+    indices = [Index(value = ["labelId"])]
+)
+data class NoteLabelLinkEntity(
+    val noteId: Long,
+    val labelId: Long
 )
 
 /**

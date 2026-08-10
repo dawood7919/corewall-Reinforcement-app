@@ -12,12 +12,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
-import com.corewall.qaqc.ui.appscreens.FloorNotesScreen
 import com.corewall.qaqc.ui.appscreens.SitePhotosScreen
 import com.corewall.qaqc.ui.design.CwSegmented
 import com.corewall.qaqc.ui.design.Motion
 import com.corewall.qaqc.ui.design.Space
 import com.corewall.qaqc.ui.nav.DataSection
+import com.corewall.qaqc.ui.notes.NotesScreen
 
 /**
  * الداتا — ملفات · مهام · ملاحظات · صور، كلها معزولة بالدور الشغّال.
@@ -47,7 +47,7 @@ fun DataScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             when (s) {
                 DataSection.FILES -> FilesScreen(vm, Modifier.fillMaxSize())
                 DataSection.TASKS -> TasksScreen(vm, Modifier.fillMaxSize())
-                DataSection.NOTES -> FloorNotesScreen(vm, Modifier.fillMaxSize())
+                DataSection.NOTES -> NotesScreen(vm, Modifier.fillMaxSize())
                 DataSection.PHOTOS -> SitePhotosScreen(vm, Modifier.fillMaxSize())
             }
         }

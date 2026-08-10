@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -34,7 +35,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
@@ -46,6 +47,9 @@ import androidx.compose.material.icons.filled.HorizontalRule
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Notes
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Title
@@ -68,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -80,9 +85,11 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.NoteEntity
+import com.corewall.qaqc.domain.NotesLogic
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import java.io.File
+import com.corewall.qaqc.ui.design.CwIconButton
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
 
@@ -98,6 +105,11 @@ private enum class Mode { EDIT, PREVIEW, SPLIT }
 fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
     val markName = vm.markFor(note.elementId) ?: note.elementId
 
+    // الملاحظة بتتغيّر من برّه المحرّر كمان (لون، تثبيت، تصنيف من ورقة
+    // الخيارات). `rememberUpdatedState` بيخلّي الحفظ التلقائي يكتب آخر نسخة
+    // — من غيرها كان الحفظ هيرجّع اللون القديم فوق الجديد.
+    val liveNote by rememberUpdatedState(note)
+
     var title by remember(note.id) { mutableStateOf(note.title) }
     var body by remember(note.id) { mutableStateOf(TextFieldValue(note.body)) }
     var savedNoteId by remember(note.id) { mutableIntStateOf(note.id.toInt()) }
@@ -106,6 +118,11 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
     var showSearch by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var overflow by remember { mutableStateOf(false) }
+    var optionsOpen by remember { mutableStateOf(false) }
+    // النوع محفوظ محلياً كمان: التحويل بيغيّر النص في نفس اللحظة، والانتظار
+    // لحد ما القاعدة ترجّع الملاحظة كان بيعمل رفّة.
+    var kind by remember(note.id) { mutableStateOf(note.kind) }
+    val checklist = kind == NoteEntity.KIND_CHECKLIST
 
     // Undo / Redo
     val undo = remember(note.id) { ArrayDeque<TextFieldValue>() }
@@ -119,12 +136,27 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
         body = newValue
     }
 
-    fun currentNote() = note.copy(
+    fun currentNote() = liveNote.copy(
         id = savedNoteId.toLong(),
         title = title.trim(),
         body = body.text,
+        kind = kind,
         imagePathsJson = encodeImagePaths(allMediaPaths(body.text))
     )
+
+    /** تحويل نص ↔ قايمة مهام. النص بيتحوّل فوراً، والقاعدة بتلحق. */
+    fun convert(to: String) {
+        val converted =
+            if (to == NoteEntity.KIND_CHECKLIST) NotesLogic.toChecklist(body.text)
+            else NotesLogic.toPlainText(body.text)
+        kind = to
+        // قايمة المهام مالهاش "معاينة"، فلو المستخدم كان واقف عليها لازم
+        // يرجع للتحرير — غير كده الشاشة بتفضل فاضية من غير طريق رجوع.
+        if (to == NoteEntity.KIND_CHECKLIST) mode = Mode.EDIT
+        body = TextFieldValue(converted, androidx.compose.ui.text.TextRange(converted.length))
+        savedState = "بيحفظ…"
+        vm.setNoteKind(currentNote().copy(body = converted), to)
+    }
 
     // حفظ تلقائي بعد سكون بسيط
     LaunchedEffect(note.id) {
@@ -197,7 +229,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = { vm.saveNote(currentNote()); onClose() }) {
-                            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "رجوع")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
                         }
                         Column(Modifier.weight(1f)) {
                             Text("$markName · دور ${note.level}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -206,30 +238,46 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                         IconButton(onClick = { showSearch = !showSearch }) {
                             Icon(Icons.Filled.Search, contentDescription = "بحث")
                         }
-                        Surface(
-                            onClick = { vm.saveNote(currentNote()); onClose() },
-                            color = accent, contentColor = MaterialTheme.colorScheme.onPrimary,
-                            shape = Radius.shapeMd
-                        ) {
-                            Text("حفظ", Modifier.padding(horizontal = Space.lg, vertical = Space.sm), fontWeight = FontWeight.Bold)
-                        }
+                        // التثبيت أكتر فعل بيتكرّر، فليه زرار مباشر. الباقي
+                        // في ورقة واحدة — مفيش زرار "حفظ" لأن الحفظ تلقائي.
+                        CwIconButton(
+                            Icons.Filled.PushPin,
+                            if (liveNote.pinned) "إلغاء التثبيت" else "تثبيت",
+                            { vm.togglePinNote(currentNote()) },
+                            active = liveNote.pinned
+                        )
                         Box {
                             IconButton(onClick = { overflow = true }) {
-                                Text("⋮", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Filled.MoreVert, contentDescription = "خيارات")
                             }
                             DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
-                                if (note.id != 0L || savedNoteId != 0) {
-                                    DropdownMenuItem(
-                                        text = { Text("حذف الملاحظة", color = MaterialTheme.colorScheme.error) },
-                                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                                        onClick = { overflow = false; vm.deleteNote(currentNote()); onClose() }
-                                    )
-                                }
+                                DropdownMenuItem(
+                                    text = { Text(if (checklist) "حوّلها نص" else "حوّلها قايمة مهام") },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (checklist) Icons.Filled.Notes else Icons.Filled.Checklist,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = {
+                                        overflow = false
+                                        convert(
+                                            if (checklist) NoteEntity.KIND_TEXT
+                                            else NoteEntity.KIND_CHECKLIST
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("لون · تصنيفات · تذكير · أرشفة · حذف") },
+                                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                                    onClick = { overflow = false; optionsOpen = true }
+                                )
                             }
                         }
                     }
-                    // أوضاع العرض
-                    SingleChoiceSegmentedButtonRow(
+                    // أوضاع العرض — قايمة المهام مالهاش "معاينة": المحرّر
+                    // نفسه هو المعاينة (مربّعات بتتضغط).
+                    if (!checklist) SingleChoiceSegmentedButtonRow(
                         Modifier
                             .fillMaxWidth()
                             .padding(horizontal = Space.md, vertical = Space.sm)
@@ -282,16 +330,25 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(Modifier.height(Space.md))
-                            BasicTextField(
-                                value = body, onValueChange = { edit(it) },
-                                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                                cursorBrush = SolidColor(accent),
-                                visualTransformation = transform,
-                                decorationBox = { inner -> if (body.text.isEmpty()) Text("ابدأ الكتابة… استخدم شريط الأدوات تحت للتنسيق والصور.", style = MaterialTheme.typography.bodyLarge, color = muted); inner() },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(if (mode == Mode.SPLIT) 1000.dp else 1200.dp)
-                            )
+                            if (checklist) {
+                                ChecklistEditor(
+                                    body = body.text,
+                                    onBodyChange = { next ->
+                                        edit(TextFieldValue(next, androidx.compose.ui.text.TextRange(next.length)))
+                                    }
+                                )
+                            } else {
+                                BasicTextField(
+                                    value = body, onValueChange = { edit(it) },
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                                    cursorBrush = SolidColor(accent),
+                                    visualTransformation = transform,
+                                    decorationBox = { inner -> if (body.text.isEmpty()) Text("ابدأ الكتابة… استخدم شريط الأدوات تحت للتنسيق والصور.", style = MaterialTheme.typography.bodyLarge, color = muted); inner() },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(if (mode == Mode.SPLIT) 1000.dp else 1200.dp)
+                                )
+                            }
                         }
                     }
                     if (mode == Mode.SPLIT) {
@@ -372,28 +429,30 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                             redo.removeLastOrNull()?.let { undo.addLast(body); body = it }
                         }
                         TbDivider()
-                        Tb(Icons.Filled.Title, "عنوان") { linePrefix("## ") }
-                        Tb(Icons.Filled.FormatBold, "غامق") { wrap("**") }
-                        Tb(Icons.Filled.FormatItalic, "مائل") { wrap("*") }
-                        Tb(Icons.Filled.FormatUnderlined, "تحته خط") { wrap("__") }
-                        Tb(Icons.Filled.FormatStrikethrough, "شطب") { wrap("~~") }
-                        Tb(Icons.Filled.Edit, "تظليل") { wrap("==") }
-                        TbDivider()
-                        Tb(Icons.AutoMirrored.Filled.FormatListBulleted, "نقاط") { linePrefix("- ") }
-                        Tb(Icons.Filled.FormatListNumbered, "ترقيم") { linePrefix("1. ") }
-                        Tb(Icons.Filled.CheckBox, "تشيك ليست") { linePrefix("- [ ] ") }
-                        Tb(Icons.Filled.FormatQuote, "اقتباس") { linePrefix("> ") }
-                        Tb(Icons.Filled.Code, "كود") { insertBlock("```\n\n```") }
-                        Tb(Icons.Filled.HorizontalRule, "فاصل") { insertBlock("---") }
-                        Tb(Icons.Filled.TableChart, "جدول") { insertBlock("| عمود | عمود |\n| --- | --- |\n| قيمة | قيمة |") }
-                        Box {
-                            Tb(Icons.Filled.WarningAmber, "تنبيه") { calloutMenu = true }
-                            DropdownMenu(expanded = calloutMenu, onDismissRequest = { calloutMenu = false }) {
-                                CalloutKind.entries.forEach { k ->
-                                    DropdownMenuItem(
-                                        text = { Text(k.label) },
-                                        onClick = { calloutMenu = false; insertBlock("> [!${k.token}] ${k.label}\n> ") }
-                                    )
+                        if (!checklist) {
+                            Tb(Icons.Filled.Title, "عنوان") { linePrefix("## ") }
+                            Tb(Icons.Filled.FormatBold, "غامق") { wrap("**") }
+                            Tb(Icons.Filled.FormatItalic, "مائل") { wrap("*") }
+                            Tb(Icons.Filled.FormatUnderlined, "تحته خط") { wrap("__") }
+                            Tb(Icons.Filled.FormatStrikethrough, "شطب") { wrap("~~") }
+                            Tb(Icons.Filled.Edit, "تظليل") { wrap("==") }
+                            TbDivider()
+                            Tb(Icons.AutoMirrored.Filled.FormatListBulleted, "نقاط") { linePrefix("- ") }
+                            Tb(Icons.Filled.FormatListNumbered, "ترقيم") { linePrefix("1. ") }
+                            Tb(Icons.Filled.CheckBox, "تشيك ليست") { linePrefix("- [ ] ") }
+                            Tb(Icons.Filled.FormatQuote, "اقتباس") { linePrefix("> ") }
+                            Tb(Icons.Filled.Code, "كود") { insertBlock("```\n\n```") }
+                            Tb(Icons.Filled.HorizontalRule, "فاصل") { insertBlock("---") }
+                            Tb(Icons.Filled.TableChart, "جدول") { insertBlock("| عمود | عمود |\n| --- | --- |\n| قيمة | قيمة |") }
+                            Box {
+                                Tb(Icons.Filled.WarningAmber, "تنبيه") { calloutMenu = true }
+                                DropdownMenu(expanded = calloutMenu, onDismissRequest = { calloutMenu = false }) {
+                                    CalloutKind.entries.forEach { k ->
+                                        DropdownMenuItem(
+                                            text = { Text(k.label) },
+                                            onClick = { calloutMenu = false; insertBlock("> [!${k.token}] ${k.label}\n> ") }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -408,6 +467,15 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (optionsOpen) {
+        NoteOptionsSheet(
+            vm = vm,
+            note = currentNote(),
+            onDismiss = { optionsOpen = false },
+            onNoteGone = { optionsOpen = false; onClose() }
+        )
     }
 }
 

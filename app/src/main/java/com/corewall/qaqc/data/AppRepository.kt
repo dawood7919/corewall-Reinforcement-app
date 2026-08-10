@@ -11,6 +11,8 @@ import com.corewall.qaqc.data.db.ElementNameEntity
 import com.corewall.qaqc.data.db.ImportedMarkEntity
 import com.corewall.qaqc.data.db.InspectionEntity
 import com.corewall.qaqc.data.db.NoteEntity
+import com.corewall.qaqc.data.db.NoteLabelEntity
+import com.corewall.qaqc.data.db.NoteLabelLinkEntity
 import com.corewall.qaqc.data.db.PromptEntity
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.PdfBookmarkEntity
@@ -271,9 +273,41 @@ class AppRepository(context: Context) {
     suspend fun deleteCompletedTasks() = db.taskDao().deleteCompleted()
 
     val notes: Flow<List<NoteEntity>> = db.noteDao().observeAll()
+    val noteLabels: Flow<List<NoteLabelEntity>> = db.noteLabelDao().observeAll()
+    val noteLabelLinks: Flow<List<NoteLabelLinkEntity>> = db.noteLabelLinkDao().observeAll()
+
+    suspend fun upsertNoteLabel(entity: NoteLabelEntity): Long =
+        db.noteLabelDao().upsert(entity)
+
+    /** حذف التصنيف بيشيل روابطه — الرابط اليتيم بيخلّي الفلترة تكدب. */
+    suspend fun deleteNoteLabel(id: Long) {
+        db.noteLabelLinkDao().unlinkLabel(id)
+        db.noteLabelDao().delete(id)
+    }
+
+    suspend fun setNoteLabel(noteId: Long, labelId: Long, attached: Boolean) {
+        if (attached) db.noteLabelLinkDao().link(NoteLabelLinkEntity(noteId, labelId))
+        else db.noteLabelLinkDao().unlink(noteId, labelId)
+    }
+
+    suspend fun emptyNoteTrash() = db.noteDao().emptyTrash()
+
+    /**
+     * تنظيف المهملات القديمة.
+     *
+     * بيتنادى مرة عند التشغيل. الملاحظة اللي قعدت شهر في المهملات محدش
+     * هيرجّعها، وسيبانها بيخلّي القاعدة تكبر للأبد.
+     */
+    suspend fun purgeOldNoteTrash(): Int {
+        val cutoff = System.currentTimeMillis() -
+            NoteEntity.TRASH_RETENTION_DAYS * 24L * 60L * 60L * 1000L
+        return db.noteDao().purgeTrashOlderThan(cutoff)
+    }
 
     suspend fun saveNote(note: NoteEntity): Long = db.noteDao().upsert(note)
+    /** حذف نهائي — بيشيل روابط التصنيفات معاه. */
     suspend fun deleteNote(note: NoteEntity) {
+        db.noteLabelLinkDao().unlinkNote(note.id)
         db.noteDao().delete(note.id)
         runCatching {
             json.decodeFromString<List<String>>(note.imagePathsJson).forEach { java.io.File(it).delete() }
@@ -355,7 +389,9 @@ class AppRepository(context: Context) {
         val importedMarks: List<ImportedMarkEntity> = emptyList(),
         val pdfBookmarks: List<PdfBookmarkEntity> = emptyList(),
         val pdfMeasurements: List<PdfMeasurementEntity> = emptyList(),
-        val pdfScales: List<PdfScaleEntity> = emptyList()
+        val pdfScales: List<PdfScaleEntity> = emptyList(),
+        val noteLabels: List<NoteLabelEntity> = emptyList(),
+        val noteLabelLinks: List<NoteLabelLinkEntity> = emptyList()
     )
 
     suspend fun exportBackupJson(): String = json.encodeToString(
@@ -377,7 +413,9 @@ class AppRepository(context: Context) {
             importedMarks = db.importedMarkDao().getAll(),
             pdfBookmarks = db.pdfBookmarkDao().getAll(),
             pdfMeasurements = db.pdfMeasurementDao().getAll(),
-            pdfScales = db.pdfScaleDao().getAll()
+            pdfScales = db.pdfScaleDao().getAll(),
+            noteLabels = db.noteLabelDao().getAll(),
+            noteLabelLinks = db.noteLabelLinkDao().getAll()
         )
     )
 
@@ -401,6 +439,8 @@ class AppRepository(context: Context) {
         db.pdfBookmarkDao().upsertAll(backup.pdfBookmarks.map { it.copy(id = 0) })
         db.pdfMeasurementDao().upsertAll(backup.pdfMeasurements.map { it.copy(id = 0) })
         db.pdfScaleDao().upsertAll(backup.pdfScales)
+        db.noteLabelDao().upsertAll(backup.noteLabels)
+        db.noteLabelLinkDao().linkAll(backup.noteLabelLinks)
         "تم استيراد ${backup.names.size} اسم و${backup.inspections.size} حالة فحص " +
             "و${backup.comments.size} كومنت و${backup.barCounts.size} صف عدّ و${backup.tasks.size} مهمة " +
             "و${backup.sitePhotos.size} صورة موقع و${backup.prompts.size} برومبت " +

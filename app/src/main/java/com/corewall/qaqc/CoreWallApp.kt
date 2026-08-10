@@ -51,6 +51,13 @@ class CoreWallApp : Application() {
         startupScope.launch {
             runCatching { repository.warmUp() }
             runCatching { db.openHelper.readableDatabase }
+            // المهملات بتتنضّف مرة عند التشغيل — بعد فتح القاعدة عشان
+            // ما تتأخّرش أول شاشة عشان حاجة محدش مستنيها.
+            runCatching { repository.purgeOldNoteTrash() }
+            // المنبّهات بتضيع مع إعادة التشغيل أو مع إيقاف التطبيق قسري —
+            // بنعيد بناءها من القاعدة، ودي عملية رخيصة (صف واحد فيه تذكير).
+            runCatching { com.corewall.qaqc.notify.NoteReminders.ensureChannel(this@CoreWallApp) }
+            runCatching { com.corewall.qaqc.notify.NoteReminders.rescheduleAll(this@CoreWallApp) }
         }
     }
 }

@@ -73,7 +73,6 @@ import com.corewall.qaqc.ui.ai.AiAnalysisScreen
 import com.corewall.qaqc.ui.ai.KnowledgeScreen
 import com.corewall.qaqc.ui.ai.ProjectKnowledgeScreen
 import com.corewall.qaqc.ui.appscreens.AboutScreen
-import com.corewall.qaqc.ui.appscreens.FloorNotesScreen
 import com.corewall.qaqc.ui.appscreens.NotificationsScreen
 import com.corewall.qaqc.ui.appscreens.SitePhotosScreen
 import com.corewall.qaqc.ui.appscreens.SyncScreen
@@ -96,6 +95,7 @@ import com.corewall.qaqc.ui.manpower.ManpowerScreen
 import com.corewall.qaqc.ui.nav.Dest
 import com.corewall.qaqc.ui.notes.ImageViewerScreen
 import com.corewall.qaqc.ui.notes.NoteEditorScreen
+import com.corewall.qaqc.ui.notes.NotesScreen
 import com.corewall.qaqc.ui.pdf.PdfOrganizerScreen
 import com.corewall.qaqc.ui.pdf.PdfViewerScreen
 import com.corewall.qaqc.ui.pour.PourReadinessScreen
@@ -293,7 +293,7 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
         Dest.FloorAnalysis -> AiAnalysisScreen(vm, modifier)
 
         // الداتا والمشروع
-        Dest.FloorNotes -> FloorNotesScreen(vm, modifier)
+        Dest.FloorNotes -> NotesScreen(vm, modifier)
         Dest.SitePhotos -> SitePhotosScreen(vm, modifier)
         Dest.Manpower -> ManpowerScreen(vm, modifier)
 
