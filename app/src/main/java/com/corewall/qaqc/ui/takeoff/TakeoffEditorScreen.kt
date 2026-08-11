@@ -171,7 +171,15 @@ fun TakeoffEditorScreen(
     var totalsOpen by remember { mutableStateOf(false) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
 
-    val draft = remember(path) { mutableStateListOf<Offset>() }
+    /**
+     * المسوّدة **بإحداثيات الصفحة المنسّبة**، مش بإحداثيات الشاشة.
+     *
+     * ده مقصود: التمرير والتكبير شغّالين وأنت في نص شكل، فلو خزّنّا نقطة
+     * الشاشة وأجّلنا التحويل للحظة الحفظ، أي تمرير بين أول لمسة والحفظ
+     * كان هيزحلق الشكل كله. التحويل بيحصل **مرة واحدة عند اللمس** —
+     * وبعدها النقطة متعلّقة في الورق، مش في الشاشة.
+     */
+    val draft = remember(path) { mutableStateListOf<TakeoffPoint>() }
     val draftPage = remember { mutableIntStateOf(-1) }
     /** نقطتا المعايرة — بتتجمعوا بنفس آلية المسوّدة. */
     val calibPoints = remember(path) { mutableStateListOf<TakeoffPoint>() }
@@ -191,10 +199,7 @@ fun TakeoffEditorScreen(
         val page = draftPage.intValue
         if (page < 0 || draft.isEmpty()) { draft.clear(); draftPage.intValue = -1; return }
 
-        val points = draft.mapNotNull { screen ->
-            state.pageHit(screen)?.takeIf { it.page == page }
-                ?.let { TakeoffPoint(it.nx.toDouble(), it.ny.toDouble()) }
-        }
+        val points = draft.toList()
         val enough = when (tool) {
             TakeoffTool.COUNT -> points.isNotEmpty()
             TakeoffTool.LENGTH -> points.size >= 2
@@ -228,14 +233,17 @@ fun TakeoffEditorScreen(
     fun addPoint(screen: Offset) {
         val hit = state.pageHit(screen) ?: return
         if (draftPage.intValue < 0) draftPage.intValue = hit.page
+        // لمسة على صفحة تانية وأنت في نص شكل بتتجاهل — البند بيخص صفحة
+        // واحدة، وشكل بيعدّي بين صفحتين مالوش معنى في الحصر.
         if (hit.page != draftPage.intValue) return
-        draft += screen
+        draft += TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
     }
 
     val penHasJob = settings.stylusOnly && !pointerMode
     val activeColour = Color(
         (TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size] or 0xFF000000L).toInt()
     )
+    val calibrationColour = c.accent
 
     Surface(Modifier.fillMaxSize(), color = c.background) {
         Box(Modifier.fillMaxSize()) {
@@ -289,8 +297,25 @@ fun TakeoffEditorScreen(
                         },
                         selectedId = selectedId
                     )
-                    if (draft.isNotEmpty()) {
-                        drawTakeoffDraft(draft.toList(), tool, activeColour)
+                    // نقطتا المعايرة لازم تبانوا وهو بيحطهم — من غير ده
+                    // المستخدم مش عارف إذا كانت لمسته اتسجّلت ولا لأ.
+                    if (calibrating && calibPoints.isNotEmpty()) {
+                        drawTakeoffDraft(
+                            state = s,
+                            page = s.currentPage,
+                            points = calibPoints.toList(),
+                            tool = TakeoffTool.LENGTH,
+                            colour = calibrationColour
+                        )
+                    }
+                    if (draft.isNotEmpty() && draftPage.intValue >= 0) {
+                        drawTakeoffDraft(
+                            state = s,
+                            page = draftPage.intValue,
+                            points = draft.toList(),
+                            tool = if (deductFor != null) TakeoffTool.DEDUCT else tool,
+                            colour = activeColour
+                        )
                     }
                 }
             )

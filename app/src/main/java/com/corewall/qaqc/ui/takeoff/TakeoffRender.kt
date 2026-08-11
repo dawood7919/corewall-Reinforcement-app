@@ -1,6 +1,5 @@
 package com.corewall.qaqc.ui.takeoff
 
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
@@ -141,30 +140,42 @@ private fun DrawScope.drawHandles(
     }
 }
 
-/** المسوّدة اللي بتتبني دلوقتي — خط متقطّع بصرياً عن المحفوظ. */
+/**
+ * المسوّدة اللي بتتبني دلوقتي.
+ *
+ * بتاخد نقط الصفحة المنسّبة زي البنود المحفوظة بالظبط، وبتحوّلها للشاشة
+ * مع كل إطار. يعني المسوّدة بتتحرّك وتكبّر مع الرسمة — لو كانت متخزّنة
+ * بإحداثيات الشاشة كانت هتفضل واقفة مكانها والرسمة بتتحرّك تحتها.
+ */
 fun DrawScope.drawTakeoffDraft(
-    points: List<Offset>,
+    state: PdfViewerState,
+    page: Int,
+    points: List<com.corewall.qaqc.takeoff.TakeoffPoint>,
     tool: TakeoffTool,
     colour: Color
 ) {
+    val screen = points.mapNotNull {
+        state.pagePointToScreen(page, it.x.toFloat(), it.y.toFloat())
+    }
+    if (screen.isEmpty()) return
+
     when (tool) {
-        TakeoffTool.COUNT -> points.forEach { drawCircle(colour, MARKER_RADIUS, it) }
+        TakeoffTool.COUNT -> screen.forEach { drawCircle(colour, MARKER_RADIUS, it) }
         else -> {
-            if (points.size >= 2) {
+            val closes = tool == TakeoffTool.AREA || tool == TakeoffTool.DEDUCT
+            if (screen.size >= 2) {
                 val path = Path().apply {
-                    moveTo(points.first().x, points.first().y)
-                    points.drop(1).forEach { lineTo(it.x, it.y) }
-                    if (tool == TakeoffTool.AREA || tool == TakeoffTool.DEDUCT) close()
+                    moveTo(screen.first().x, screen.first().y)
+                    screen.drop(1).forEach { lineTo(it.x, it.y) }
+                    if (closes) close()
                 }
-                if (tool == TakeoffTool.AREA || tool == TakeoffTool.DEDUCT) {
-                    drawPath(path, colour.copy(alpha = FILL_ALPHA))
-                }
+                if (closes) drawPath(path, colour.copy(alpha = FILL_ALPHA))
                 drawPath(
                     path, colour,
                     style = Stroke(STROKE, cap = StrokeCap.Round, join = StrokeJoin.Round)
                 )
             }
-            points.forEach { drawCircle(colour, 4f, it) }
+            screen.forEach { drawCircle(colour, 4f, it) }
         }
     }
 }
