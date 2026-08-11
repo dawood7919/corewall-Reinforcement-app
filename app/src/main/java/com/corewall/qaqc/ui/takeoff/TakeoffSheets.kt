@@ -1,7 +1,11 @@
 package com.corewall.qaqc.ui.takeoff
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,9 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -25,8 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.takeoff.PageGeometry
 import com.corewall.qaqc.takeoff.TakeoffItem
 import com.corewall.qaqc.takeoff.TakeoffMath
@@ -274,4 +283,138 @@ private fun toolLabel(tool: TakeoffTool): String = when (tool) {
     TakeoffTool.LENGTH -> "الأطوال"
     TakeoffTool.COUNT -> "الأعداد"
     TakeoffTool.DEDUCT -> "الخصومات"
+}
+
+/**
+ * اسم وتصنيف ولون **قبل** ما البند يتحفظ.
+ *
+ * ده الفرق بين بند اسمه "مساحة ٣" ولون اتلفّ عليه من باليت، وبند
+ * المستخدم فعلاً سمّاه وحطّه في فئته. بيظهر بعد ما الشكل يخلص رسمه —
+ * مش قبل ما يبدأ زي النسخة الأصلية — عشان في الموبايل نافذة بتقفل نص
+ * الشاشة قبل ما تشوف حتى شكل إيه بترسم أحسن تتأجّل لحد ما تشوفه.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TakeoffNameSheet(
+    tool: TakeoffTool,
+    suggestedName: String,
+    categories: List<TakeoffCategoryEntity>,
+    onCreateCategory: (name: String, colorArgb: Long, onCreated: (Long) -> Unit) -> Unit,
+    onConfirm: (name: String, categoryId: Long?, colorArgb: Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = LocalCwColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var name by remember { mutableStateOf(suggestedName) }
+    var categoryId by remember { mutableStateOf<Long?>(categories.firstOrNull()?.id) }
+    var colorArgb by remember(categoryId) {
+        mutableStateOf(
+            categories.firstOrNull { it.id == categoryId }?.colorArgb
+                ?: TAKEOFF_PALETTE[0]
+        )
+    }
+    var creatingCategory by remember { mutableStateOf(false) }
+    var newCategoryName by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = c.surface,
+        shape = Radius.sheet
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.lg)
+                .padding(bottom = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.sm)
+        ) {
+            Text(toolTitle(tool), style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
+
+            CwField(value = name, onValueChange = { name = it }, label = "الاسم")
+
+            Text("الفئة", style = CwText.codeSmall, color = c.textTertiary)
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
+                categories.forEach { cat ->
+                    CwChip(
+                        label = cat.name,
+                        selected = cat.id == categoryId,
+                        onClick = { categoryId = cat.id; colorArgb = cat.colorArgb }
+                    )
+                }
+                CwChip(
+                    label = "+ فئة جديدة",
+                    selected = creatingCategory,
+                    onClick = { creatingCategory = !creatingCategory }
+                )
+            }
+
+            if (creatingCategory) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm)
+                ) {
+                    CwField(
+                        value = newCategoryName,
+                        onValueChange = { newCategoryName = it },
+                        label = "اسم الفئة",
+                        modifier = Modifier.weight(1f)
+                    )
+                    CwButton(
+                        "إنشاء",
+                        {
+                            val cName = newCategoryName
+                            if (cName.isNotBlank()) {
+                                val newColor = TAKEOFF_PALETTE[categories.size % TAKEOFF_PALETTE.size]
+                                onCreateCategory(cName, newColor) { newId ->
+                                    categoryId = newId
+                                    colorArgb = newColor
+                                }
+                                newCategoryName = ""
+                                creatingCategory = false
+                            }
+                        }
+                    )
+                }
+            }
+
+            Text("اللون", style = CwText.codeSmall, color = c.textTertiary)
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                TAKEOFF_PALETTE.forEach { argb ->
+                    val fullArgb = argb or 0xFF000000L
+                    val chosen = fullArgb == (colorArgb or 0xFF000000L)
+                    Box(
+                        Modifier
+                            .size(30.dp)
+                            .background(Color(fullArgb.toInt()), CircleShape)
+                            .border(
+                                if (chosen) 2.dp else Dp.Hairline,
+                                if (chosen) c.accent else c.outline,
+                                CircleShape
+                            )
+                            .clickable { colorArgb = fullArgb }
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                CwButton(
+                    "حفظ",
+                    { onConfirm(name.trim().ifBlank { suggestedName }, categoryId, colorArgb) }
+                )
+                CwButton("إلغاء", onDismiss, style = CwButtonStyle.Ghost)
+            }
+        }
+    }
+}
+
+private fun toolTitle(tool: TakeoffTool): String = when (tool) {
+    TakeoffTool.AREA -> "مساحة جديدة"
+    TakeoffTool.LENGTH -> "طول جديد"
+    TakeoffTool.COUNT -> "عدّ جديد"
+    TakeoffTool.DEDUCT -> "خصم جديد"
 }

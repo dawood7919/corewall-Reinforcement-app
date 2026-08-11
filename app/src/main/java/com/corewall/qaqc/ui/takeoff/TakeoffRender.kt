@@ -37,7 +37,9 @@ fun DrawScope.drawTakeoffItems(
     items: List<TakeoffItem>,
     page: Int,
     deductionsOf: (TakeoffItem) -> List<TakeoffItem>,
-    selectedId: String?
+    selectedId: String?,
+    /** تحديد جماعي (بمستطيل) — نفس تمييز التحديد المفرد، بلا مقابض رؤوس. */
+    multiSelectedIds: Set<String> = emptySet()
 ) {
     for (item in items) {
         if (!item.visible || item.page != page) continue
@@ -46,7 +48,7 @@ fun DrawScope.drawTakeoffItems(
         // اللون متخزّن ARGB في `Long`. الـor بيضمن العتامة الكاملة حتى
         // لو الصف القديم اتخزّن من غير قناة alpha.
         val paint = Color((item.colorArgb or 0xFF000000L).toInt())
-        val selected = item.id == selectedId
+        val selected = item.id == selectedId || item.id in multiSelectedIds
         val width = if (selected) STROKE * 1.8f else STROKE
 
         when (item.tool) {
@@ -95,7 +97,9 @@ fun DrawScope.drawTakeoffItems(
             TakeoffTool.DEDUCT -> Unit
         }
 
-        if (selected) drawHandles(state, page, item, paint)
+        // المقابض بس للتحديد المفرد — التحديد الجماعي بمستطيل غرضه
+        // الحذف الجماعي، مش تعديل الرؤوس.
+        if (item.id == selectedId) drawHandles(state, page, item, paint)
     }
 }
 

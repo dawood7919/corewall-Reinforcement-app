@@ -1,5 +1,6 @@
 package com.corewall.qaqc.ui.takeoff
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,17 +10,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.HighlightAlt
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PinDrop
+import androidx.compose.material.icons.filled.Square
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material.icons.filled.Square
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,11 +44,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.data.db.TakeoffItemEntity
 import com.corewall.qaqc.pdfengine.PageLayout
 import com.corewall.qaqc.pdfengine.PdfCanvas
@@ -68,6 +78,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.abs
 
 /**
  * شاشة الحصر — الرسمة وأدواتها.
@@ -84,7 +95,20 @@ import java.io.File
  * `state.pageHit(screen)` بيرجّع `(page, nx, ny)` **منسّبة ٠..١** —
  * وده بالظبط نظام إحداثيات الحصر. فمفيش تحويل وسيط ولا فرصة لخلط
  * المساحات: اللمسة بتتحوّل مرة واحدة عند الحدود وخلاص.
+ *
+ * ## وضع الشاشة — [EditorMode]
+ *
+ * أداتين من غير الأربعة الأصليين (مساحة/طول/عدّ/خصم) محتاجين سحب مش
+ * نقر: المستطيل، تعديل الرؤوس، والتحديد بمستطيل. التلاتة دول بيشغّلوا
+ * `drawingActive = true` على [PdfCanvas]، وده بيقفل طبقة النقر تماماً
+ * (شايفها في [PdfCanvas] نفسها) — يعني الأربعة الأصليين والتلاتة دول
+ * مايشتغلوش في نفس اللحظة بحكم التصميم، مش عن طريق فحص شرط.
  */
+private enum class EditorMode { POINTER, DRAW, RECT, VERTEX, BOXSELECT }
+
+/** بند لسه ماتخزنش — مستنّي اسم وفئة ولون من [TakeoffNameSheet]. */
+private data class PendingShape(val tool: TakeoffTool, val page: Int, val points: List<TakeoffPoint>)
+
 @Composable
 fun TakeoffEditorScreen(
     vm: MainViewModel,
@@ -144,6 +168,14 @@ fun TakeoffEditorScreen(
         for (p in from..to) active.measure(p)
     }
 
+    // ── القسم المالك — عشان الفئات (مستوى القسم، مش الرسمة).
+    var projectId by remember(drawingId) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(drawingId) { projectId = vm.takeoff.drawingById(drawingId)?.projectId }
+    val categories: List<TakeoffCategoryEntity> by remember(projectId) {
+        projectId?.let { vm.takeoff.categories(it) }
+            ?: kotlinx.coroutines.flow.flowOf(emptyList<TakeoffCategoryEntity>())
+    }.collectAsStateWithLifecycle(emptyList())
+
     // ── البيانات المخزّنة
     val rows by remember(drawingId) { vm.takeoff.items(drawingId) }
         .collectAsStateWithLifecycle(emptyList())
@@ -163,13 +195,15 @@ fun TakeoffEditorScreen(
     }
 
     // ── حالة الأدوات
+    var mode by remember { mutableStateOf(EditorMode.POINTER) }
     var tool by remember { mutableStateOf(TakeoffTool.AREA) }
-    var pointerMode by remember { mutableStateOf(true) }
     var selectedId by remember { mutableStateOf<String?>(null) }
+    var multiSelectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var colourIndex by remember { mutableIntStateOf(0) }
     var calibrating by remember { mutableStateOf(false) }
     var totalsOpen by remember { mutableStateOf(false) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
+    var pendingShape by remember { mutableStateOf<PendingShape?>(null) }
 
     /**
      * المسوّدة **بإحداثيات الصفحة المنسّبة**، مش بإحداثيات الشاشة.
@@ -184,15 +218,59 @@ fun TakeoffEditorScreen(
     /** نقطتا المعايرة — بتتجمعوا بنفس آلية المسوّدة. */
     val calibPoints = remember(path) { mutableStateListOf<TakeoffPoint>() }
 
-    fun endSession() {
-        // "الخروج الشامل" من الفخ رقم ٥: مسوّدة، تحديد، وضع، خصم — كلهم.
+    // ── حالة المستطيل (سحب) — نفس مبدأ المسوّدة: صفحة منسّبة، مش شاشة.
+    var rectDraft by remember { mutableStateOf<Pair<TakeoffPoint, TakeoffPoint>?>(null) }
+    var rectPage by remember { mutableIntStateOf(-1) }
+
+    // ── حالة التحديد بمستطيل — إحداثيات شاشة خالص، معاينة بصرية بس
+    //    (مش بتتخزّن)، فمفيش داعي تتحوّل لصفحة.
+    var boxStart by remember { mutableStateOf<Offset?>(null) }
+    var boxEnd by remember { mutableStateOf<Offset?>(null) }
+
+    // ── حالة سحب رأس — نسخة محلية من رؤوس البند المحدّد بيتحرّك رأس
+    //    فيها لحد ما يرفع إصبعه، وقتها بس بتتحفظ.
+    var vertexItemId by remember { mutableStateOf<Long?>(null) }
+    var vertexIndex by remember { mutableStateOf<Int?>(null) }
+    val vertexPoints = remember { mutableStateListOf<TakeoffPoint>() }
+
+    fun clearDrafts() {
         draft.clear()
         draftPage.intValue = -1
         calibPoints.clear()
         calibrating = false
         deductFor = null
-        pointerMode = true
+        rectDraft = null
+        rectPage = -1
+        boxStart = null
+        boxEnd = null
+        vertexItemId = null
+        vertexIndex = null
+        vertexPoints.clear()
+    }
+
+    fun endSession() {
+        // "الخروج الشامل" من الفخ رقم ٥: مسوّدة، تحديد، وضع، خصم — كلهم.
+        clearDrafts()
+        mode = EditorMode.POINTER
         selectedId = null
+        multiSelectedIds = emptySet()
+    }
+
+    fun saveNewItem(toolToSave: TakeoffTool, page: Int, points: List<TakeoffPoint>, name: String, categoryId: Long?, colorArgb: Long) {
+        scope.launch {
+            vm.takeoff.saveItem(
+                TakeoffItemEntity(
+                    drawingId = drawingId,
+                    page = page,
+                    tool = toolToSave.name,
+                    name = name,
+                    colorArgb = colorArgb,
+                    pointsJson = vm.takeoff.encodeRing(points),
+                    categoryId = categoryId,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+        }
     }
 
     fun commit() {
@@ -207,27 +285,30 @@ fun TakeoffEditorScreen(
         }
         if (!enough) { draft.clear(); draftPage.intValue = -1; return }
 
-        val activeTool = if (deductFor != null) TakeoffTool.DEDUCT else tool
         val parent = deductFor
-        val colour = TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size]
-        scope.launch {
-            vm.takeoff.saveItem(
-                TakeoffItemEntity(
-                    drawingId = drawingId,
-                    page = page,
-                    tool = activeTool.name,
-                    name = defaultName(activeTool, rows.size + 1),
-                    colorArgb = if (parent != null) 0xFF9E9E9EL else colour,
-                    pointsJson = vm.takeoff.encodeRing(points),
-                    parentId = parent?.id?.toLongOrNull(),
-                    createdAt = System.currentTimeMillis()
+        if (parent != null) {
+            // الخصم مالوش اسم ولا فئة يختارهم المستخدم — مربوط بأبوه
+            // وبطلع رمادي دايمًا، زي ما كان قبل التصنيفات.
+            scope.launch {
+                vm.takeoff.saveItem(
+                    TakeoffItemEntity(
+                        drawingId = drawingId,
+                        page = page,
+                        tool = TakeoffTool.DEDUCT.name,
+                        name = defaultName(TakeoffTool.DEDUCT, rows.size + 1),
+                        colorArgb = 0xFF9E9E9EL,
+                        pointsJson = vm.takeoff.encodeRing(points),
+                        parentId = parent.id.toLongOrNull(),
+                        createdAt = System.currentTimeMillis()
+                    )
                 )
-            )
+            }
+            draft.clear(); draftPage.intValue = -1; deductFor = null
+            return
         }
-        if (parent == null) colourIndex++
-        draft.clear()
-        draftPage.intValue = -1
-        deductFor = null
+
+        pendingShape = PendingShape(tool, page, points)
+        draft.clear(); draftPage.intValue = -1
     }
 
     fun addPoint(screen: Offset) {
@@ -239,7 +320,31 @@ fun TakeoffEditorScreen(
         draft += TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
     }
 
-    val penHasJob = settings.stylusOnly && !pointerMode
+    fun finishRect(a: TakeoffPoint, b: TakeoffPoint, page: Int) {
+        val minX = minOf(a.x, b.x); val maxX = maxOf(a.x, b.x)
+        val minY = minOf(a.y, b.y); val maxY = maxOf(a.y, b.y)
+        // مستطيل أصغر من نص بكسل عمليًا = لمسة غلط مش شكل مقصود.
+        if (maxX - minX < 0.002 || maxY - minY < 0.002) return
+        pendingShape = PendingShape(
+            TakeoffTool.AREA, page,
+            listOf(
+                TakeoffPoint(minX, minY), TakeoffPoint(maxX, minY),
+                TakeoffPoint(maxX, maxY), TakeoffPoint(minX, maxY)
+            )
+        )
+    }
+
+    // ── الحسابات المشتقّة من الوضع
+    /**
+     * ملحوظة معروفة: طبقة السحب دي مش بتفرّق بين القلم والصباع (بعكس
+     * طبقة النقر اللي بتحترم "وضع القلم فقط" عن طريق `gestureAccept`).
+     * يعني المستطيل وتعديل الرؤوس والتحديد بمستطيل التلاتة بيشتغلوا
+     * بأي مؤشّر حتى لو وضع القلم فقط شغّال. أدوات نادرة الاستخدام نسبيًا،
+     * فأجّلنا الإصلاح ده بدل ما نضيف تعقيد لمرحلة أولى.
+     */
+    val drawingActive = mode == EditorMode.RECT || mode == EditorMode.BOXSELECT ||
+        (mode == EditorMode.VERTEX && selectedId != null)
+    val penHasJob = settings.stylusOnly && mode != EditorMode.POINTER
     val activeColour = Color(
         (TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size] or 0xFF000000L).toInt()
     )
@@ -251,14 +356,107 @@ fun TakeoffEditorScreen(
                 state = state,
                 engine = engine,
                 session = active,
-                // الرسم بيحصل بالنقر مش بالسحب، فطبقة الإيماءات بتفضل
-                // شغّالة دايماً: تمرّر وتكبّر وأنت في نص شكل.
-                drawingActive = false,
+                drawingActive = drawingActive,
                 gestureAccept = remember(penHasJob) {
                     { kind: PointerKind -> !(penHasJob && kind.isPen) }
                 },
+                onDrawStart = { screen ->
+                    when (mode) {
+                        EditorMode.RECT -> {
+                            state.pageHit(screen)?.let { hit ->
+                                rectPage = hit.page
+                                val p = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                rectDraft = p to p
+                            }
+                        }
+                        EditorMode.BOXSELECT -> { boxStart = screen; boxEnd = screen }
+                        EditorMode.VERTEX -> {
+                            val item = pageItems.firstOrNull { it.id == selectedId }
+                            val hit = state.pageHit(screen)
+                            if (item != null && hit != null && hit.page == item.page) {
+                                val idx = TakeoffMath.nearestVertexIndex(
+                                    item, TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble()),
+                                    pageGeometry, tapRadiusPt = 16.0
+                                )
+                                if (idx != null) {
+                                    vertexItemId = item.id.toLongOrNull()
+                                    vertexIndex = idx
+                                    vertexPoints.clear()
+                                    vertexPoints.addAll(item.verts)
+                                }
+                            }
+                        }
+                        else -> Unit
+                    }
+                },
+                onDrawMove = { screen ->
+                    when (mode) {
+                        EditorMode.RECT -> {
+                            val start = rectDraft?.first
+                            val hit = state.pageHit(screen)
+                            if (start != null && hit != null && hit.page == rectPage) {
+                                rectDraft = start to TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                            }
+                        }
+                        EditorMode.BOXSELECT -> { boxEnd = screen }
+                        EditorMode.VERTEX -> {
+                            val idx = vertexIndex
+                            val hit = state.pageHit(screen)
+                            if (idx != null && hit != null && idx < vertexPoints.size) {
+                                vertexPoints[idx] = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                            }
+                        }
+                        else -> Unit
+                    }
+                },
+                onDrawEnd = {
+                    when (mode) {
+                        EditorMode.RECT -> {
+                            val draft2 = rectDraft
+                            if (draft2 != null) finishRect(draft2.first, draft2.second, rectPage)
+                            rectDraft = null; rectPage = -1
+                        }
+                        EditorMode.BOXSELECT -> {
+                            val s = boxStart; val e = boxEnd
+                            if (s != null && e != null) {
+                                val hs = state.pageHit(s)
+                                val he = state.pageHit(e)
+                                if (hs != null && he != null && hs.page == he.page) {
+                                    val minP = TakeoffPoint(
+                                        minOf(hs.nx, he.nx).toDouble(), minOf(hs.ny, he.ny).toDouble()
+                                    )
+                                    val maxP = TakeoffPoint(
+                                        maxOf(hs.nx, he.nx).toDouble(), maxOf(hs.ny, he.ny).toDouble()
+                                    )
+                                    multiSelectedIds = pageItems
+                                        .filter { it.page == hs.page && TakeoffMath.fullyInside(it, minP, maxP) }
+                                        .map { it.id }.toSet()
+                                }
+                            }
+                            boxStart = null; boxEnd = null
+                        }
+                        EditorMode.VERTEX -> {
+                            val itemId = vertexItemId
+                            if (itemId != null && vertexPoints.isNotEmpty()) {
+                                val snapshot = vertexPoints.toList()
+                                scope.launch {
+                                    vm.takeoff.itemById(itemId)?.let { row ->
+                                        vm.takeoff.saveItem(row.copy(pointsJson = vm.takeoff.encodeRing(snapshot)))
+                                    }
+                                }
+                            }
+                            vertexItemId = null; vertexIndex = null; vertexPoints.clear()
+                        }
+                        else -> Unit
+                    }
+                },
+                onDrawCancel = {
+                    rectDraft = null; rectPage = -1
+                    boxStart = null; boxEnd = null
+                    vertexItemId = null; vertexIndex = null; vertexPoints.clear()
+                },
                 onTap = { point, kind ->
-                    val penOnly = settings.stylusOnly && !pointerMode
+                    val penOnly = settings.stylusOnly && mode != EditorMode.POINTER
                     when {
                         // في وضع القلم، الصباع بيتنقّل بس — مايرسمش ولا يعاير.
                         penOnly && !kind.isPen -> Unit
@@ -269,7 +467,7 @@ fun TakeoffEditorScreen(
                                 }
                             }
                         }
-                        pointerMode -> {
+                        mode == EditorMode.POINTER || mode == EditorMode.VERTEX -> {
                             val hit = state.pageHit(point)
                             selectedId = hit?.let { h ->
                                 val p = TakeoffPoint(h.nx.toDouble(), h.ny.toDouble())
@@ -281,22 +479,29 @@ fun TakeoffEditorScreen(
                                     )
                                 }?.id
                             }
+                            multiSelectedIds = emptySet()
                         }
-                        else -> addPoint(point)
+                        mode == EditorMode.DRAW -> addPoint(point)
+                        else -> Unit
                     }
                 },
-                onLongPress = { _, _ -> if (!pointerMode) commit() },
+                onLongPress = { _, _ -> if (mode == EditorMode.DRAW) commit() },
                 overlay = { s ->
+                    val renderItems = if (vertexItemId != null && vertexPoints.isNotEmpty()) {
+                        val draggedId = vertexItemId.toString()
+                        pageItems.map { if (it.id == draggedId) it.copy(verts = vertexPoints.toList()) else it }
+                    } else pageItems
                     drawTakeoffItems(
                         state = s,
-                        items = pageItems,
+                        items = renderItems,
                         page = s.currentPage,
                         deductionsOf = { parent ->
-                            pageItems.filter {
+                            renderItems.filter {
                                 it.tool == TakeoffTool.DEDUCT && it.parentId == parent.id
                             }
                         },
-                        selectedId = selectedId
+                        selectedId = selectedId,
+                        multiSelectedIds = multiSelectedIds
                     )
                     // نقطتا المعايرة لازم تبانوا وهو بيحطهم — من غير ده
                     // المستخدم مش عارف إذا كانت لمسته اتسجّلت ولا لأ.
@@ -318,6 +523,27 @@ fun TakeoffEditorScreen(
                             colour = activeColour
                         )
                     }
+                    rectDraft?.let { (a, b) ->
+                        drawTakeoffDraft(
+                            state = s, page = rectPage,
+                            points = listOf(
+                                a, TakeoffPoint(b.x, a.y), b, TakeoffPoint(a.x, b.y)
+                            ),
+                            tool = TakeoffTool.AREA, colour = activeColour
+                        )
+                    }
+                    val bs = boxStart; val be = boxEnd
+                    if (bs != null && be != null) {
+                        drawRect(
+                            color = c.accent,
+                            topLeft = Offset(minOf(bs.x, be.x), minOf(bs.y, be.y)),
+                            size = Size(abs(be.x - bs.x), abs(be.y - bs.y)),
+                            style = Stroke(
+                                width = 2f,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f))
+                            )
+                        )
+                    }
                 }
             )
 
@@ -333,21 +559,24 @@ fun TakeoffEditorScreen(
             )
 
             TakeoffToolBar(
+                mode = mode,
                 tool = tool,
-                pointerMode = pointerMode,
                 deducting = deductFor != null,
                 hasDraft = draft.isNotEmpty(),
                 canDeduct = selectedId != null &&
                     pageItems.firstOrNull { it.id == selectedId }?.tool == TakeoffTool.AREA,
+                selectedId = selectedId,
+                multiCount = multiSelectedIds.size,
                 onPointer = { endSession() },
-                onPick = { picked ->
-                    endSession(); pointerMode = false; tool = picked
-                },
+                onPick = { picked -> clearDrafts(); mode = EditorMode.DRAW; tool = picked },
+                onRect = { clearDrafts(); mode = EditorMode.RECT },
+                onVertexEdit = { clearDrafts(); mode = EditorMode.VERTEX },
+                onBoxSelect = { clearDrafts(); mode = EditorMode.BOXSELECT; selectedId = null },
                 onDeduct = {
                     val parent = pageItems.firstOrNull { it.id == selectedId }
                     if (parent != null) {
                         draft.clear(); draftPage.intValue = -1
-                        deductFor = parent; pointerMode = false; tool = TakeoffTool.AREA
+                        deductFor = parent; mode = EditorMode.DRAW; tool = TakeoffTool.AREA
                     }
                 },
                 onDone = { commit() },
@@ -357,7 +586,11 @@ fun TakeoffEditorScreen(
                     }
                     selectedId = null
                 },
-                selectedId = selectedId,
+                onDeleteMulti = {
+                    val ids = multiSelectedIds.mapNotNull { it.toLongOrNull() }
+                    scope.launch { ids.forEach { vm.takeoff.deleteItem(it) } }
+                    multiSelectedIds = emptySet()
+                },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -394,6 +627,29 @@ fun TakeoffEditorScreen(
             items = items,
             pageGeometry = pageGeometry,
             onDismiss = { totalsOpen = false }
+        )
+    }
+
+    pendingShape?.let { pending ->
+        TakeoffNameSheet(
+            tool = pending.tool,
+            suggestedName = defaultName(pending.tool, rows.size + 1),
+            categories = categories,
+            onCreateCategory = { name, color, onCreated ->
+                val pid = projectId
+                if (pid != null) {
+                    scope.launch {
+                        val cat = vm.takeoff.createCategory(pid, name, color)
+                        onCreated(cat.id)
+                    }
+                }
+            },
+            onConfirm = { name, categoryId, colorArgb ->
+                saveNewItem(pending.tool, pending.page, pending.points, name, categoryId, colorArgb)
+                colourIndex++
+                pendingShape = null
+            },
+            onDismiss = { pendingShape = null }
         )
     }
 }
@@ -445,20 +701,30 @@ private fun TakeoffTopBar(
     }
 }
 
-/** شريط الأدوات السفلي. */
+/**
+ * شريط الأدوات السفلي.
+ *
+ * ملفوف في تمرير أفقي — تسعة أزرار مش هتتلم في عرض شاشة موبايل واحد
+ * غير كده.
+ */
 @Composable
 private fun TakeoffToolBar(
+    mode: EditorMode,
     tool: TakeoffTool,
-    pointerMode: Boolean,
     deducting: Boolean,
     hasDraft: Boolean,
     canDeduct: Boolean,
     selectedId: String?,
+    multiCount: Int,
     onPointer: () -> Unit,
     onPick: (TakeoffTool) -> Unit,
+    onRect: () -> Unit,
+    onVertexEdit: () -> Unit,
+    onBoxSelect: () -> Unit,
     onDeduct: () -> Unit,
     onDone: () -> Unit,
     onDeleteSelected: () -> Unit,
+    onDeleteMulti: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
@@ -469,29 +735,43 @@ private fun TakeoffToolBar(
         shadowElevation = Elevation.floating
     ) {
         Row(
-            Modifier.padding(horizontal = Space.sm, vertical = Space.xxs),
+            Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = Space.sm, vertical = Space.xxs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.xxs)
         ) {
             CwIconButton(
                 Icons.Filled.PanTool, "تنقّل وتحديد", onPointer,
-                active = pointerMode && !deducting
+                active = mode == EditorMode.POINTER
             )
             CwIconButton(
                 Icons.Filled.Square, "مساحة", { onPick(TakeoffTool.AREA) },
-                active = !pointerMode && !deducting && tool == TakeoffTool.AREA
+                active = mode == EditorMode.DRAW && !deducting && tool == TakeoffTool.AREA
+            )
+            CwIconButton(
+                Icons.Filled.CropSquare, "مستطيل", onRect,
+                active = mode == EditorMode.RECT
             )
             CwIconButton(
                 Icons.Filled.Timeline, "طول", { onPick(TakeoffTool.LENGTH) },
-                active = !pointerMode && tool == TakeoffTool.LENGTH
+                active = mode == EditorMode.DRAW && tool == TakeoffTool.LENGTH
             )
             CwIconButton(
                 Icons.Filled.PinDrop, "عدّ", { onPick(TakeoffTool.COUNT) },
-                active = !pointerMode && tool == TakeoffTool.COUNT
+                active = mode == EditorMode.DRAW && tool == TakeoffTool.COUNT
             )
             CwIconButton(
                 Icons.Filled.ContentCut, "خصم من المحدّد", onDeduct,
                 active = deducting, enabled = canDeduct || deducting
+            )
+            CwIconButton(
+                Icons.Filled.OpenWith, "تعديل الرؤوس", onVertexEdit,
+                active = mode == EditorMode.VERTEX
+            )
+            CwIconButton(
+                Icons.Filled.HighlightAlt, "تحديد بمستطيل", onBoxSelect,
+                active = mode == EditorMode.BOXSELECT
             )
             if (hasDraft) {
                 CwIconButton(Icons.Filled.Check, "إنهاء الشكل", onDone, tint = c.success.fg)
@@ -501,7 +781,11 @@ private fun TakeoffToolBar(
                     Icons.Filled.Delete, "احذف المحدّد", onDeleteSelected, tint = c.danger.fg
                 )
             }
+            if (multiCount > 0) {
+                CwIconButton(
+                    Icons.Filled.DeleteSweep, "احذف $multiCount بند", onDeleteMulti, tint = c.danger.fg
+                )
+            }
         }
     }
 }
-

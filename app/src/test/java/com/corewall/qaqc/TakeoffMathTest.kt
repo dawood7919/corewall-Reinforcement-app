@@ -1,6 +1,7 @@
 package com.corewall.qaqc
 
 import com.corewall.qaqc.takeoff.PageGeometry
+import com.corewall.qaqc.takeoff.TakeoffCategory
 import com.corewall.qaqc.takeoff.TakeoffItem
 import com.corewall.qaqc.takeoff.TakeoffMath
 import com.corewall.qaqc.takeoff.TakeoffPoint
@@ -33,12 +34,14 @@ class TakeoffMathTest {
         parentId: String? = null,
         extraRings: List<List<TakeoffPoint>> = emptyList(),
         extraSegments: List<List<TakeoffPoint>> = emptyList(),
-        visible: Boolean = true
+        visible: Boolean = true,
+        categoryId: String? = "c",
+        rateOverride: Double? = null
     ) = TakeoffItem(
         id = id, drawingPath = "d.pdf", page = 1, tool = tool,
-        name = "t", categoryId = "c", colorArgb = 0, visible = visible,
+        name = "t", categoryId = categoryId, colorArgb = 0, visible = visible,
         verts = verts, extraRings = extraRings, extraSegments = extraSegments,
-        parentId = parentId
+        parentId = parentId, rateOverride = rateOverride
     )
 
     /**
@@ -281,5 +284,63 @@ class TakeoffMathTest {
         assertTrue(TakeoffMath.pointInRing(TakeoffPoint(0.2, 0.2), lShape))   // في الذراع
         assertTrue(TakeoffMath.pointInRing(TakeoffPoint(0.4, 0.2), lShape))   // في الذراع التاني
         assertTrue(!TakeoffMath.pointInRing(TakeoffPoint(0.4, 0.4), lShape))  // في الفراغ جوّه الـL
+    }
+
+    // ═════════════════════════════ ٦) تعديل الرؤوس
+
+    @Test
+    fun `nearest vertex finds the closest corner within the tap radius`() {
+        val shape = item(TakeoffTool.AREA, square(0.2, 0.3))
+        // الرأس التاني هو (0.5, 0.2) — قريب منها.
+        val near = TakeoffPoint(0.5 + 3.0 / page.widthPt, 0.2)
+        assertEquals(1, TakeoffMath.nearestVertexIndex(shape, near, page, tapRadiusPt = 10.0))
+    }
+
+    @Test
+    fun `nearest vertex returns null outside the tap radius`() {
+        val shape = item(TakeoffTool.AREA, square(0.2, 0.3))
+        assertEquals(null, TakeoffMath.nearestVertexIndex(shape, TakeoffPoint(0.35, 0.35), page, tapRadiusPt = 10.0))
+    }
+
+    // ═════════════════════════════ ٧) تحديد بمستطيل
+
+    @Test
+    fun `fully inside requires every vertex not just one`() {
+        val shape = item(TakeoffTool.AREA, square(0.2, 0.2)) // [0.2,0.4] × [0.2,0.4]
+        assertTrue(TakeoffMath.fullyInside(shape, TakeoffPoint(0.1, 0.1), TakeoffPoint(0.5, 0.5)))
+        // نفس المستطيل بس مقطوع نص الشكل — رأس واحد بره يكفي يرفض التحديد.
+        assertTrue(!TakeoffMath.fullyInside(shape, TakeoffPoint(0.1, 0.1), TakeoffPoint(0.3, 0.5)))
+    }
+
+    // ═════════════════════════════ ٨) التكلفة (سعر × هالك)
+
+    @Test
+    fun `waste percent inflates the ordered quantity but not the stored net`() {
+        val wall = item(TakeoffTool.AREA, square(0.1, 0.4), categoryId = "concrete")
+        val categories = listOf(TakeoffCategory("concrete", "خرسانة", 0, wastePct = 10.0))
+        val net = TakeoffMath.netQuantity(wall, listOf(wall), page)
+        val ordered = TakeoffMath.quantityWithWaste(wall, listOf(wall), page, categories)
+        assertEquals(net * 1.10, ordered, 1e-9)
+    }
+
+    @Test
+    fun `count items never carry waste`() {
+        val markers = item(TakeoffTool.COUNT, List(4) { TakeoffPoint(it * 0.1, 0.5) }, categoryId = "doors")
+        val categories = listOf(TakeoffCategory("doors", "أبواب", 0, wastePct = 15.0))
+        assertEquals(4.0, TakeoffMath.quantityWithWaste(markers, listOf(markers), page, categories), 0.0)
+    }
+
+    @Test
+    fun `item rate override wins over the category default`() {
+        val wall = item(TakeoffTool.AREA, square(0.1, 0.2), categoryId = "concrete", rateOverride = 500.0)
+        val categories = listOf(TakeoffCategory("concrete", "خرسانة", 0, rate = 300.0))
+        assertEquals(500.0, TakeoffMath.rateFor(wall, categories), 0.0)
+    }
+
+    @Test
+    fun `cost is zero for an unpriced category`() {
+        val wall = item(TakeoffTool.AREA, square(0.1, 0.2), categoryId = "concrete")
+        val categories = listOf(TakeoffCategory("concrete", "خرسانة", 0))
+        assertEquals(0.0, TakeoffMath.costOf(wall, listOf(wall), page, categories), 0.0)
     }
 }

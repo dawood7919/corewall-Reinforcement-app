@@ -640,6 +640,31 @@ interface TakeoffDao {
     @Query("DELETE FROM takeoff_drawings WHERE id = :id")
     suspend fun deleteDrawing(id: Long)
 
+    // ── الفئات والمجموعات
+    @Query("SELECT * FROM takeoff_categories WHERE projectId = :projectId ORDER BY sortOrder, id")
+    fun observeCategories(projectId: Long): Flow<List<TakeoffCategoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCategory(entity: TakeoffCategoryEntity): Long
+
+    @Query("DELETE FROM takeoff_categories WHERE id = :id")
+    suspend fun deleteCategory(id: Long)
+
+    @Query("UPDATE takeoff_items SET categoryId = NULL, groupId = NULL WHERE categoryId = :categoryId")
+    suspend fun clearCategoryFromItems(categoryId: Long)
+
+    @Query("SELECT * FROM takeoff_groups WHERE categoryId IN (SELECT id FROM takeoff_categories WHERE projectId = :projectId) ORDER BY sortOrder, id")
+    fun observeGroups(projectId: Long): Flow<List<TakeoffGroupEntity>>
+
+    @Query("SELECT * FROM takeoff_groups WHERE categoryId = :categoryId")
+    suspend fun groupsOfCategory(categoryId: Long): List<TakeoffGroupEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertGroup(entity: TakeoffGroupEntity): Long
+
+    @Query("DELETE FROM takeoff_groups WHERE id = :id")
+    suspend fun deleteGroup(id: Long)
+
     // ── المعايرة
     @Query("SELECT * FROM takeoff_scales WHERE drawingId = :drawingId")
     fun observeScales(drawingId: Long): Flow<List<TakeoffScaleEntity>>

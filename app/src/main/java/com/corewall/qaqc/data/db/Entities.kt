@@ -708,6 +708,37 @@ data class TakeoffScaleEntity(
 )
 
 /**
+ * فئة حصر — "خرسانة"، "بلاط"، "حوائط". **مستوى المشروع** مش الرسمة:
+ * فئة واحدة بتتشارك بين كل رسمات القسم، لأن مشروع واحد بيستخدم نفس
+ * التصنيف على أكتر من لوحة.
+ *
+ * [rate] و[wastePct] افتراضي الفئة — أي بند جواها بياخدهم إلا لو
+ * اتحدّد له تجاوز خاص (`TakeoffItemEntity.rateOverride`).
+ */
+@Serializable
+@Entity(tableName = "takeoff_categories", indices = [Index(value = ["projectId"])])
+data class TakeoffCategoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val projectId: Long,
+    val name: String,
+    val colorArgb: Long,
+    val rate: Double = 0.0,
+    val wastePct: Double = 0.0,
+    val sortOrder: Int = 0,
+    val createdAt: Long
+)
+
+/** مجموعة جوّه فئة — تقسيم فرعي اختياري ("حوائط ← الدور الأرضي"). */
+@Serializable
+@Entity(tableName = "takeoff_groups", indices = [Index(value = ["categoryId"])])
+data class TakeoffGroupEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val categoryId: Long,
+    val name: String,
+    val sortOrder: Int = 0
+)
+
+/**
  * بند حصر متخزّن.
  *
  * النقط متخزّنة **منسّبة ٠..١** لصفحتها في `pointsJson` — نفس مبدأ
@@ -717,7 +748,10 @@ data class TakeoffScaleEntity(
 @Serializable
 @Entity(
     tableName = "takeoff_items",
-    indices = [Index(value = ["drawingId", "page"]), Index(value = ["parentId"])]
+    indices = [
+        Index(value = ["drawingId", "page"]), Index(value = ["parentId"]),
+        Index(value = ["categoryId"]), Index(value = ["groupId"])
+    ]
 )
 data class TakeoffItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -726,6 +760,7 @@ data class TakeoffItemEntity(
     /** AREA · LENGTH · COUNT · DEDUCT */
     val tool: String,
     val name: String,
+    /** قديم — من قبل الفئات الحقيقية. الصفوف الجديدة بتفضّل [categoryId]. */
     val category: String = "",
     val colorArgb: Long,
     val visible: Boolean = true,
@@ -738,5 +773,9 @@ data class TakeoffItemEntity(
     /** البند اللي الخصم ده بيتقطع منه. للخصم بس. */
     val parentId: Long? = null,
     val zone: String = "",
-    val createdAt: Long
+    val createdAt: Long,
+    val categoryId: Long? = null,
+    val groupId: Long? = null,
+    val progressPercent: Double? = null,
+    val rateOverride: Double? = null
 )

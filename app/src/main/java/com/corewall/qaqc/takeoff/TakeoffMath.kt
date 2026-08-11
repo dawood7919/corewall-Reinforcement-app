@@ -142,6 +142,42 @@ object TakeoffMath {
     fun deductionsOf(item: TakeoffItem, all: List<TakeoffItem>): List<TakeoffItem> =
         all.filter { it.tool == TakeoffTool.DEDUCT && it.parentId == item.id }
 
+    // ═══════════════════════════════════════════════ التكلفة
+
+    /**
+     * الكمية الصافية **بعد** إضافة نسبة الهالك.
+     *
+     * العدّ مالوش هالك — علامة اتحطّت مرة مش بتزيد بنسبة. لو الأداة
+     * تعتبر عدّ ([TakeoffTool.COUNT]) بترجع الكمية الصافية زي ما هي.
+     */
+    fun quantityWithWaste(
+        item: TakeoffItem,
+        all: List<TakeoffItem>,
+        page: PageGeometry,
+        categories: List<TakeoffCategory>
+    ): Double {
+        val net = netQuantity(item, all, page)
+        if (item.tool == TakeoffTool.COUNT) return net
+        val waste = wastePctFor(item, categories)
+        return if (waste > 0.0) net * (1.0 + waste / 100.0) else net
+    }
+
+    /** نسبة هالك الفئة — الفئة الوحيدة اللي عندها هالك، مفيش تجاوز على البند. */
+    fun wastePctFor(item: TakeoffItem, categories: List<TakeoffCategory>): Double =
+        categories.firstOrNull { it.id == item.categoryId }?.wastePct ?: 0.0
+
+    /** سعر الوحدة — تجاوز البند لو موجود، وإلا افتراضي فئته. */
+    fun rateFor(item: TakeoffItem, categories: List<TakeoffCategory>): Double =
+        item.rateOverride ?: categories.firstOrNull { it.id == item.categoryId }?.rate ?: 0.0
+
+    /** التكلفة التقديرية — الكمية بعد الهالك × السعر. */
+    fun costOf(
+        item: TakeoffItem,
+        all: List<TakeoffItem>,
+        page: PageGeometry,
+        categories: List<TakeoffCategory>
+    ): Double = quantityWithWaste(item, all, page, categories) * rateFor(item, categories)
+
     // ═══════════════════════════════════════════════ اختبار اللمس
 
     /**
@@ -187,6 +223,41 @@ object TakeoffMath {
             best = minOf(best, distanceToSegment(px, py, ax, ay, bx, by))
         }
         return best
+    }
+
+    /**
+     * أقرب رأس من `item.verts` للنقطة، لو جوّه نصف قطر اللمس.
+     *
+     * مقصود إنها تفحص `verts` بس مش `extraRings`/`extraSegments` — تعديل
+     * الرؤوس دلوقتي بيشتغل على الشكل الأساسي، والتجميع (رسم مستمر) لسه
+     * مالوش واجهة تضيف له. لو حد ضاف الواجهة دي بعدين لازم يوسّع الفحص هنا.
+     */
+    fun nearestVertexIndex(
+        item: TakeoffItem,
+        p: TakeoffPoint,
+        page: PageGeometry,
+        tapRadiusPt: Double
+    ): Int? {
+        if (item.verts.isEmpty()) return null
+        var bestIdx = -1
+        var bestDist = Double.MAX_VALUE
+        item.verts.forEachIndexed { i, v ->
+            val d = hypot((p.x - v.x) * page.widthPt, (p.y - v.y) * page.heightPt)
+            if (d < bestDist) { bestDist = d; bestIdx = i }
+        }
+        return bestIdx.takeIf { bestDist <= tapRadiusPt }
+    }
+
+    /**
+     * البند بالكامل جوّه مستطيل تحديد؟ — لازم **كل** رأس جوّه، مش أي رأس.
+     *
+     * الإحداثيات منسّبة على الاتنين فمفيش داعي لـ[PageGeometry]: المقارنة
+     * صحيحة زي ما هي من غير أي تحويل.
+     */
+    fun fullyInside(item: TakeoffItem, min: TakeoffPoint, max: TakeoffPoint): Boolean {
+        val all = item.verts + item.extraRings.flatten() + item.extraSegments.flatten()
+        if (all.isEmpty()) return false
+        return all.all { it.x in min.x..max.x && it.y in min.y..max.y }
     }
 
     private fun distanceToSegment(

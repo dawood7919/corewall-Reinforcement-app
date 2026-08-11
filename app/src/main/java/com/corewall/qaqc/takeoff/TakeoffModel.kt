@@ -105,7 +105,8 @@ data class TakeoffItem(
     val page: Int,
     val tool: TakeoffTool,
     val name: String,
-    val categoryId: String,
+    /** معرّف [TakeoffCategory.id] — `null` يعني "بلا تصنيف". */
+    val categoryId: String?,
     val colorArgb: Long,
     val visible: Boolean = true,
 
@@ -121,9 +122,36 @@ data class TakeoffItem(
     /** الأب اللي الخصم ده بيتقطع منه. لـ[TakeoffTool.DEDUCT] بس. */
     val parentId: String? = null,
 
+    /** مجموعة فرعية جوّه الفئة — اختيارية. */
+    val groupId: String? = null,
+
     /** وسم مكان حر: "الدور الأرضي — بلوك A". */
     val zone: String = "",
 
     /** نسبة التنفيذ في الموقع ٠..١٠٠. */
-    val progressPercent: Double? = null
+    val progressPercent: Double? = null,
+
+    /** سعر الوحدة لو مختلف عن افتراضي الفئة. `null` = استخدم فئة الأب. */
+    val rateOverride: Double? = null
+)
+
+/**
+ * فئة حصر — مستوى القسم كله، بتتشارك بين كل رسماته.
+ *
+ * [rate]/[wastePct] بيتحسبوا live على أي بند تابع، مش بيتخزّنوا في
+ * البند نفسه — تغيير سعر الفئة بيغيّر كل التكلفة المعروضة فورًا.
+ */
+data class TakeoffCategory(
+    val id: String,
+    val name: String,
+    val colorArgb: Long,
+    val rate: Double = 0.0,
+    val wastePct: Double = 0.0
+)
+
+/** مجموعة جوّه فئة. */
+data class TakeoffGroup(
+    val id: String,
+    val categoryId: String,
+    val name: String
 )

@@ -39,9 +39,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TakeoffProjectEntity::class,
         TakeoffDrawingEntity::class,
         TakeoffScaleEntity::class,
-        TakeoffItemEntity::class
+        TakeoffItemEntity::class,
+        TakeoffCategoryEntity::class,
+        TakeoffGroupEntity::class
     ],
-    version = 19,
+    version = 20,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -443,6 +445,39 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * فئات ومجموعات الحصر + أعمدة جديدة على البنود — **بيضيف بس**.
+         *
+         * الأعمدة الجديدة كلها Nullable أو ليها قيمة افتراضية، فالصفوف
+         * القديمة بتقرا سليمة من غير أي تحويل بيانات.
+         */
+        private val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `takeoff_categories` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`projectId` INTEGER NOT NULL, `name` TEXT NOT NULL, " +
+                        "`colorArgb` INTEGER NOT NULL, `rate` REAL NOT NULL, " +
+                        "`wastePct` REAL NOT NULL, `sortOrder` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_takeoff_categories_projectId` ON `takeoff_categories` (`projectId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `takeoff_groups` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`categoryId` INTEGER NOT NULL, `name` TEXT NOT NULL, " +
+                        "`sortOrder` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_takeoff_groups_categoryId` ON `takeoff_groups` (`categoryId`)")
+                db.execSQL("ALTER TABLE `takeoff_items` ADD COLUMN `categoryId` INTEGER")
+                db.execSQL("ALTER TABLE `takeoff_items` ADD COLUMN `groupId` INTEGER")
+                db.execSQL("ALTER TABLE `takeoff_items` ADD COLUMN `progressPercent` REAL")
+                db.execSQL("ALTER TABLE `takeoff_items` ADD COLUMN `rateOverride` REAL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_takeoff_items_categoryId` ON `takeoff_items` (`categoryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_takeoff_items_groupId` ON `takeoff_items` (`groupId`)")
+            }
+        }
+
         private val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_filePath` ON `pdf_annotations` (`filePath`)")
@@ -527,7 +562,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
-                    MIGRATION_17_18, MIGRATION_18_19
+                    MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20
                 ).build().also { instance = it }
             }
     }

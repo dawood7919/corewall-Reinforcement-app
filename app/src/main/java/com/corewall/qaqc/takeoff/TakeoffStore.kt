@@ -3,7 +3,9 @@ package com.corewall.qaqc.takeoff
 import android.content.Context
 import android.net.Uri
 import com.corewall.qaqc.data.db.AppDatabase
+import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.data.db.TakeoffDrawingEntity
+import com.corewall.qaqc.data.db.TakeoffGroupEntity
 import com.corewall.qaqc.data.db.TakeoffItemEntity
 import com.corewall.qaqc.data.db.TakeoffProjectEntity
 import com.corewall.qaqc.data.db.TakeoffScaleEntity
@@ -49,6 +51,7 @@ class TakeoffStore(
         dao.observeProjects().stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     fun drawings(projectId: Long): Flow<List<TakeoffDrawingEntity>> = dao.observeDrawings(projectId)
+    suspend fun drawingById(id: Long): TakeoffDrawingEntity? = withContext(Dispatchers.IO) { dao.drawing(id) }
     fun items(drawingId: Long): Flow<List<TakeoffItemEntity>> = dao.observeItems(drawingId)
     fun projectItems(projectId: Long): Flow<List<TakeoffItemEntity>> = dao.observeProjectItems(projectId)
     fun scales(drawingId: Long): Flow<List<TakeoffScaleEntity>> = dao.observeScales(drawingId)
@@ -93,6 +96,48 @@ class TakeoffStore(
         }
         dao.deleteProject(id)
     }
+
+    // ═══════════════════════════════════════════════ الفئات والمجموعات
+
+    fun categories(projectId: Long): Flow<List<TakeoffCategoryEntity>> = dao.observeCategories(projectId)
+    fun groups(projectId: Long): Flow<List<TakeoffGroupEntity>> = dao.observeGroups(projectId)
+
+    /** بيرجّع الفئة الجديدة كاملة — الشاشة محتاجة الـid فورًا تحدّده كنشطة. */
+    suspend fun createCategory(
+        projectId: Long,
+        name: String,
+        colorArgb: Long,
+        rate: Double = 0.0,
+        wastePct: Double = 0.0
+    ): TakeoffCategoryEntity = withContext(Dispatchers.IO) {
+        val entity = TakeoffCategoryEntity(
+            projectId = projectId,
+            name = name.trim().ifBlank { "بلا اسم" },
+            colorArgb = colorArgb,
+            rate = rate,
+            wastePct = wastePct,
+            createdAt = System.currentTimeMillis()
+        )
+        entity.copy(id = dao.upsertCategory(entity))
+    }
+
+    suspend fun updateCategory(category: TakeoffCategoryEntity) =
+        withContext(Dispatchers.IO) { dao.upsertCategory(category); Unit }
+
+    /** حذف فئة **بيفكّ ربط بنودها** — الحصر بتاعها فاضل، بس من غير تصنيف. */
+    suspend fun deleteCategory(id: Long) = withContext(Dispatchers.IO) {
+        dao.clearCategoryFromItems(id)
+        dao.groupsOfCategory(id).forEach { dao.deleteGroup(it.id) }
+        dao.deleteCategory(id)
+    }
+
+    suspend fun createGroup(categoryId: Long, name: String): TakeoffGroupEntity =
+        withContext(Dispatchers.IO) {
+            val entity = TakeoffGroupEntity(categoryId = categoryId, name = name.trim().ifBlank { "مجموعة" })
+            entity.copy(id = dao.upsertGroup(entity))
+        }
+
+    suspend fun deleteGroup(id: Long) = withContext(Dispatchers.IO) { dao.deleteGroup(id) }
 
     // ═══════════════════════════════════════════════ الرسمات
 
@@ -184,14 +229,26 @@ class TakeoffStore(
         page = row.page,
         tool = runCatching { TakeoffTool.valueOf(row.tool) }.getOrDefault(TakeoffTool.AREA),
         name = row.name,
-        categoryId = row.category,
+        categoryId = row.categoryId?.toString(),
         colorArgb = row.colorArgb,
         visible = row.visible,
         verts = decodeRing(row.pointsJson),
         extraRings = decodeRings(row.extraRingsJson),
         extraSegments = decodeRings(row.extraSegmentsJson),
         parentId = row.parentId?.toString(),
-        zone = row.zone
+        groupId = row.groupId?.toString(),
+        zone = row.zone,
+        progressPercent = row.progressPercent,
+        rateOverride = row.rateOverride
+    )
+
+    fun categoryToModel(row: TakeoffCategoryEntity): TakeoffCategory = TakeoffCategory(
+        id = row.id.toString(), name = row.name, colorArgb = row.colorArgb,
+        rate = row.rate, wastePct = row.wastePct
+    )
+
+    fun groupToModel(row: TakeoffGroupEntity): TakeoffGroup = TakeoffGroup(
+        id = row.id.toString(), categoryId = row.categoryId.toString(), name = row.name
     )
 
     fun encodeRing(points: List<TakeoffPoint>): String =
