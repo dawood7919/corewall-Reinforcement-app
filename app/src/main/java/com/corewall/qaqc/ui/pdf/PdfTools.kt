@@ -166,16 +166,11 @@ fun DrawScope.drawAnnotation(
             }
         }
 
-        PdfTool.PEN, PdfTool.MARKER -> {
-            val path = Path().apply {
-                moveTo(first.x, first.y)
-                points.drop(1).forEach { lineTo(it.x, it.y) }
-            }
+        PdfTool.PEN, PdfTool.MARKER ->
             drawPath(
-                path, paint,
+                smoothPath(points), paint,
                 style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
             )
-        }
 
         PdfTool.CLOUD ->
             drawPath(cloudPath(rect, stroke), paint, style = Stroke(stroke, join = StrokeJoin.Round))
@@ -227,5 +222,47 @@ private fun cloudPath(rect: Rect, stroke: Float): Path {
     arcsAlong(tr, br)
     arcsAlong(br, bl)
     arcsAlong(bl, tl)
+    return path
+}
+
+/**
+ * مسار ناعم من نقط الخط.
+ *
+ * `lineTo` بين كل نقطتين بيدّي خط مكسّر — بيبان كأنه مرسوم بمسطرة على
+ * أجزاء، خصوصاً في الكتابة بالقلم. الطريقة هنا هي **منحنى تربيعي بنقط
+ * المنتصف**: كل نقطة أصلية بتبقى نقطة تحكّم، والمنحنى بيعدّي من منتصف كل
+ * ضلع.
+ *
+ * الاختيار ده مقصود بدل التنعيم بالمتوسّط المتحرّك: ده **مابيأخّرش**
+ * الخط ورا القلم — كل نقطة بتدخل في الشكل أول ما توصل، ومفيش نافذة
+ * استنّى. التنعيم اللي بيستنّى عيّنات جاية بيدّي خط أنعم شوية وإحساس
+ * إن الحبر بيلحق القلم، وده أسوأ بكتير من ضلع مكسّر.
+ *
+ * الخط اللي فيه نقطتين بيتحوّل لخط مستقيم — مافيش منحنى من نقطتين.
+ */
+fun smoothPath(points: List<Offset>): Path {
+    val path = Path()
+    if (points.isEmpty()) return path
+
+    val first = points.first()
+    path.moveTo(first.x, first.y)
+    if (points.size == 1) return path
+    if (points.size == 2) {
+        path.lineTo(points[1].x, points[1].y)
+        return path
+    }
+
+    for (i in 1 until points.size - 1) {
+        val current = points[i]
+        val next = points[i + 1]
+        path.quadraticBezierTo(
+            current.x, current.y,
+            (current.x + next.x) / 2f, (current.y + next.y) / 2f
+        )
+    }
+    // آخر نقطة بتتوصّل بضلع مستقيم: المنحنى الأخير مالوش نقطة بعده
+    // يعدّي من منتصفها، وسيبان الخط ناقص طرفه بيبان كخط مقطوع.
+    val last = points.last()
+    path.lineTo(last.x, last.y)
     return path
 }

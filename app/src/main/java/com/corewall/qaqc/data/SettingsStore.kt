@@ -18,7 +18,15 @@ enum class AppTheme(val label: String) {
 data class AppSettings(
     val theme: AppTheme = AppTheme.IOS_LIGHT,
     val showNames: Boolean = true,
-    val showStatuses: Boolean = true
+    val showStatuses: Boolean = true,
+    /**
+     * الحبر للقلم بس.
+     *
+     * لما يبقى شغّال، الرسم على الرسمة بيبقى من الـS Pen (أو أي قلم
+     * متوافق) لوحده، والصباع بيفضل للتمرير والتكبير. مقفول افتراضياً
+     * عشان الأجهزة اللي مالهاش قلم — لو اتفتح عليها الرسم هيبقى مستحيل.
+     */
+    val stylusOnly: Boolean = false
 )
 
 class SettingsStore(context: Context) {
@@ -35,7 +43,8 @@ class SettingsStore(context: Context) {
             theme = runCatching { AppTheme.valueOf(prefs.getString("theme", AppTheme.IOS_LIGHT.name)!!) }
                 .getOrDefault(AppTheme.IOS_LIGHT),
             showNames = prefs.getBoolean("showNames", true),
-            showStatuses = prefs.getBoolean("showStatuses", true)
+            showStatuses = prefs.getBoolean("showStatuses", true),
+            stylusOnly = prefs.getBoolean("stylusOnly", false)
         )
     )
     val settings: StateFlow<AppSettings> = _settings
@@ -47,6 +56,7 @@ class SettingsStore(context: Context) {
             .putString("theme", next.theme.name)
             .putBoolean("showNames", next.showNames)
             .putBoolean("showStatuses", next.showStatuses)
+            .putBoolean("stylusOnly", next.stylusOnly)
             .apply()
     }
 

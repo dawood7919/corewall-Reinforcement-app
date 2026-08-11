@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.TableRows
@@ -146,6 +147,20 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     checked = settings.showStatuses,
                     onCheckedChange = { v -> vm.updateSettings { it.copy(showStatuses = v) } },
                     leading = { CwLeadingIcon(Icons.Filled.Palette, tone = CwTone.Info) }
+                )
+            }
+        }
+
+        item(key = "stylus-header") { CwSectionHeader("القلم") }
+        item(key = "stylus") {
+            CwCard(contentPadding = PaddingValues(vertical = Space.xs)) {
+                CwSwitchRow(
+                    title = "الرسم بالقلم بس",
+                    subtitle = "الـS Pen أو أي قلم متوافق هو اللي بيرسم ويعلّق. " +
+                        "الصباع مابيحبّرش — بيفضل للتمرير والتكبير.",
+                    checked = settings.stylusOnly,
+                    onCheckedChange = { v -> vm.updateSettings { it.copy(stylusOnly = v) } },
+                    leading = { CwLeadingIcon(Icons.Filled.Draw, tone = CwTone.Info) }
                 )
             }
         }

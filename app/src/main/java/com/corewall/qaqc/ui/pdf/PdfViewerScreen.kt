@@ -18,10 +18,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.CallMerge
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
@@ -50,6 +52,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -72,6 +75,9 @@ import com.corewall.qaqc.pdfengine.PageLayout
 import com.corewall.qaqc.pdfengine.PdfCanvas
 import com.corewall.qaqc.pdfengine.PdfDocumentSession
 import com.corewall.qaqc.pdfengine.PdfSessionHolder
+import com.corewall.qaqc.stylus.PressureAverage
+import com.corewall.qaqc.stylus.StylusInkController
+import com.corewall.qaqc.stylus.pressureWidthFactor
 import com.corewall.qaqc.ocr.OcrEngine
 import com.corewall.qaqc.ocr.OcrPacks
 import com.corewall.qaqc.pdfengine.MeasureKind
@@ -94,7 +100,9 @@ import com.corewall.qaqc.pdfengine.pageHit
 import com.corewall.qaqc.pdfengine.pagePointToScreen
 import com.corewall.qaqc.ui.design.CwIconButton
 import com.corewall.qaqc.ui.design.CwText
+import com.corewall.qaqc.ui.design.IconSize
 import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -299,10 +307,23 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     val fileAnnotations by remember(path) { vm.pdfAnnotationsFor(path) }
         .collectAsStateWithLifecycle(emptyList())
 
+    val settings by vm.settings.collectAsStateWithLifecycle()
+
     var tool by remember { mutableStateOf(PdfTool.PAN) }
     var style by remember { mutableStateOf(ToolStyle()) }
-    var draft by remember { mutableStateOf<List<Offset>>(emptyList()) }
+    /**
+     * الخط اللي بيتبني دلوقتي.
+     *
+     * `SnapshotStateList` مش `List` في `mutableStateOf`: القديم كان بيعمل
+     * نسخة جديدة من القايمة مع **كل نقطة** — يعني تكلفة تربيعية على طول
+     * الخط. ومع القلم النقط أكتر بكتير (بناخد العيّنات التاريخية كمان)،
+     * فالفرق ده بيبان كتأخير في طرف القلم.
+     */
+    val draft = remember(path) { mutableStateListOf<Offset>() }
     var draftPage by remember { mutableIntStateOf(-1) }
+
+    /** متوسّط ضغط الخط الحالي — بيحدّد سُمكه عند الحفظ. */
+    val draftPressure = remember(path) { PressureAverage() }
     var chromeVisible by remember { mutableStateOf(true) }
     var railVisible by remember { mutableStateOf(false) }
 
@@ -315,12 +336,19 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
      */
     val redoStack = remember(path) { mutableStateListOf<PdfAnnotationEntity>() }
 
+    /** بيرمي الخط الحالي من غير ما يحفظه — للإلغاء ولخط قصير مالوش معنى. */
+    fun discardDraft() {
+        draft.clear()
+        draftPage = -1
+        draftPressure.reset()
+    }
+
     fun commitDraft() {
         val toolId = tool.id
         val page = draftPage
         val slot = state.layout.slotAt(page)
         if (toolId == null || page < 0 || draft.size < 2 || slot == null) {
-            draft = emptyList(); draftPage = -1; return
+            discardDraft(); return
         }
         val flat = ArrayList<Float>(draft.size * 2)
         draft.forEach { p ->
@@ -333,12 +361,71 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 filePath = path, page = page, tool = toolId,
                 color = style.colorArgb, pointsJson = json.encodeToString(flat),
                 createdAt = System.currentTimeMillis(),
-                strokeWidth = style.widthPt, opacity = style.opacity
+                // الضغط بيكبّر أو يصغّر سُمك الخط كله. الجهاز اللي مابيقيسش
+                // ضغط بيدّي معامل ١ فالسُمك بيفضل زي ما المستخدم ظابطه.
+                strokeWidth = style.widthPt * pressureWidthFactor(draftPressure.value),
+                opacity = style.opacity
             )
         )
         redoStack.clear()
-        draft = emptyList()
-        draftPage = -1
+        discardDraft()
+    }
+
+    /**
+     * وضع "الرسم بالقلم بس".
+     *
+     * لما يبقى شغّال وفيه أداة رسم مختارة:
+     *
+     * • **طبقة الإيماءات بتفضل شغّالة** (`drawingActive = false`) — يعني
+     *   الصباع بيمرّر ويكبّر **وأنت ماسك القلم**، من غير ما تبدّل أداة. دي
+     *   أهم حاجة في التجربة دي، ومستحيلة في الوضع القديم لأن أداة الرسم
+     *   كانت بتاخد اللمس كله.
+     * • **القلم بياخد الحبر** من طبقة منفصلة فوقها.
+     *
+     * لما يبقى مقفول، كل ده بيبقى `null` والشاشة بتشتغل بالسلوك القديم
+     * بالظبط: أداة الرسم بتاخد اللمس، والصباع بيرسم.
+     */
+    val stylusInkOn = settings.stylusOnly && tool.isDrawing && !measure.enabled
+
+    // الحالة بتتغيّر مع إعادة التركيب، والموجّه بيتعمل مرة واحدة —
+    // فبيقرا الأحدث من هنا بدل ما يشيل نسخة قديمة جوّه الـclosure.
+    val inkOn = rememberUpdatedState(stylusInkOn)
+    val inkFreeform = rememberUpdatedState(tool.freeform)
+    val onInkEnd = rememberUpdatedState<() -> Unit> { commitDraft() }
+    val onInkCancel = rememberUpdatedState<() -> Unit> { discardDraft() }
+
+    val stylusController = remember(path) {
+        StylusInkController(
+            enabled = { inkOn.value },
+            onStart = { sample ->
+                val point = Offset(sample.x, sample.y)
+                state.pageHit(point)?.let { hit ->
+                    draftPage = hit.page
+                    draft.clear()
+                    draft += point
+                    draftPressure.reset()
+                    draftPressure.add(sample.pressure)
+                }
+            },
+            onMove = { sample ->
+                if (draftPage >= 0) {
+                    val point = Offset(sample.x, sample.y)
+                    draftPressure.add(sample.pressure)
+                    if (inkFreeform.value) {
+                        draft += point
+                    } else {
+                        // الأشكال (خط، مستطيل، سهم…) نقطتين بس: البداية
+                        // اللي نزل عندها القلم، والمكان اللي هو فيه دلوقتي.
+                        val first = draft.firstOrNull() ?: point
+                        draft.clear()
+                        draft += first
+                        draft += point
+                    }
+                }
+            },
+            onEnd = { onInkEnd.value() },
+            onCancel = { onInkCancel.value() }
+        )
     }
 
     // فلترة بتتعاد مع كل إعادة تركيب لو مااتحفظتش — و`currentPage` بيتغيّر
@@ -479,17 +566,29 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 state = state,
                 engine = engine,
                 session = active,
-                drawingActive = tool.isDrawing && !measure.enabled,
+                // في وضع القلم الإيماءات بتفضل شغّالة عشان الصباع يمرّر
+                // ويكبّر، والقلم بياخد الحبر من `stylus` تحت.
+                drawingActive = tool.isDrawing && !measure.enabled && !settings.stylusOnly,
                 onDrawStart = { p ->
-                    state.pageHit(p)?.let { draftPage = it.page; draft = listOf(p) }
+                    state.pageHit(p)?.let { hit ->
+                        draftPage = hit.page
+                        draft.clear()
+                        draft += p
+                    }
                 },
                 onDrawMove = { p ->
                     if (draftPage >= 0) {
-                        draft = if (tool.freeform) draft + p
-                        else listOf(draft.firstOrNull() ?: p, p)
+                        if (tool.freeform) {
+                            draft += p
+                        } else {
+                            val first = draft.firstOrNull() ?: p
+                            draft.clear(); draft += first; draft += p
+                        }
                     }
                 },
                 onDrawEnd = { commitDraft() },
+                onDrawCancel = { discardDraft() },
+                stylus = if (stylusInkOn) stylusController else null,
                 onTap = { point ->
                     when {
                         // في وضع القياس النقرة بتحطّ نقطة. إخفاء الواجهة
@@ -622,6 +721,41 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     onJump = { jumpTo(it) },
                     onClose = { searchOpen = false; search.clear() }
                 )
+            }
+
+            /**
+             * مؤشّر وضع القلم.
+             *
+             * شارة صغيرة بتبان **بس** لما الوضع يبقى فعّال فعلاً (فيه أداة
+             * رسم مختارة)، مش لافتة دايمة. لو ماكانتش موجودة، المستخدم اللي
+             * بيحاول يرسم بصباعه مش هيفهم ليه مافيش حبر — والسكوت هنا بيبان
+             * كعطل.
+             */
+            AnimatedVisibility(
+                visible = chromeVisible && stylusInkOn,
+                enter = fadeIn(), exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = MINIMAP_TOP_PAD, start = Space.md)
+            ) {
+                Surface(
+                    color = c.accentContainer,
+                    contentColor = c.onAccentContainer,
+                    shape = Radius.pill
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = Space.md, vertical = Space.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.xs)
+                    ) {
+                        Icon(
+                            Icons.Filled.Draw,
+                            contentDescription = null,
+                            modifier = Modifier.size(IconSize.sm)
+                        )
+                        Text("القلم بس", style = CwText.codeSmall)
+                    }
+                }
             }
 
             // ── الخريطة المصغّرة: عند التكبير العالي بس

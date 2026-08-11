@@ -26,6 +26,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import com.corewall.qaqc.stylus.StylusInkController
+import com.corewall.qaqc.stylus.stylusInk
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -55,11 +57,24 @@ fun PdfCanvas(
     engine: TileEngine,
     session: PdfDocumentSession,
     modifier: Modifier = Modifier,
-    /** أداة نشطة تمنع التمرير وتاخد اللمس للرسم بدل التنقّل. */
+    /**
+     * أداة نشطة تمنع التمرير وتاخد اللمس للرسم بدل التنقّل.
+     *
+     * في وضع "الرسم بالقلم بس" ده بيبقى `false` دايماً: القلم بياخد الحبر
+     * من طبقة منفصلة، والصباع بيفضل بيتنقّل عادي — يعني تقدر تكبّر وتمرّر
+     * وأنت ماسك القلم من غير ما تبدّل أداة.
+     */
     drawingActive: Boolean = false,
     onDrawStart: (Offset) -> Unit = {},
     onDrawMove: (Offset) -> Unit = {},
     onDrawEnd: () -> Unit = {},
+    /** الخط اتلغى (كف أو إلغاء من النظام) — يترمي، مايتحفظش. */
+    onDrawCancel: () -> Unit = {},
+    /**
+     * موجّه لمس القلم. `null` = الوضع مقفول، وساعتها الشاشة بتشتغل
+     * بالسلوك القديم بالظبط.
+     */
+    stylus: StylusInkController? = null,
     onTap: (Offset) -> Unit = {},
     /** ضغطة مطوّلة — بيبدأ بيها تحديد النص. */
     onLongPress: (Offset) -> Unit = {},
@@ -111,13 +126,17 @@ fun PdfCanvas(
         modifier
             .fillMaxSize()
             .onSizeChanged { state.updateViewport(it) }
+            // طبقة الحبر **قبل** طبقة الإيماءات في السلسلة: هي اللي بتشوف
+            // الحدث الأول وبتقرّر تبلعه (قلم) ولا تسيبه يعدّي (صباع).
+            .then(if (stylus != null) Modifier.stylusInk(stylus) else Modifier)
             .pointerInput(drawingActive) {
                 if (drawingActive) {
                     detectDragGestures(
                         onDragStart = { onDrawStart(it) },
                         onDrag = { change, _ -> onDrawMove(change.position); change.consume() },
                         onDragEnd = { onDrawEnd() },
-                        onDragCancel = { onDrawEnd() }
+                        // الإلغاء مش إنهاء: الخط اللي النظام لغاه مايتحفظش.
+                        onDragCancel = { onDrawCancel() }
                     )
                 } else {
                     detectPdfGestures(
