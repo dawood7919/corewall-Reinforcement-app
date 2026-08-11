@@ -36,12 +36,17 @@ class TakeoffMathTest {
         extraSegments: List<List<TakeoffPoint>> = emptyList(),
         visible: Boolean = true,
         categoryId: String? = "c",
-        rateOverride: Double? = null
+        rateOverride: Double? = null,
+        thickness: Double? = null,
+        colLength: Double? = null,
+        colWidth: Double? = null,
+        colHeight: Double? = null
     ) = TakeoffItem(
         id = id, drawingPath = "d.pdf", page = 1, tool = tool,
         name = "t", categoryId = categoryId, colorArgb = 0, visible = visible,
         verts = verts, extraRings = extraRings, extraSegments = extraSegments,
-        parentId = parentId, rateOverride = rateOverride
+        parentId = parentId, rateOverride = rateOverride,
+        thickness = thickness, colLength = colLength, colWidth = colWidth, colHeight = colHeight
     )
 
     /**
@@ -342,5 +347,63 @@ class TakeoffMathTest {
         val wall = item(TakeoffTool.AREA, square(0.1, 0.2), categoryId = "concrete")
         val categories = listOf(TakeoffCategory("concrete", "خرسانة", 0))
         assertEquals(0.0, TakeoffMath.costOf(wall, listOf(wall), page, categories), 0.0)
+    }
+
+    // ═════════════════════════════ ٩) الحجم
+
+    @Test
+    fun `volume is area times the entered thickness, not the scale`() {
+        val slab = item(TakeoffTool.VOLUME, square(0.0, 0.5), thickness = 0.2)
+        val slabArea = TakeoffMath.area(square(0.0, 0.5), page)
+        assertEquals(slabArea * 0.2, TakeoffMath.grossQuantity(slab, page), 1e-9)
+    }
+
+    @Test
+    fun `a deduction on a volume nets out at the parent's thickness`() {
+        val slab = item(TakeoffTool.VOLUME, square(0.0, 0.6), id = "slab", thickness = 0.25)
+        val hole = item(TakeoffTool.DEDUCT, square(0.1, 0.1), id = "duct", parentId = "slab")
+        val all = listOf(slab, hole)
+        val expected = TakeoffMath.grossQuantity(slab, page) -
+            TakeoffMath.area(hole.verts, page) * 0.25
+        assertEquals(expected, TakeoffMath.netQuantity(slab, all, page), 1e-9)
+    }
+
+    @Test
+    fun `volume ignores calibration exactly like area does when uncalibrated`() {
+        val blank = PageGeometry(2384.0, 1684.0, 0.0)
+        val slab = item(TakeoffTool.VOLUME, square(0.1, 0.4), thickness = 0.2)
+        assertEquals(0.0, TakeoffMath.grossQuantity(slab, blank), 0.0)
+    }
+
+    // ═════════════════════════════ ١٠) العمود
+
+    @Test
+    fun `column volume multiplies marker count by one column's dimensions`() {
+        val columns = item(
+            TakeoffTool.COLUMN, List(5) { TakeoffPoint(it * 0.1, 0.5) },
+            colLength = 0.4, colWidth = 0.4, colHeight = 3.0
+        )
+        assertEquals(5.0 * 0.4 * 0.4 * 3.0, TakeoffMath.grossQuantity(columns, page), 1e-9)
+    }
+
+    @Test
+    fun `column quantity is calibration-independent like count`() {
+        val blank = PageGeometry(2384.0, 1684.0, 0.0)
+        val columns = item(
+            TakeoffTool.COLUMN, List(3) { TakeoffPoint(it * 0.1, 0.5) },
+            colLength = 0.5, colWidth = 0.5, colHeight = 3.0
+        )
+        assertEquals(3.0 * 0.5 * 0.5 * 3.0, TakeoffMath.grossQuantity(columns, blank), 1e-9)
+    }
+
+    @Test
+    fun `column quantity never carries waste even though it is a volume`() {
+        val columns = item(
+            TakeoffTool.COLUMN, List(2) { TakeoffPoint(it * 0.1, 0.5) },
+            categoryId = "columns", colLength = 0.4, colWidth = 0.4, colHeight = 3.0
+        )
+        val categories = listOf(TakeoffCategory("columns", "أعمدة", 0, wastePct = 20.0))
+        val net = TakeoffMath.netQuantity(columns, listOf(columns), page)
+        assertEquals(net, TakeoffMath.quantityWithWaste(columns, listOf(columns), page, categories), 0.0)
     }
 }

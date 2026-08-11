@@ -110,6 +110,17 @@ object TakeoffMath {
         // العدّ مالوش علاقة بالمعايرة — علامة = واحد، حتى لو الصفحة
         // مش معايرة أصلاً.
         TakeoffTool.COUNT -> item.verts.size.toDouble()
+
+        // المساحة زي AREA بالظبط، بس مضروبة في سمك المستخدم — والسمك
+        // مُدخَل مباشرة بالمتر، مش نقط PDF، فمالوش علاقة بالمعايرة.
+        TakeoffTool.VOLUME ->
+            (area(item.verts, page) + item.extraRings.sumOf { area(it, page) }) * (item.thickness ?: 0.0)
+
+        // زي العدّ، بس كل علامة بتساوي حجم عمود واحد مش واحد صحيح.
+        // العدد نفسه مالوش علاقة بالمعايرة زي COUNT بالظبط.
+        TakeoffTool.COLUMN ->
+            item.verts.size.toDouble() *
+                (item.colLength ?: 0.0) * (item.colWidth ?: 0.0) * (item.colHeight ?: 0.0)
     }
 
     /**
@@ -131,11 +142,21 @@ object TakeoffMath {
         page: PageGeometry
     ): Double {
         val gross = grossQuantity(item, page)
-        if (item.tool != TakeoffTool.AREA) return gross
-        val deducted = all.asSequence()
+        val holes = all.asSequence()
             .filter { it.tool == TakeoffTool.DEDUCT && it.parentId == item.id && it.visible }
-            .sumOf { grossQuantity(it, page) }
-        return gross - deducted
+        return when (item.tool) {
+            TakeoffTool.AREA -> gross - holes.sumOf { grossQuantity(it, page) }
+
+            // الخصم على حجم مش خصم مساحة مباشرة — الفتحة نفسها مضلّع
+            // مسطّح (زي أي خصم تاني)، وسمكها هو سمك الأب اللي هي فيه،
+            // مش سمك خاص بيها (الخصومات معندهاش سمك أصلاً).
+            TakeoffTool.VOLUME -> {
+                val thickness = item.thickness ?: 0.0
+                gross - holes.sumOf { area(it.verts, page) + it.extraRings.sumOf { r -> area(r, page) } } * thickness
+            }
+
+            else -> gross
+        }
     }
 
     /** كل الخصومات المربوطة ببند — للرسم (الفتحة) وللحذف المتتالي. */
@@ -157,7 +178,9 @@ object TakeoffMath {
         categories: List<TakeoffCategory>
     ): Double {
         val net = netQuantity(item, all, page)
-        if (item.tool == TakeoffTool.COUNT) return net
+        // العدّ والعمود مبنيين على "عدد علامات" — الهالك مالوش معنى على
+        // بند مقاسه بالحبّة، حتى لو كميته النهائية طلعت متر مكعّب.
+        if (item.tool == TakeoffTool.COUNT || item.tool == TakeoffTool.COLUMN) return net
         val waste = wastePctFor(item, categories)
         return if (waste > 0.0) net * (1.0 + waste / 100.0) else net
     }
@@ -289,14 +312,14 @@ object TakeoffMath {
         page: PageGeometry,
         tapRadiusPt: Double
     ): Boolean = when (item.tool) {
-        TakeoffTool.AREA, TakeoffTool.DEDUCT ->
+        TakeoffTool.AREA, TakeoffTool.DEDUCT, TakeoffTool.VOLUME ->
             pointInRing(p, item.verts) || item.extraRings.any { pointInRing(p, it) }
 
         TakeoffTool.LENGTH ->
             distanceToPolylinePt(p, item.verts, page) <= tapRadiusPt ||
                 item.extraSegments.any { distanceToPolylinePt(p, it, page) <= tapRadiusPt }
 
-        TakeoffTool.COUNT ->
+        TakeoffTool.COUNT, TakeoffTool.COLUMN ->
             item.verts.any { marker ->
                 hypot(
                     (p.x - marker.x) * page.widthPt,

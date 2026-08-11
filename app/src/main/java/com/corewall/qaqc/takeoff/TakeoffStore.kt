@@ -239,7 +239,11 @@ class TakeoffStore(
         groupId = row.groupId?.toString(),
         zone = row.zone,
         progressPercent = row.progressPercent,
-        rateOverride = row.rateOverride
+        rateOverride = row.rateOverride,
+        thickness = row.thickness,
+        colLength = row.colLength,
+        colWidth = row.colWidth,
+        colHeight = row.colHeight
     )
 
     fun categoryToModel(row: TakeoffCategoryEntity): TakeoffCategory = TakeoffCategory(

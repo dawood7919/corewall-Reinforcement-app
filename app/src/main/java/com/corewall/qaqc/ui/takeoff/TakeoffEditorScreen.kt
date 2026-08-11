@@ -18,14 +18,17 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.HighlightAlt
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PinDrop
 import androidx.compose.material.icons.filled.Square
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -204,6 +207,7 @@ fun TakeoffEditorScreen(
     var totalsOpen by remember { mutableStateOf(false) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     var pendingShape by remember { mutableStateOf<PendingShape?>(null) }
+    var editingItem by remember { mutableStateOf<TakeoffItem?>(null) }
 
     /**
      * المسوّدة **بإحداثيات الصفحة المنسّبة**، مش بإحداثيات الشاشة.
@@ -256,7 +260,12 @@ fun TakeoffEditorScreen(
         multiSelectedIds = emptySet()
     }
 
-    fun saveNewItem(toolToSave: TakeoffTool, page: Int, points: List<TakeoffPoint>, name: String, categoryId: Long?, colorArgb: Long) {
+    fun saveNewItem(
+        toolToSave: TakeoffTool, page: Int, points: List<TakeoffPoint>,
+        name: String, categoryId: Long?, colorArgb: Long,
+        thickness: Double? = null, colLength: Double? = null,
+        colWidth: Double? = null, colHeight: Double? = null
+    ) {
         scope.launch {
             vm.takeoff.saveItem(
                 TakeoffItemEntity(
@@ -267,6 +276,10 @@ fun TakeoffEditorScreen(
                     colorArgb = colorArgb,
                     pointsJson = vm.takeoff.encodeRing(points),
                     categoryId = categoryId,
+                    thickness = thickness,
+                    colLength = colLength,
+                    colWidth = colWidth,
+                    colHeight = colHeight,
                     createdAt = System.currentTimeMillis()
                 )
             )
@@ -279,7 +292,7 @@ fun TakeoffEditorScreen(
 
         val points = draft.toList()
         val enough = when (tool) {
-            TakeoffTool.COUNT -> points.isNotEmpty()
+            TakeoffTool.COUNT, TakeoffTool.COLUMN -> points.isNotEmpty()
             TakeoffTool.LENGTH -> points.size >= 2
             else -> points.size >= 3
         }
@@ -564,7 +577,9 @@ fun TakeoffEditorScreen(
                 deducting = deductFor != null,
                 hasDraft = draft.isNotEmpty(),
                 canDeduct = selectedId != null &&
-                    pageItems.firstOrNull { it.id == selectedId }?.tool == TakeoffTool.AREA,
+                    pageItems.firstOrNull { it.id == selectedId }?.tool.let {
+                        it == TakeoffTool.AREA || it == TakeoffTool.VOLUME
+                    },
                 selectedId = selectedId,
                 multiCount = multiSelectedIds.size,
                 onPointer = { endSession() },
@@ -591,6 +606,7 @@ fun TakeoffEditorScreen(
                     scope.launch { ids.forEach { vm.takeoff.deleteItem(it) } }
                     multiSelectedIds = emptySet()
                 },
+                onEditSelected = { editingItem = pageItems.firstOrNull { it.id == selectedId } },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -623,9 +639,11 @@ fun TakeoffEditorScreen(
     }
 
     if (totalsOpen) {
+        val categoryModels = remember(categories) { categories.map { vm.takeoff.categoryToModel(it) } }
         TakeoffTotalsSheet(
             items = items,
             pageGeometry = pageGeometry,
+            categories = categoryModels,
             onDismiss = { totalsOpen = false }
         )
     }
@@ -644,12 +662,48 @@ fun TakeoffEditorScreen(
                     }
                 }
             },
-            onConfirm = { name, categoryId, colorArgb ->
-                saveNewItem(pending.tool, pending.page, pending.points, name, categoryId, colorArgb)
+            onConfirm = { name, categoryId, colorArgb, thickness, colLength, colWidth, colHeight ->
+                saveNewItem(
+                    pending.tool, pending.page, pending.points, name, categoryId, colorArgb,
+                    thickness, colLength, colWidth, colHeight
+                )
                 colourIndex++
                 pendingShape = null
             },
             onDismiss = { pendingShape = null }
+        )
+    }
+
+    editingItem?.let { editing ->
+        TakeoffEditItemSheet(
+            item = editing,
+            categories = categories,
+            onCreateCategory = { name, color, onCreated ->
+                val pid = projectId
+                if (pid != null) {
+                    scope.launch {
+                        val cat = vm.takeoff.createCategory(pid, name, color)
+                        onCreated(cat.id)
+                    }
+                }
+            },
+            onSave = { name, categoryId, colorArgb, zone, progressPercent, rateOverride ->
+                val itemId = editing.id.toLongOrNull()
+                if (itemId != null) {
+                    scope.launch {
+                        vm.takeoff.itemById(itemId)?.let { row ->
+                            vm.takeoff.saveItem(
+                                row.copy(
+                                    name = name, categoryId = categoryId, colorArgb = colorArgb,
+                                    zone = zone, progressPercent = progressPercent, rateOverride = rateOverride
+                                )
+                            )
+                        }
+                    }
+                }
+                editingItem = null
+            },
+            onDismiss = { editingItem = null }
         )
     }
 }
@@ -659,6 +713,8 @@ private fun defaultName(tool: TakeoffTool, index: Int): String = when (tool) {
     TakeoffTool.LENGTH -> "طول $index"
     TakeoffTool.COUNT -> "عدّ $index"
     TakeoffTool.DEDUCT -> "خصم $index"
+    TakeoffTool.VOLUME -> "حجم $index"
+    TakeoffTool.COLUMN -> "عمود $index"
 }
 
 @Composable
@@ -725,6 +781,7 @@ private fun TakeoffToolBar(
     onDone: () -> Unit,
     onDeleteSelected: () -> Unit,
     onDeleteMulti: () -> Unit,
+    onEditSelected: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
@@ -762,6 +819,14 @@ private fun TakeoffToolBar(
                 active = mode == EditorMode.DRAW && tool == TakeoffTool.COUNT
             )
             CwIconButton(
+                Icons.Filled.Layers, "حجم", { onPick(TakeoffTool.VOLUME) },
+                active = mode == EditorMode.DRAW && !deducting && tool == TakeoffTool.VOLUME
+            )
+            CwIconButton(
+                Icons.Filled.ViewColumn, "عمود", { onPick(TakeoffTool.COLUMN) },
+                active = mode == EditorMode.DRAW && tool == TakeoffTool.COLUMN
+            )
+            CwIconButton(
                 Icons.Filled.ContentCut, "خصم من المحدّد", onDeduct,
                 active = deducting, enabled = canDeduct || deducting
             )
@@ -777,6 +842,7 @@ private fun TakeoffToolBar(
                 CwIconButton(Icons.Filled.Check, "إنهاء الشكل", onDone, tint = c.success.fg)
             }
             if (selectedId != null) {
+                CwIconButton(Icons.Filled.Edit, "تعديل البند", onEditSelected)
                 CwIconButton(
                     Icons.Filled.Delete, "احذف المحدّد", onDeleteSelected, tint = c.danger.fg
                 )

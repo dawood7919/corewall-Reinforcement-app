@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.takeoff.PageGeometry
+import com.corewall.qaqc.takeoff.TakeoffCategory
 import com.corewall.qaqc.takeoff.TakeoffItem
 import com.corewall.qaqc.takeoff.TakeoffMath
 import com.corewall.qaqc.takeoff.TakeoffPoint
@@ -184,6 +185,7 @@ fun TakeoffCalibrateSheet(
 fun TakeoffTotalsSheet(
     items: List<TakeoffItem>,
     pageGeometry: PageGeometry,
+    categories: List<TakeoffCategory> = emptyList(),
     onDismiss: () -> Unit
 ) {
     val c = LocalCwColors.current
@@ -195,6 +197,9 @@ fun TakeoffTotalsSheet(
             visible.filter { it.tool == tool }
                 .sumOf { TakeoffMath.netQuantity(it, items, pageGeometry) }
         }
+    }
+    val totalCost = remember(visible, pageGeometry, categories) {
+        visible.sumOf { TakeoffMath.costOf(it, items, pageGeometry, categories) }
     }
 
     ModalBottomSheet(
@@ -241,6 +246,22 @@ fun TakeoffTotalsSheet(
                 }
             }
 
+            if (totalCost > 0.0) {
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = Space.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "التكلفة التقديرية", style = MaterialTheme.typography.bodyMedium,
+                        color = c.textSecondary, modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        "%.0f".format(totalCost), style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold, color = c.accent
+                    )
+                }
+            }
+
             Spacer(Modifier.height(Space.md))
             Text("البنود", style = CwText.codeSmall, color = c.textTertiary)
 
@@ -283,6 +304,8 @@ private fun toolLabel(tool: TakeoffTool): String = when (tool) {
     TakeoffTool.LENGTH -> "الأطوال"
     TakeoffTool.COUNT -> "الأعداد"
     TakeoffTool.DEDUCT -> "الخصومات"
+    TakeoffTool.VOLUME -> "الأحجام"
+    TakeoffTool.COLUMN -> "الأعمدة"
 }
 
 /**
@@ -300,7 +323,10 @@ fun TakeoffNameSheet(
     suggestedName: String,
     categories: List<TakeoffCategoryEntity>,
     onCreateCategory: (name: String, colorArgb: Long, onCreated: (Long) -> Unit) -> Unit,
-    onConfirm: (name: String, categoryId: Long?, colorArgb: Long) -> Unit,
+    onConfirm: (
+        name: String, categoryId: Long?, colorArgb: Long,
+        thickness: Double?, colLength: Double?, colWidth: Double?, colHeight: Double?
+    ) -> Unit,
     onDismiss: () -> Unit
 ) {
     val c = LocalCwColors.current
@@ -315,6 +341,13 @@ fun TakeoffNameSheet(
     }
     var creatingCategory by remember { mutableStateOf(false) }
     var newCategoryName by remember { mutableStateOf("") }
+    val decimalOptions = androidx.compose.foundation.text.KeyboardOptions(
+        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+    )
+    var thicknessText by remember { mutableStateOf("") }
+    var colLengthText by remember { mutableStateOf("") }
+    var colWidthText by remember { mutableStateOf("") }
+    var colHeightText by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -401,10 +434,229 @@ fun TakeoffNameSheet(
                 }
             }
 
+            // السمك والأبعاد — بس للأداتين اللي فعلاً محتاجاهم. الحجم
+            // مش زي المعايرة (مقاس على الورق)؛ ده رقم حقيقي المستخدم
+            // بيكتبه بإيده لأنه مالوش وجود على الرسمة نفسها.
+            if (tool == TakeoffTool.VOLUME) {
+                CwField(
+                    value = thicknessText,
+                    onValueChange = { thicknessText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                    label = "السمك بالمتر",
+                    placeholder = "0.20",
+                    keyboardOptions = decimalOptions
+                )
+            }
+            if (tool == TakeoffTool.COLUMN) {
+                Text("أبعاد العمود بالمتر", style = CwText.codeSmall, color = c.textTertiary)
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    CwField(
+                        value = colLengthText,
+                        onValueChange = { colLengthText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        label = "الطول", placeholder = "0.40",
+                        keyboardOptions = decimalOptions,
+                        modifier = Modifier.weight(1f)
+                    )
+                    CwField(
+                        value = colWidthText,
+                        onValueChange = { colWidthText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        label = "العرض", placeholder = "0.40",
+                        keyboardOptions = decimalOptions,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                CwField(
+                    value = colHeightText,
+                    onValueChange = { colHeightText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                    label = "الارتفاع", placeholder = "3.00",
+                    keyboardOptions = decimalOptions
+                )
+            }
+
+            val thickness = thicknessText.toDoubleOrNull()
+            val colLength = colLengthText.toDoubleOrNull()
+            val colWidth = colWidthText.toDoubleOrNull()
+            val colHeight = colHeightText.toDoubleOrNull()
+            val dimsValid = when (tool) {
+                TakeoffTool.VOLUME -> thickness != null && thickness > 0.0
+                TakeoffTool.COLUMN ->
+                    colLength != null && colWidth != null && colHeight != null &&
+                        colLength > 0.0 && colWidth > 0.0 && colHeight > 0.0
+                else -> true
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 CwButton(
                     "حفظ",
-                    { onConfirm(name.trim().ifBlank { suggestedName }, categoryId, colorArgb) }
+                    {
+                        onConfirm(
+                            name.trim().ifBlank { suggestedName }, categoryId, colorArgb,
+                            thickness, colLength, colWidth, colHeight
+                        )
+                    },
+                    enabled = dimsValid
+                )
+                CwButton("إلغاء", onDismiss, style = CwButtonStyle.Ghost)
+            }
+        }
+    }
+}
+
+/**
+ * تعديل بند موجود — اسمه وفئته ولونه ومكانه ونسبة تنفيذه وسعره الخاص.
+ *
+ * مقصود إنها منفصلة عن [TakeoffNameSheet]: دي بتفتح على بند **موجود
+ * بالفعل** وممكن تتفتح أي وقت، مش لحظة إنشاء بس — زي "نسّق البلاط ده
+ * كان ٩٠٪ وخلص، وحطّه في منطقة تانية".
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TakeoffEditItemSheet(
+    item: TakeoffItem,
+    categories: List<TakeoffCategoryEntity>,
+    onCreateCategory: (name: String, colorArgb: Long, onCreated: (Long) -> Unit) -> Unit,
+    onSave: (
+        name: String, categoryId: Long?, colorArgb: Long,
+        zone: String, progressPercent: Double?, rateOverride: Double?
+    ) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = LocalCwColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var name by remember(item.id) { mutableStateOf(item.name) }
+    var categoryId by remember(item.id) { mutableStateOf(item.categoryId?.toLongOrNull()) }
+    var colorArgb by remember(item.id) { mutableStateOf(item.colorArgb) }
+    var zone by remember(item.id) { mutableStateOf(item.zone) }
+    var progressText by remember(item.id) {
+        mutableStateOf(item.progressPercent?.let { "%.0f".format(it) } ?: "")
+    }
+    var rateText by remember(item.id) {
+        mutableStateOf(item.rateOverride?.let { "%.2f".format(it) } ?: "")
+    }
+    var creatingCategory by remember { mutableStateOf(false) }
+    var newCategoryName by remember { mutableStateOf("") }
+    val decimalOptions = androidx.compose.foundation.text.KeyboardOptions(
+        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = c.surface,
+        shape = Radius.sheet
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.lg)
+                .padding(bottom = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.sm)
+        ) {
+            Text("تعديل البند", style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
+
+            CwField(value = name, onValueChange = { name = it }, label = "الاسم")
+
+            Text("الفئة", style = CwText.codeSmall, color = c.textTertiary)
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
+                categories.forEach { cat ->
+                    CwChip(
+                        label = cat.name,
+                        selected = cat.id == categoryId,
+                        onClick = { categoryId = cat.id; colorArgb = cat.colorArgb }
+                    )
+                }
+                CwChip(
+                    label = "+ فئة جديدة",
+                    selected = creatingCategory,
+                    onClick = { creatingCategory = !creatingCategory }
+                )
+            }
+            if (creatingCategory) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm)
+                ) {
+                    CwField(
+                        value = newCategoryName,
+                        onValueChange = { newCategoryName = it },
+                        label = "اسم الفئة",
+                        modifier = Modifier.weight(1f)
+                    )
+                    CwButton(
+                        "إنشاء",
+                        {
+                            val cName = newCategoryName
+                            if (cName.isNotBlank()) {
+                                val newColor = TAKEOFF_PALETTE[categories.size % TAKEOFF_PALETTE.size]
+                                onCreateCategory(cName, newColor) { newId ->
+                                    categoryId = newId
+                                    colorArgb = newColor
+                                }
+                                newCategoryName = ""
+                                creatingCategory = false
+                            }
+                        }
+                    )
+                }
+            }
+
+            Text("اللون", style = CwText.codeSmall, color = c.textTertiary)
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                TAKEOFF_PALETTE.forEach { argb ->
+                    val fullArgb = argb or 0xFF000000L
+                    val chosen = fullArgb == (colorArgb or 0xFF000000L)
+                    Box(
+                        Modifier
+                            .size(30.dp)
+                            .background(Color(fullArgb.toInt()), CircleShape)
+                            .border(
+                                if (chosen) 2.dp else Dp.Hairline,
+                                if (chosen) c.accent else c.outline,
+                                CircleShape
+                            )
+                            .clickable { colorArgb = fullArgb }
+                    )
+                }
+            }
+
+            CwField(
+                value = zone, onValueChange = { zone = it },
+                label = "المكان", placeholder = "الدور الأرضي — بلوك A"
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                CwField(
+                    value = progressText,
+                    onValueChange = { progressText = it.filter { ch -> ch.isDigit() } },
+                    label = "نسبة التنفيذ ٪",
+                    placeholder = "٠-١٠٠",
+                    keyboardOptions = decimalOptions,
+                    modifier = Modifier.weight(1f)
+                )
+                CwField(
+                    value = rateText,
+                    onValueChange = { rateText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                    label = "سعر خاص (اختياري)",
+                    placeholder = "افتراضي الفئة",
+                    keyboardOptions = decimalOptions,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                CwButton(
+                    "حفظ",
+                    {
+                        val progress = progressText.toDoubleOrNull()?.coerceIn(0.0, 100.0)
+                        val rate = rateText.toDoubleOrNull()
+                        onSave(
+                            name.trim().ifBlank { item.name }, categoryId, colorArgb,
+                            zone.trim(), progress, rate
+                        )
+                    }
                 )
                 CwButton("إلغاء", onDismiss, style = CwButtonStyle.Ghost)
             }
@@ -417,4 +669,6 @@ private fun toolTitle(tool: TakeoffTool): String = when (tool) {
     TakeoffTool.LENGTH -> "طول جديد"
     TakeoffTool.COUNT -> "عدّ جديد"
     TakeoffTool.DEDUCT -> "خصم جديد"
+    TakeoffTool.VOLUME -> "حجم جديد"
+    TakeoffTool.COLUMN -> "عمود جديد"
 }

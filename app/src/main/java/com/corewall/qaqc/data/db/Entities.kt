@@ -777,5 +777,11 @@ data class TakeoffItemEntity(
     val categoryId: Long? = null,
     val groupId: Long? = null,
     val progressPercent: Double? = null,
-    val rateOverride: Double? = null
+    val rateOverride: Double? = null,
+    /** بالمتر — [TakeoffTool.VOLUME] بس. */
+    val thickness: Double? = null,
+    /** أبعاد عمود واحد بالمتر — [TakeoffTool.COLUMN] بس. */
+    val colLength: Double? = null,
+    val colWidth: Double? = null,
+    val colHeight: Double? = null
 )

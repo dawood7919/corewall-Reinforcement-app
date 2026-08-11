@@ -94,6 +94,48 @@ fun DrawScope.drawTakeoffItems(
                 }
             }
 
+            // زي المساحة بالظبط — نفس مسار even-odd للخصومات — بس خط
+            // متقطّع عشان تتفرّق بصريًا عن مساحة عادية من نظرة واحدة.
+            TakeoffTool.VOLUME -> {
+                val rings = buildList {
+                    add(item.verts)
+                    addAll(item.extraRings)
+                    deductionsOf(item).filter { it.visible }.forEach { hole ->
+                        add(hole.verts)
+                        addAll(hole.extraRings)
+                    }
+                }
+                val path = compoundPath(state, page, rings)
+                drawPath(path, paint.copy(alpha = FILL_ALPHA))
+                drawPath(
+                    path, paint,
+                    style = Stroke(
+                        width, join = StrokeJoin.Round,
+                        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(14f, 8f))
+                    )
+                )
+            }
+
+            // مربّع بدل دائرة العدّ — تمييز بصري إن كل علامة هنا حجم
+            // عمود واحد مش قطعة واحدة.
+            TakeoffTool.COLUMN -> {
+                item.verts.forEach { marker ->
+                    state.pagePointToScreen(page, marker.x.toFloat(), marker.y.toFloat())?.let { p ->
+                        val half = MARKER_RADIUS
+                        drawRect(
+                            paint,
+                            topLeft = androidx.compose.ui.geometry.Offset(p.x - half, p.y - half),
+                            size = androidx.compose.ui.geometry.Size(half * 2f, half * 2f)
+                        )
+                        drawRect(
+                            Color.White,
+                            topLeft = androidx.compose.ui.geometry.Offset(p.x - half * 0.4f, p.y - half * 0.4f),
+                            size = androidx.compose.ui.geometry.Size(half * 0.8f, half * 0.8f)
+                        )
+                    }
+                }
+            }
+
             TakeoffTool.DEDUCT -> Unit
         }
 
@@ -164,9 +206,9 @@ fun DrawScope.drawTakeoffDraft(
     if (screen.isEmpty()) return
 
     when (tool) {
-        TakeoffTool.COUNT -> screen.forEach { drawCircle(colour, MARKER_RADIUS, it) }
+        TakeoffTool.COUNT, TakeoffTool.COLUMN -> screen.forEach { drawCircle(colour, MARKER_RADIUS, it) }
         else -> {
-            val closes = tool == TakeoffTool.AREA || tool == TakeoffTool.DEDUCT
+            val closes = tool == TakeoffTool.AREA || tool == TakeoffTool.DEDUCT || tool == TakeoffTool.VOLUME
             if (screen.size >= 2) {
                 val path = Path().apply {
                     moveTo(screen.first().x, screen.first().y)
@@ -194,6 +236,7 @@ val TAKEOFF_PALETTE = listOf(
 fun formatQuantity(tool: TakeoffTool, value: Double): String = when (tool) {
     TakeoffTool.COUNT -> "${value.toInt()}"
     TakeoffTool.LENGTH -> "%.2f م".format(value)
+    TakeoffTool.VOLUME, TakeoffTool.COLUMN -> "%.2f م³".format(value)
     else -> "%.2f م²".format(value)
 }
 

@@ -85,10 +85,16 @@ enum class TakeoffTool {
      * خصم. **مش كمية سالبة عايمة** — دايماً مربوط بمساحة أب واحدة
      * عن طريق [TakeoffItem.parentId]، وبيتخصم من كميّتها هي بس.
      */
-    DEDUCT;
+    DEDUCT,
+
+    /** مضلّع × سمك مُدخَل يدويًا — الكمية بالمتر المكعّب. */
+    VOLUME,
+
+    /** علامات × أبعاد عمود واحد مُدخَلة يدويًا — الكمية بالمتر المكعّب. */
+    COLUMN;
 
     /** الأدوات اللي بتتجمّع كمضلّعات إضافية بدل خطوط. */
-    val isAreaLike: Boolean get() = this == AREA || this == DEDUCT
+    val isAreaLike: Boolean get() = this == AREA || this == DEDUCT || this == VOLUME
 }
 
 /**
@@ -132,7 +138,15 @@ data class TakeoffItem(
     val progressPercent: Double? = null,
 
     /** سعر الوحدة لو مختلف عن افتراضي الفئة. `null` = استخدم فئة الأب. */
-    val rateOverride: Double? = null
+    val rateOverride: Double? = null,
+
+    /** السمك بالمتر — [TakeoffTool.VOLUME] بس. */
+    val thickness: Double? = null,
+
+    /** أبعاد عمود واحد بالمتر — [TakeoffTool.COLUMN] بس. */
+    val colLength: Double? = null,
+    val colWidth: Double? = null,
+    val colHeight: Double? = null
 )
 
 /**
