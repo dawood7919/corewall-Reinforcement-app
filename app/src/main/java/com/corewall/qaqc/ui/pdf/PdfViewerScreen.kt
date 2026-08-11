@@ -52,7 +52,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -75,8 +74,8 @@ import com.corewall.qaqc.pdfengine.PageLayout
 import com.corewall.qaqc.pdfengine.PdfCanvas
 import com.corewall.qaqc.pdfengine.PdfDocumentSession
 import com.corewall.qaqc.pdfengine.PdfSessionHolder
+import com.corewall.qaqc.stylus.PointerKind
 import com.corewall.qaqc.stylus.PressureAverage
-import com.corewall.qaqc.stylus.StylusInkController
 import com.corewall.qaqc.stylus.pressureWidthFactor
 import com.corewall.qaqc.ocr.OcrEngine
 import com.corewall.qaqc.ocr.OcrPacks
@@ -374,59 +373,27 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     /**
      * وضع "الرسم بالقلم بس".
      *
-     * لما يبقى شغّال وفيه أداة رسم مختارة:
+     * القاعدة بسيطة ومطبّقة في مكان واحد: **الصباع بيحرّك الصفحة، والقلم
+     * بيشتغل بالأداة المختارة.** والأداة هنا مش الرسم بس — القياس ومعايرة
+     * المقياس كمان، لأن دول بيتحطّوا بالنقر وكان الصباع بيقدر يحطّهم.
      *
-     * • **طبقة الإيماءات بتفضل شغّالة** (`drawingActive = false`) — يعني
-     *   الصباع بيمرّر ويكبّر **وأنت ماسك القلم**، من غير ما تبدّل أداة. دي
-     *   أهم حاجة في التجربة دي، ومستحيلة في الوضع القديم لأن أداة الرسم
-     *   كانت بتاخد اللمس كله.
-     * • **القلم بياخد الحبر** من طبقة منفصلة فوقها.
-     *
-     * لما يبقى مقفول، كل ده بيبقى `null` والشاشة بتشتغل بالسلوك القديم
-     * بالظبط: أداة الرسم بتاخد اللمس، والصباع بيرسم.
+     * لما الأداة تكون "تنقّل" مافيش شغل للقلم، فبنسيبه يمرّر عادي بدل ما
+     * يبقى ميت في إيد المستخدم.
      */
-    val stylusInkOn = settings.stylusOnly && tool.isDrawing && !measure.enabled
+    val penHasJob = settings.stylusOnly && (tool.isDrawing || measure.enabled)
 
-    // الحالة بتتغيّر مع إعادة التركيب، والموجّه بيتعمل مرة واحدة —
-    // فبيقرا الأحدث من هنا بدل ما يشيل نسخة قديمة جوّه الـclosure.
-    val inkOn = rememberUpdatedState(stylusInkOn)
-    val inkFreeform = rememberUpdatedState(tool.freeform)
-    val onInkEnd = rememberUpdatedState<() -> Unit> { commitDraft() }
-    val onInkCancel = rememberUpdatedState<() -> Unit> { discardDraft() }
+    /** طبقة الحبر: القلم بس، ولمّا يكون فيه أداة رسم فعلاً. */
+    val inkOn = settings.stylusOnly && tool.isDrawing && !measure.enabled
 
-    val stylusController = remember(path) {
-        StylusInkController(
-            enabled = { inkOn.value },
-            onStart = { sample ->
-                val point = Offset(sample.x, sample.y)
-                state.pageHit(point)?.let { hit ->
-                    draftPage = hit.page
-                    draft.clear()
-                    draft += point
-                    draftPressure.reset()
-                    draftPressure.add(sample.pressure)
-                }
-            },
-            onMove = { sample ->
-                if (draftPage >= 0) {
-                    val point = Offset(sample.x, sample.y)
-                    draftPressure.add(sample.pressure)
-                    if (inkFreeform.value) {
-                        draft += point
-                    } else {
-                        // الأشكال (خط، مستطيل، سهم…) نقطتين بس: البداية
-                        // اللي نزل عندها القلم، والمكان اللي هو فيه دلوقتي.
-                        val first = draft.firstOrNull() ?: point
-                        draft.clear()
-                        draft += first
-                        draft += point
-                    }
-                }
-            },
-            onEnd = { onInkEnd.value() },
-            onCancel = { onInkCancel.value() }
-        )
-    }
+    val inkAccept: ((PointerKind) -> Boolean)? =
+        if (inkOn) ({ kind: PointerKind -> kind.isPen }) else null
+
+    /** التنقّل: كل حاجة، إلا القلم لما يكون ليه شغل. */
+    val gestureAccept: (PointerKind) -> Boolean =
+        remember(penHasJob) { { kind: PointerKind -> !(penHasJob && kind.isPen) } }
+
+    /** النقرة دي مسموح لها تحطّ نقطة قياس؟ في وضع القلم: القلم بس. */
+    fun tapCanMeasure(kind: PointerKind) = !settings.stylusOnly || kind.isPen
 
     // فلترة بتتعاد مع كل إعادة تركيب لو مااتحفظتش — و`currentPage` بيتغيّر
     // مع التمرير، يعني الشاشة دي بتعيد التركيب كتير وهي فاتحة.
@@ -567,7 +534,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 engine = engine,
                 session = active,
                 // في وضع القلم الإيماءات بتفضل شغّالة عشان الصباع يمرّر
-                // ويكبّر، والقلم بياخد الحبر من `stylus` تحت.
+                // ويكبّر، والقلم بياخد الحبر من طبقته.
                 drawingActive = tool.isDrawing && !measure.enabled && !settings.stylusOnly,
                 onDrawStart = { p ->
                     state.pageHit(p)?.let { hit ->
@@ -588,23 +555,49 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 },
                 onDrawEnd = { commitDraft() },
                 onDrawCancel = { discardDraft() },
-                stylus = if (stylusInkOn) stylusController else null,
-                onTap = { point ->
+                inkAccept = inkAccept,
+                onInkStart = { point, pressure ->
+                    state.pageHit(point)?.let { hit ->
+                        draftPage = hit.page
+                        draft.clear()
+                        draft += point
+                        draftPressure.reset()
+                        draftPressure.add(pressure)
+                    }
+                },
+                onInkMove = { point, pressure ->
+                    if (draftPage >= 0) {
+                        draftPressure.add(pressure)
+                        if (tool.freeform) {
+                            draft += point
+                        } else {
+                            // الأشكال نقطتين: مكان نزول القلم، ومكانه دلوقتي.
+                            val first = draft.firstOrNull() ?: point
+                            draft.clear(); draft += first; draft += point
+                        }
+                    }
+                },
+                gestureAccept = gestureAccept,
+                onTap = { point, kind ->
                     when {
                         // في وضع القياس النقرة بتحطّ نقطة. إخفاء الواجهة
                         // بيبقى على زرار الخروج بس — نقرة غامضة وسط قياس
                         // معناها رقم غلط ومحدش هيلاحظ.
-                        measure.enabled -> {
+                        // القياس ومعايرة المقياس بيتحطّوا بالنقر، فلازم
+                        // يتفرزوا زي الحبر: في وضع القلم، نقرة الصباع
+                        // بتقلب الواجهة بس ومابتحطّش نقطة.
+                        measure.enabled && tapCanMeasure(kind) -> {
                             val hit = state.pageHit(point)
                             if (hit != null) measure.addPoint(hit.page, hit.nx, hit.ny)
                         }
+                        measure.enabled -> chromeVisible = !chromeVisible
                         // أي نقرة بتلغي التحديد الأول. النقرة اللي بتخفي
                         // الواجهة وسايبة تحديد معلّق بتبان كأنها باج.
                         selection.isActive -> selection.clear()
                         else -> chromeVisible = !chromeVisible
                     }
                 },
-                onLongPress = { point ->
+                onLongPress = { point, _ ->
                     val hit = state.pageHit(point)
                     val slot = hit?.let { state.layout.slotAt(it.page) }
                     if (hit != null && slot != null) {
@@ -732,7 +725,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
              * كعطل.
              */
             AnimatedVisibility(
-                visible = chromeVisible && stylusInkOn,
+                visible = chromeVisible && penHasJob,
                 enter = fadeIn(), exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -753,7 +746,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                             contentDescription = null,
                             modifier = Modifier.size(IconSize.sm)
                         )
-                        Text("القلم بس", style = CwText.codeSmall)
+                        Text(if (inkOn) "القلم بيكتب" else "القلم بيقيس", style = CwText.codeSmall)
                     }
                 }
             }

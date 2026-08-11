@@ -1,16 +1,14 @@
 package com.corewall.qaqc.stylus
 
-import android.os.Build
 import android.view.MotionEvent
-import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.PointerType
 
 /**
  * تصنيف أداة اللمس.
  *
- * أندرويد بيقول لكل مؤشّر (pointer) إيه اللي عامله: صباع، قلم، أستيكة القلم،
- * ماوس. الكلام ده جاي من الـdigitizer نفسه مش تخمين، وهو أساس الوضع كله.
+ * أندرويد بيقول لكل مؤشّر (pointer) إيه اللي عامله: صباع، قلم، أستيكة
+ * القلم، ماوس. الكلام ده جاي من الـdigitizer نفسه مش تخمين، وهو أساس
+ * الوضع كله.
  */
 enum class PointerKind {
     FINGER,
@@ -28,10 +26,33 @@ enum class PointerKind {
 }
 
 /**
- * بيحوّل `TOOL_TYPE_*` لتصنيف.
+ * تصنيف مؤشّر Compose.
  *
- * دالة على الرقم الخام مش على `MotionEvent` عشان تتّست من غير أندرويد —
- * `MotionEvent` مايتعملش من اختبار وحدة عادي.
+ * **ده المصدر الوحيد للتصنيف دلوقتي.**
+ *
+ * المحاولة الأولى كانت بتقرا `MotionEvent` الخام من
+ * `Modifier.pointerInteropFilter` وبتعتمد على "استهلاك" الحدث عشان توقف
+ * طبقة الإيماءات. ده فشل على الجهاز: `detectPdfGestures` بيبدأ بـ
+ * `awaitFirstDown(requireUnconsumed = false)`، يعني الإيماءة بتبدأ **حتى
+ * لو الحدث اتاستهلك** — فالقلم كان بيحرّك الصفحة قبل ما طبقة الحبر
+ * توقفه، والنتيجة إن الشاشة بتهتز بدل ما القلم يكتب.
+ *
+ * الدرس: التحكيم بين "ده حبر" و"ده تنقّل" لازم يحصل **جوّه** نظام
+ * المؤشّرات بتاع Compose، مش على حدود الـinterop. كل طبقة بتبصّ على نوع
+ * المؤشّر وبتتجاهل اللي مش بتاعها — مفيش سباق استهلاك أصلاً.
+ */
+fun PointerType.toKind(): PointerKind = when (this) {
+    PointerType.Stylus -> PointerKind.STYLUS
+    PointerType.Eraser -> PointerKind.ERASER
+    PointerType.Touch -> PointerKind.FINGER
+    else -> PointerKind.OTHER
+}
+
+/**
+ * بيحوّل `TOOL_TYPE_*` الخام لتصنيف.
+ *
+ * مابقاش مستخدم في مسار اللمس (بقى من `PointerType`)، بس سايبينه لأنه
+ * الترجمة المرجعية بين أرقام أندرويد والتصنيف، وعليه اختبارات.
  */
 fun pointerKindOf(toolType: Int): PointerKind = when (toolType) {
     MotionEvent.TOOL_TYPE_STYLUS -> PointerKind.STYLUS
@@ -39,174 +60,6 @@ fun pointerKindOf(toolType: Int): PointerKind = when (toolType) {
     MotionEvent.TOOL_TYPE_FINGER -> PointerKind.FINGER
     else -> PointerKind.OTHER
 }
-
-/** بيقرا نوع الأداة لمؤشّر معيّن جوّه الحدث. */
-fun MotionEvent.pointerKindAt(index: Int): PointerKind = pointerKindOf(getToolType(index))
-
-/**
- * `FLAG_CANCELED` (أندرويد ١٣+) بيقول إن الحدث ده كان **غلط** ولازم يتلغي —
- * ودي إشارة رفض الكف الرسمية من النظام. على النسخ الأقدم مافيش غير
- * `ACTION_CANCEL` للحدث كله.
- */
-fun MotionEvent.isCanceledCompat(): Boolean =
-    actionMasked == MotionEvent.ACTION_CANCEL ||
-        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            (flags and MotionEvent.FLAG_CANCELED) != 0)
-
-/**
- * عيّنة من القلم.
- *
- * [pressure] من ٠ لـ١ زي ما الجهاز بيبلّغ. الأجهزة اللي مابتقيسش ضغط
- * بترجّع ١ ثابت — فالكود اللي بيستخدمه لازم يشتغل صح في الحالتين.
- */
-data class StylusSample(
-    val x: Float,
-    val y: Float,
-    val pressure: Float,
-    /** ميل القلم بالتقدير الدائري. ٠ = عمودي على الشاشة. */
-    val tilt: Float,
-    val kind: PointerKind
-)
-
-/**
- * موجّه لمس القلم.
- *
- * ده قلب الوضع كله، ومكتوب كـclass عادي (مش Composable) عشان يتّست لوحده
- * من غير شاشة.
- *
- * ### ليه على مستوى الحدث مش على مستوى الحبر
- *
- * أسهل حاجة كانت إننا نرسم بأي لمسة وبعدين نمسح اللي طلع من صباع. ده غلط
- * لسببين: الخط بيبان ويختفي (وده بيبان كعطل)، والكف اللي مستريح على
- * الشاشة بيفضل يولّد أحداث. القرار هنا بيتاخد **قبل** ما أي نقطة توصل
- * لمحرّك الرسم.
- *
- * ### الفرز
- *
- * • **قلم نازل** → بيمسك الخط، والموجّه بيبلع الحدث كله (`true`).
- *   وده بالظبط رفض الكف: طول ما القلم على الشاشة، أي صباع أو كف بينزل
- *   بيتبلع ومابيوصلش لا للرسم ولا للتنقّل.
- * • **مفيش قلم** → الموجّه بيرجّع `false`، فالحدث بيكمّل لطبقة الإيماءات
- *   العادية: تمرير، تكبير، نقر. الصباع بيفضل بيتنقّل زي ما هو.
- *
- * ### الإلغاء
- *
- * لو النظام قال إن اللمسة دي كانت غلط (`ACTION_CANCEL` أو `FLAG_CANCELED`
- * على أندرويد ١٣+)، الخط اللي كان بيتبني بيترمي بالكامل عن طريق
- * [onCancel] — مابيتحفظش ومابيدخلش تاريخ التراجع. ده الفرق بين "الكف عمل
- * خربشة اتشالت" و"الكف مارسمش أصلاً".
- */
-class StylusInkController(
-    /** هل الوضع شغّال دلوقتي؟ (الوضع مفعّل + فيه أداة رسم مختارة) */
-    private val enabled: () -> Boolean,
-    private val onStart: (StylusSample) -> Unit,
-    private val onMove: (StylusSample) -> Unit,
-    private val onEnd: () -> Unit,
-    private val onCancel: () -> Unit
-) {
-    /** معرّف المؤشّر اللي ماسك الخط الحالي. −١ = مفيش خط شغّال. */
-    private var activeId = NO_POINTER
-
-    val isDrawing: Boolean get() = activeId != NO_POINTER
-
-    fun onMotionEvent(event: MotionEvent): Boolean {
-        if (!enabled()) {
-            // الوضع اتقفل أو الأداة اتغيّرت وسط خط — نرميه بدل ما نسيبه معلّق.
-            if (isDrawing) finish(canceled = true)
-            return false
-        }
-
-        return when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                val index = event.actionIndex
-                val kind = event.pointerKindAt(index)
-                if (kind.isPen && !isDrawing) {
-                    activeId = event.getPointerId(index)
-                    onStart(event.sampleAt(index, kind))
-                    true
-                } else {
-                    // صباع أو كف نزل والقلم شغّال → يتبلع.
-                    isDrawing
-                }
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                if (!isDrawing) return false
-                val index = event.findPointerIndex(activeId)
-                if (index >= 0) {
-                    val kind = event.pointerKindAt(index)
-                    // النقط التاريخية = العيّنات اللي الجهاز جمّعها بين
-                    // إطارين. استخدامها بيدّي خط أنعم وأقرب لطرف القلم من
-                    // غير ما نضيف أي تأخير — دي عيّنات حصلت فعلاً، مش تنعيم.
-                    for (h in 0 until event.historySize) {
-                        onMove(event.historicalSampleAt(index, h, kind))
-                    }
-                    onMove(event.sampleAt(index, kind))
-                }
-                true
-            }
-
-            MotionEvent.ACTION_POINTER_UP -> {
-                val index = event.actionIndex
-                if (event.getPointerId(index) == activeId) {
-                    finish(canceled = event.isCanceledCompat())
-                    true
-                } else {
-                    isDrawing
-                }
-            }
-
-            MotionEvent.ACTION_UP -> {
-                if (!isDrawing) return false
-                finish(canceled = event.isCanceledCompat())
-                true
-            }
-
-            MotionEvent.ACTION_CANCEL -> {
-                if (!isDrawing) return false
-                finish(canceled = true)
-                true
-            }
-
-            else -> isDrawing
-        }
-    }
-
-    private fun finish(canceled: Boolean) {
-        activeId = NO_POINTER
-        if (canceled) onCancel() else onEnd()
-    }
-
-    private companion object {
-        const val NO_POINTER = -1
-    }
-}
-
-private fun MotionEvent.sampleAt(index: Int, kind: PointerKind) = StylusSample(
-    x = getX(index),
-    y = getY(index),
-    pressure = getPressure(index),
-    tilt = getAxisValue(MotionEvent.AXIS_TILT, index),
-    kind = kind
-)
-
-private fun MotionEvent.historicalSampleAt(index: Int, pos: Int, kind: PointerKind) = StylusSample(
-    x = getHistoricalX(index, pos),
-    y = getHistoricalY(index, pos),
-    pressure = getHistoricalPressure(index, pos),
-    tilt = getHistoricalAxisValue(MotionEvent.AXIS_TILT, index, pos),
-    kind = kind
-)
-
-/**
- * بيركّب [StylusInkController] على مُعدِّل.
- *
- * لازم يتحطّ **قبل** مُعدِّلات الإيماءات في السلسلة عشان يشوف الحدث الأول
- * ويقرّر: يبلعه (قلم) ولا يسيبه يعدّي (صباع).
- */
-@OptIn(ExperimentalComposeUiApi::class)
-fun Modifier.stylusInk(controller: StylusInkController): Modifier =
-    this.pointerInteropFilter { event -> controller.onMotionEvent(event) }
 
 /**
  * سُمك الخط من ضغط القلم.

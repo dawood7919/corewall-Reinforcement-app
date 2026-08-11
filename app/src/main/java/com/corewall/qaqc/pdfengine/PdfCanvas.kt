@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,8 +25,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import com.corewall.qaqc.stylus.StylusInkController
-import com.corewall.qaqc.stylus.stylusInk
+import com.corewall.qaqc.stylus.PointerKind
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -71,13 +69,19 @@ fun PdfCanvas(
     /** الخط اتلغى (كف أو إلغاء من النظام) — يترمي، مايتحفظش. */
     onDrawCancel: () -> Unit = {},
     /**
-     * موجّه لمس القلم. `null` = الوضع مقفول، وساعتها الشاشة بتشتغل
-     * بالسلوك القديم بالظبط.
+     * طبقة حبر القلم. `null` = مقفولة، والشاشة بتشتغل بالسلوك القديم.
+     *
+     * لما تبقى شغّالة، هي **جنب** طبقة الإيماءات مش بدالها: القلم بيحبّر
+     * والصوابع بتمرّر وتكبّر في نفس الوقت.
      */
-    stylus: StylusInkController? = null,
-    onTap: (Offset) -> Unit = {},
+    inkAccept: ((PointerKind) -> Boolean)? = null,
+    onInkStart: (Offset, Float) -> Unit = { _, _ -> },
+    onInkMove: (Offset, Float) -> Unit = { _, _ -> },
+    /** بيقول لطبقة التنقّل تتجاهل مؤشّرات معيّنة (القلم في وضع القلم). */
+    gestureAccept: (PointerKind) -> Boolean = { true },
+    onTap: (Offset, PointerKind) -> Unit = { _, _ -> },
     /** ضغطة مطوّلة — بيبدأ بيها تحديد النص. */
-    onLongPress: (Offset) -> Unit = {},
+    onLongPress: (Offset, PointerKind) -> Unit = { _, _ -> },
     /** بيترسم فوق الصفحات — التعليقات والقياسات. */
     overlay: DrawScope.(PdfViewerState) -> Unit = {}
 ) {
@@ -126,10 +130,20 @@ fun PdfCanvas(
         modifier
             .fillMaxSize()
             .onSizeChanged { state.updateViewport(it) }
-            // طبقة الحبر **قبل** طبقة الإيماءات في السلسلة: هي اللي بتشوف
-            // الحدث الأول وبتقرّر تبلعه (قلم) ولا تسيبه يعدّي (صباع).
-            .then(if (stylus != null) Modifier.stylusInk(stylus) else Modifier)
-            .pointerInput(drawingActive) {
+            // ① طبقة حبر القلم — بتتجاهل أي مؤشّر مش قلم.
+            .then(
+                if (inkAccept != null) Modifier.pointerInput(inkAccept) {
+                    detectStylusStrokes(
+                        acceptPointer = inkAccept,
+                        onStart = onInkStart,
+                        onMove = onInkMove,
+                        onEnd = onDrawEnd,
+                        onCancel = onDrawCancel
+                    )
+                } else Modifier
+            )
+            // ② طبقة الرسم بالصباع (الوضع القديم) أو التنقّل.
+            .pointerInput(drawingActive, gestureAccept) {
                 if (drawingActive) {
                     detectDragGestures(
                         onDragStart = { onDrawStart(it) },
@@ -140,6 +154,7 @@ fun PdfCanvas(
                     )
                 } else {
                     detectPdfGestures(
+                        acceptPointer = gestureAccept,
                         onStart = {
                             flingJob[0]?.cancel()
                             state.interacting = true
@@ -155,12 +170,14 @@ fun PdfCanvas(
                     )
                 }
             }
+            // ③ النقر — بيوصل معاه نوع المؤشّر عشان القياس يفرّق بين
+            //    نقرة القلم ونقرة الصباع.
             .pointerInput(drawingActive) {
                 if (!drawingActive) {
-                    detectTapGestures(
-                        onTap = { onTap(it) },
-                        onLongPress = { onLongPress(it) },
-                        onDoubleTap = { point -> state.cycleZoom(point) }
+                    detectPdfTaps(
+                        onTap = { point, kind -> onTap(point, kind) },
+                        onLongPress = { point, kind -> onLongPress(point, kind) },
+                        onDoubleTap = { point, _ -> state.cycleZoom(point) }
                     )
                 }
             }
