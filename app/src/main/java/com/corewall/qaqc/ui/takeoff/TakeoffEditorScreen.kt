@@ -270,16 +270,17 @@ fun TakeoffEditorScreen(
                             }
                         }
                         pointerMode -> {
-                            selectedId = pageItems.firstOrNull { candidate ->
-                                state.pageHit(point)?.let { hit ->
-                                    TakeoffMath.hitTest(
-                                        candidate,
-                                        TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble()),
-                                        pageGeometry,
-                                        tapRadiusPt = 14.0
+                            val hit = state.pageHit(point)
+                            selectedId = hit?.let { h ->
+                                val p = TakeoffPoint(h.nx.toDouble(), h.ny.toDouble())
+                                // من الآخر للأول: الشكل اللي اترسم بعدين هو
+                                // اللي فوق بصرياً، فلازم يكسب اللمسة.
+                                pageItems.lastOrNull { candidate ->
+                                    candidate.visible && TakeoffMath.hitTest(
+                                        candidate, p, pageGeometry, tapRadiusPt = 14.0
                                     )
-                                } == true
-                            }?.id
+                                }?.id
+                            }
                         }
                         else -> addPoint(point)
                     }
