@@ -785,3 +785,26 @@ data class TakeoffItemEntity(
     val colWidth: Double? = null,
     val colHeight: Double? = null
 )
+
+/**
+ * صيغة محسوبة — مربوطة **برسمة واحدة** مش بالقسم كله.
+ *
+ * تقييم صيغة محتاج معايرة كل صفحة فيها بند متضمّن — والمعايرة دي مخزّنة
+ * لكل رسمة لوحدها. توسيع النطاق لكل رسمات القسم كان محتاج نفتح كل
+ * ملفات الـPDF بتاعتها مرة واحدة، وده تمدّد معماري أكبر من مستاهل
+ * المرحلة دي.
+ */
+@Serializable
+@Entity(tableName = "takeoff_formulas", indices = [Index(value = ["drawingId"])])
+data class TakeoffFormulaEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val drawingId: Long,
+    val name: String,
+    val expr: String,
+    val unit: String = "",
+    val roundTo: Int = 2,
+    val colorArgb: Long,
+    /** `{"توكن": itemId, …}` — مربوطة بالـid مش بالاسم. */
+    val refsJson: String = "{}",
+    val createdAt: Long
+)

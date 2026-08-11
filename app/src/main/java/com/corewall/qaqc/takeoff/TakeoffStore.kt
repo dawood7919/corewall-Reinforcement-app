@@ -5,6 +5,7 @@ import android.net.Uri
 import com.corewall.qaqc.data.db.AppDatabase
 import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.data.db.TakeoffDrawingEntity
+import com.corewall.qaqc.data.db.TakeoffFormulaEntity
 import com.corewall.qaqc.data.db.TakeoffGroupEntity
 import com.corewall.qaqc.data.db.TakeoffItemEntity
 import com.corewall.qaqc.data.db.TakeoffProjectEntity
@@ -91,6 +92,7 @@ class TakeoffStore(
         dao.drawingsOf(id).forEach { drawing ->
             dao.clearDrawingItems(drawing.id)
             dao.clearScales(drawing.id)
+            dao.clearDrawingFormulas(drawing.id)
             runCatching { File(drawing.filePath).delete() }
             dao.deleteDrawing(drawing.id)
         }
@@ -183,6 +185,7 @@ class TakeoffStore(
     suspend fun deleteDrawing(drawing: TakeoffDrawingEntity) = withContext(Dispatchers.IO) {
         dao.clearDrawingItems(drawing.id)
         dao.clearScales(drawing.id)
+        dao.clearDrawingFormulas(drawing.id)
         runCatching { File(drawing.filePath).delete() }
         dao.deleteDrawing(drawing.id)
     }
@@ -220,6 +223,15 @@ class TakeoffStore(
     suspend fun itemById(id: Long): TakeoffItemEntity? =
         withContext(Dispatchers.IO) { dao.item(id) }
 
+    // ═══════════════════════════════════════════════ الصيغ
+
+    fun formulas(drawingId: Long): Flow<List<TakeoffFormulaEntity>> = dao.observeFormulas(drawingId)
+
+    suspend fun saveFormula(entity: TakeoffFormulaEntity): Long =
+        withContext(Dispatchers.IO) { dao.upsertFormula(entity) }
+
+    suspend fun deleteFormula(id: Long) = withContext(Dispatchers.IO) { dao.deleteFormula(id) }
+
     // ═══════════════════════════════════════════════ التحويل
 
     /** الصف المتخزّن → نموذج الحساب الخالص. */
@@ -254,6 +266,18 @@ class TakeoffStore(
     fun groupToModel(row: TakeoffGroupEntity): TakeoffGroup = TakeoffGroup(
         id = row.id.toString(), categoryId = row.categoryId.toString(), name = row.name
     )
+
+    fun formulaToModel(row: TakeoffFormulaEntity): TakeoffFormula = TakeoffFormula(
+        id = row.id.toString(), name = row.name, expr = row.expr, unit = row.unit,
+        roundTo = row.roundTo, colorArgb = row.colorArgb,
+        refs = decodeRefs(row.refsJson).mapValues { it.value.toString() }
+    )
+
+    fun encodeRefs(refs: Map<String, Long>): String = json.encodeToString(refs)
+
+    private fun decodeRefs(raw: String): Map<String, Long> = runCatching {
+        json.decodeFromString<Map<String, Long>>(raw)
+    }.getOrDefault(emptyMap())
 
     fun encodeRing(points: List<TakeoffPoint>): String =
         json.encodeToString(points.map { listOf(it.x, it.y) })

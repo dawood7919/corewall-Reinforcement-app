@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
@@ -184,6 +185,8 @@ fun TakeoffEditorScreen(
         .collectAsStateWithLifecycle(emptyList())
     val scaleRows by remember(drawingId) { vm.takeoff.scales(drawingId) }
         .collectAsStateWithLifecycle(emptyList())
+    val formulaRows by remember(drawingId) { vm.takeoff.formulas(drawingId) }
+        .collectAsStateWithLifecycle(emptyList())
 
     val items = remember(rows) { rows.map { vm.takeoff.toModel(it) } }
     val pageItems = remember(items, state.currentPage) {
@@ -197,6 +200,18 @@ fun TakeoffEditorScreen(
         PageGeometry(size.width.toDouble(), size.height.toDouble(), mpp)
     }
 
+    /**
+     * هندسة **أي** صفحة في الرسمة دي — مش الحالية بس. الصيغ بترجع لبنود
+     * ممكن تكون على صفحات مختلفة، وكل واحدة محتاجة معايرتها هي.
+     */
+    val pageGeometryFor = remember(active, scaleRows) {
+        { page: Int ->
+            val size = active.knownSize(page) ?: active.estimate
+            val mpp = scaleRows.firstOrNull { it.page == page }?.metresPerPoint ?: 0.0
+            PageGeometry(size.width.toDouble(), size.height.toDouble(), mpp)
+        }
+    }
+
     // ── حالة الأدوات
     var mode by remember { mutableStateOf(EditorMode.POINTER) }
     var tool by remember { mutableStateOf(TakeoffTool.AREA) }
@@ -205,6 +220,7 @@ fun TakeoffEditorScreen(
     var colourIndex by remember { mutableIntStateOf(0) }
     var calibrating by remember { mutableStateOf(false) }
     var totalsOpen by remember { mutableStateOf(false) }
+    var formulasOpen by remember { mutableStateOf(false) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     var pendingShape by remember { mutableStateOf<PendingShape?>(null) }
     var editingItem by remember { mutableStateOf<TakeoffItem?>(null) }
@@ -567,6 +583,7 @@ fun TakeoffEditorScreen(
                 pageCount = active.pageCount,
                 onBack = onClose,
                 onTotals = { totalsOpen = true },
+                onFormulas = { formulasOpen = true },
                 onCalibrate = { endSession(); calibrating = true },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
@@ -674,6 +691,19 @@ fun TakeoffEditorScreen(
         )
     }
 
+    if (formulasOpen) {
+        TakeoffFormulasSheet(
+            drawingId = drawingId,
+            items = items,
+            categories = categories,
+            formulaRows = formulaRows,
+            pageGeometryFor = pageGeometryFor,
+            onSave = { entity -> scope.launch { vm.takeoff.saveFormula(entity) } },
+            onDelete = { id -> scope.launch { vm.takeoff.deleteFormula(id) } },
+            onDismiss = { formulasOpen = false }
+        )
+    }
+
     editingItem?.let { editing ->
         TakeoffEditItemSheet(
             item = editing,
@@ -725,6 +755,7 @@ private fun TakeoffTopBar(
     pageCount: Int,
     onBack: () -> Unit,
     onTotals: () -> Unit,
+    onFormulas: () -> Unit,
     onCalibrate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -752,6 +783,7 @@ private fun TakeoffTopBar(
                 )
             }
             CwIconButton(Icons.Filled.Straighten, "معايرة المقياس", onCalibrate)
+            CwIconButton(Icons.Filled.Calculate, "الصيغ", onFormulas)
             CwIconButton(Icons.Filled.Functions, "الإجماليات", onTotals)
         }
     }
