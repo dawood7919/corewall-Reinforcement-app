@@ -96,6 +96,9 @@ import com.corewall.qaqc.ui.nav.Dest
 import com.corewall.qaqc.ui.notes.ImageViewerScreen
 import com.corewall.qaqc.ui.notes.NoteEditorScreen
 import com.corewall.qaqc.ui.notes.NotesScreen
+import com.corewall.qaqc.ui.takeoff.TakeoffDrawingsScreen
+import com.corewall.qaqc.ui.takeoff.TakeoffEditorScreen
+import com.corewall.qaqc.ui.takeoff.TakeoffProjectsScreen
 import com.corewall.qaqc.ui.pdf.PdfOrganizerScreen
 import com.corewall.qaqc.ui.pdf.PdfViewerScreen
 import com.corewall.qaqc.ui.pour.PourReadinessScreen
@@ -294,6 +297,14 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
 
         // الداتا والمشروع
         Dest.FloorNotes -> NotesScreen(vm, modifier)
+
+        // حصر الكميات — قسم مستقل: أقسامه ورسماته مالهاش علاقة بالأدوار.
+        Dest.Takeoff -> TakeoffProjectsScreen(vm, modifier)
+        is Dest.TakeoffProject -> TakeoffDrawingsScreen(vm, dest.projectId, modifier)
+        is Dest.TakeoffEditor -> TakeoffEditorScreen(
+            vm = vm, drawingId = dest.drawingId, path = dest.path,
+            onClose = { vm.back() }
+        )
         Dest.SitePhotos -> SitePhotosScreen(vm, modifier)
         Dest.Manpower -> ManpowerScreen(vm, modifier)
 

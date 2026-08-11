@@ -35,14 +35,19 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PdfMeasurementEntity::class,
         PdfScaleEntity::class,
         NoteLabelEntity::class,
-        NoteLabelLinkEntity::class
+        NoteLabelLinkEntity::class,
+        TakeoffProjectEntity::class,
+        TakeoffDrawingEntity::class,
+        TakeoffScaleEntity::class,
+        TakeoffItemEntity::class
     ],
-    version = 18,
+    version = 19,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun elementNameDao(): ElementNameDao
+    abstract fun takeoffDao(): TakeoffDao
     abstract fun inspectionDao(): InspectionDao
     abstract fun commentDao(): CommentDao
     abstract fun rangeEditDao(): RangeEditDao
@@ -395,6 +400,49 @@ abstract class AppDatabase : RoomDatabase() {
          * Kotlin — ومن غير فهرس ده مسح كامل للجدول مع كل فتحة رسمة.
          * مفيش تغيير في أي بيانات.
          */
+        /**
+         * قسم حصر الكميات — أربع جداول جديدة، صفر لمس لأي بيانات قديمة.
+         *
+         * الحصر قسم مستقل: أقسامه ورسماته وبنوده مالهاش أي علاقة بجداول
+         * المشروع (الأدوار، الجدول، الملفات). الترحيل ده **بيضيف بس**.
+         */
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `takeoff_projects` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, `note` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `takeoff_drawings` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`projectId` INTEGER NOT NULL, `name` TEXT NOT NULL, " +
+                        "`filePath` TEXT NOT NULL, `pageCount` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_takeoff_drawings_projectId` ON `takeoff_drawings` (`projectId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `takeoff_scales` (" +
+                        "`drawingId` INTEGER NOT NULL, `page` INTEGER NOT NULL, " +
+                        "`metresPerPoint` REAL NOT NULL, `note` TEXT NOT NULL, " +
+                        "PRIMARY KEY(`drawingId`, `page`))"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `takeoff_items` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`drawingId` INTEGER NOT NULL, `page` INTEGER NOT NULL, " +
+                        "`tool` TEXT NOT NULL, `name` TEXT NOT NULL, `category` TEXT NOT NULL, " +
+                        "`colorArgb` INTEGER NOT NULL, `visible` INTEGER NOT NULL, " +
+                        "`pointsJson` TEXT NOT NULL, `extraRingsJson` TEXT NOT NULL, " +
+                        "`extraSegmentsJson` TEXT NOT NULL, `parentId` INTEGER, " +
+                        "`zone` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_takeoff_items_drawingId_page` ON `takeoff_items` (`drawingId`, `page`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_takeoff_items_parentId` ON `takeoff_items` (`parentId`)")
+            }
+        }
+
         private val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_filePath` ON `pdf_annotations` (`filePath`)")
@@ -479,7 +527,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
-                    MIGRATION_17_18
+                    MIGRATION_17_18, MIGRATION_18_19
                 ).build().also { instance = it }
             }
     }

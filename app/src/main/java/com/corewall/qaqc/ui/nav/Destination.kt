@@ -169,6 +169,32 @@ sealed interface Dest {
         override val fullScreen = true
     }
 
+    // ───────────────────────────── حصر الكميات (قسم مستقل)
+
+    /** قايمة أقسام الحصر. */
+    data object Takeoff : Dest {
+        override val title = "حصر الكميات"
+    }
+
+    /** رسمات قسم حصر. */
+    @Immutable
+    data class TakeoffProject(val projectId: Long, val projectName: String) : Dest {
+        override val title = projectName
+        override val stateKey = "takeoff-project-$projectId"
+    }
+
+    /** شاشة الحصر نفسها — رسمة مفتوحة بأدواتها. شاشة كاملة. */
+    @Immutable
+    data class TakeoffEditor(
+        val drawingId: Long,
+        val path: String,
+        val drawingName: String
+    ) : Dest {
+        override val title = drawingName
+        override val fullScreen = true
+        override val stateKey = "takeoff-editor-$drawingId"
+    }
+
     /** تنظيم صفحات ملف PDF — شاشة كاملة زي العارض. */
     @Immutable
     data class PdfOrganizer(val path: String) : Dest {
@@ -234,7 +260,7 @@ object NavGraph {
         Dest.FloorKnowledge, Dest.ProjectKnowledge, Dest.DocumentGen, Dest.AiSettings,
         Dest.Prompts, Dest.ScheduleImport,
         Dest.Notifications, Dest.Settings, Dest.Sync, Dest.About,
-        Dest.NoteEditor
+        Dest.NoteEditor, Dest.Takeoff
     )
 
     /**
@@ -243,6 +269,7 @@ object NavGraph {
      * ديناميكي فمش مدرجة هنا.
      */
     val entryPoints: Map<Dest, List<Dest>> = mapOf(
+        Dest.Takeoff to listOf(Dest.Data),
         Dest.PourReadiness to listOf(Dest.Today, Dest.Checks),
         Dest.Gaps to listOf(Dest.Checks),
         Dest.CountingReport to listOf(Dest.Checks),

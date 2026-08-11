@@ -647,3 +647,96 @@ data class NoteRevisionEntity(
     val body: String,
     val savedAt: Long
 )
+
+// ══════════════════════════════════════════════════ حصر الكميات
+
+/**
+ * قسم حصر — **مستقل تماماً عن باقي التطبيق**.
+ *
+ * الحصر مش مربوط بدور ولا بملف من ملفات المشروع. المستخدم بيعمل قسم
+ * ("عمارة الشيخ زايد"، "تشطيبات الدور الأرضي")، بيرفع جوّاه رسمات، وبيشتغل.
+ * الفصل ده مقصود: الحصر شغل تسعير بيتعمل على رسمات جاية من برّه، وربطه
+ * بشجرة أدوار المشروع كان هيجبر المستخدم يخترع دور لكل حاجة بيحصرها.
+ */
+@Serializable
+@Entity(tableName = "takeoff_projects")
+data class TakeoffProjectEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val note: String = "",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * رسمة جوّه قسم حصر.
+ *
+ * [filePath] نسخة **جوّه مساحة التطبيق**، مش المسار اللي المستخدم اختاره
+ * منه. الـURI اللي جاي من منتقي الملفات صلاحيته مؤقتة، ولو اعتمدنا عليه
+ * الرسمة بتختفي بعد إعادة التشغيل — والحصر اللي عليها يبقى معلّق على ملف
+ * مش موجود.
+ */
+@Serializable
+@Entity(
+    tableName = "takeoff_drawings",
+    indices = [Index(value = ["projectId"])]
+)
+data class TakeoffDrawingEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val projectId: Long,
+    val name: String,
+    val filePath: String,
+    val pageCount: Int = 1,
+    val createdAt: Long
+)
+
+/**
+ * معايرة صفحة في رسمة حصر.
+ *
+ * لكل صفحة معايرتها لوحدها: مجموعة رسمات ممكن تكون متطبوعة بمقاييس
+ * مختلفة، ومعايرة واحدة للملف كله بتخلّي نص الأرقام غلط من غير ما حد
+ * ياخد باله.
+ */
+@Serializable
+@Entity(tableName = "takeoff_scales", primaryKeys = ["drawingId", "page"])
+data class TakeoffScaleEntity(
+    val drawingId: Long,
+    val page: Int,
+    /** متر حقيقي لكل نقطة PDF. */
+    val metresPerPoint: Double,
+    val note: String = ""
+)
+
+/**
+ * بند حصر متخزّن.
+ *
+ * النقط متخزّنة **منسّبة ٠..١** لصفحتها في `pointsJson` — نفس مبدأ
+ * تعليقات الـPDF. يعني الكمية مستقلة عن التكبير وعن دقة الرندر، وبتفضل
+ * صح لو الملف اتفتح على جهاز تاني بشاشة مختلفة.
+ */
+@Serializable
+@Entity(
+    tableName = "takeoff_items",
+    indices = [Index(value = ["drawingId", "page"]), Index(value = ["parentId"])]
+)
+data class TakeoffItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val drawingId: Long,
+    val page: Int,
+    /** AREA · LENGTH · COUNT · DEDUCT */
+    val tool: String,
+    val name: String,
+    val category: String = "",
+    val colorArgb: Long,
+    val visible: Boolean = true,
+    /** `[[x,y],[x,y],…]` منسّبة ٠..١. */
+    val pointsJson: String,
+    /** حلقات إضافية متجمّعة — `[[[x,y],…],…]`. */
+    val extraRingsJson: String = "[]",
+    /** خطوط إضافية متجمّعة. */
+    val extraSegmentsJson: String = "[]",
+    /** البند اللي الخصم ده بيتقطع منه. للخصم بس. */
+    val parentId: Long? = null,
+    val zone: String = "",
+    val createdAt: Long
+)

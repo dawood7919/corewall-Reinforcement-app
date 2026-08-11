@@ -37,6 +37,7 @@ import com.corewall.qaqc.domain.startOfToday
 import com.corewall.qaqc.domain.PourReadiness
 import com.corewall.qaqc.domain.ScheduleLogic
 import com.corewall.qaqc.notes.NotesStore
+import com.corewall.qaqc.takeoff.TakeoffStore
 import com.corewall.qaqc.notify.NoteReminders
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -380,6 +381,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val notes: StateFlow<List<NoteEntity>> = repo.notes
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // ══════════════════════════════════════════════ حصر الكميات
+
+    /**
+     * قسم الحصر — مستقل تماماً عن المشروع والأدوار.
+     *
+     * `by lazy` زي ماسك الملاحظات: اللي مش بيستخدم الحصر مش دافع تمن أي
+     * استعلام.
+     */
+    val takeoff: TakeoffStore by lazy { TakeoffStore(appContext, viewModelScope) }
+
+    fun openTakeoff() = navigator.push(Dest.Takeoff)
+    fun openTakeoffProject(id: Long, name: String) =
+        navigator.push(Dest.TakeoffProject(id, name))
+    fun openTakeoffEditor(drawingId: Long, path: String, name: String) =
+        navigator.push(Dest.TakeoffEditor(drawingId, path, name))
 
     // ══════════════════════════════════════════════ نظام الملاحظات
 

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -121,6 +122,14 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
                 )
             }
             CwDivider(inset = false)
+        }
+
+        item(key = "takeoff-header") { CwSectionHeader("الحصر") }
+        item(key = "takeoff") {
+            DrawerRow(
+                Icons.Filled.Straighten, "حصر الكميات",
+                "أقسام مستقلة · ارفع PDF وابدأ تحصر"
+            ) { go(Dest.Takeoff) }
         }
 
         item(key = "project-header") { CwSectionHeader("المشروع") }

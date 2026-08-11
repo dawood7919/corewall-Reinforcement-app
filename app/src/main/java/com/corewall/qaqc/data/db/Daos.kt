@@ -604,3 +604,72 @@ interface ImportedMarkDao {
     @Query("DELETE FROM imported_marks")
     suspend fun deleteAll()
 }
+
+/**
+ * حصر الكميات.
+ *
+ * كل الاستعلامات مفلترة بالأب (قسم/رسمة/صفحة) في SQL مش في Kotlin —
+ * قسم فيه ٥٠ رسمة مايستاهلش يقرا بنود كل الرسمات عشان يعرض واحدة.
+ */
+@Dao
+interface TakeoffDao {
+
+    // ── الأقسام
+    @Query("SELECT * FROM takeoff_projects ORDER BY updatedAt DESC")
+    fun observeProjects(): Flow<List<TakeoffProjectEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertProject(entity: TakeoffProjectEntity): Long
+
+    @Query("DELETE FROM takeoff_projects WHERE id = :id")
+    suspend fun deleteProject(id: Long)
+
+    // ── الرسمات
+    @Query("SELECT * FROM takeoff_drawings WHERE projectId = :projectId ORDER BY createdAt")
+    fun observeDrawings(projectId: Long): Flow<List<TakeoffDrawingEntity>>
+
+    @Query("SELECT * FROM takeoff_drawings WHERE projectId = :projectId")
+    suspend fun drawingsOf(projectId: Long): List<TakeoffDrawingEntity>
+
+    @Query("SELECT * FROM takeoff_drawings WHERE id = :id")
+    suspend fun drawing(id: Long): TakeoffDrawingEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDrawing(entity: TakeoffDrawingEntity): Long
+
+    @Query("DELETE FROM takeoff_drawings WHERE id = :id")
+    suspend fun deleteDrawing(id: Long)
+
+    // ── المعايرة
+    @Query("SELECT * FROM takeoff_scales WHERE drawingId = :drawingId")
+    fun observeScales(drawingId: Long): Flow<List<TakeoffScaleEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertScale(entity: TakeoffScaleEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertScales(entities: List<TakeoffScaleEntity>)
+
+    @Query("DELETE FROM takeoff_scales WHERE drawingId = :drawingId")
+    suspend fun clearScales(drawingId: Long)
+
+    // ── البنود
+    @Query("SELECT * FROM takeoff_items WHERE drawingId = :drawingId ORDER BY id")
+    fun observeItems(drawingId: Long): Flow<List<TakeoffItemEntity>>
+
+    @Query("SELECT * FROM takeoff_items WHERE drawingId IN (SELECT id FROM takeoff_drawings WHERE projectId = :projectId)")
+    fun observeProjectItems(projectId: Long): Flow<List<TakeoffItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertItem(entity: TakeoffItemEntity): Long
+
+    @Query("SELECT * FROM takeoff_items WHERE id = :id")
+    suspend fun item(id: Long): TakeoffItemEntity?
+
+    /** حذف بند **وكل خصوماته** — عشان مايفضلش خصم معلّق على أب ميت. */
+    @Query("DELETE FROM takeoff_items WHERE id = :id OR parentId = :id")
+    suspend fun deleteItemCascade(id: Long)
+
+    @Query("DELETE FROM takeoff_items WHERE drawingId = :drawingId")
+    suspend fun clearDrawingItems(drawingId: Long)
+}
