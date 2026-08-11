@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculateCentroidSize
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.positionChanged
@@ -109,6 +110,7 @@ suspend fun PointerInputScope.detectPdfGestures(
  * الإيماязات عادي. وده كمان **رفض الكف**: الكف صباع، وطبقة الحبر
  * مابتشوفش الصوابع خالص — مش بترسم منه وبعدين تمسح.
  */
+@OptIn(ExperimentalComposeUiApi::class)   // `PointerInputChange.historical`
 suspend fun PointerInputScope.detectStylusStrokes(
     /** بيرجّع `true` للمؤشّر اللي مسموح له يحبّر (القلم والأستيكة). */
     acceptPointer: (PointerKind) -> Boolean,
