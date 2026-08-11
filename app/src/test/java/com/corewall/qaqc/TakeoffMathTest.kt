@@ -41,7 +41,11 @@ class TakeoffMathTest {
         parentId = parentId
     )
 
-    /** مربّع منسّب بضلع [side] وبادئ من [origin]. */
+    /**
+     * مربّع منسّب: بيبدأ من ([origin], [origin]) — يعني نفس القيمة في
+     * المحورين — وضلعه [side]. فـ`square(0.6, 0.1)` بيغطّي
+     * x ∈ [0.6, 0.7] **و** y ∈ [0.6, 0.7].
+     */
     private fun square(origin: Double, side: Double) = listOf(
         TakeoffPoint(origin, origin),
         TakeoffPoint(origin + side, origin),
@@ -230,7 +234,8 @@ class TakeoffMathTest {
     fun `hit test finds an accumulated ring not just the first one`() {
         // الباج ده لو رجع، تلات أرباع الشكل بتبقى مش قابلة للتحديد.
         val shape = item(TakeoffTool.AREA, square(0.10, 0.10), extraRings = listOf(square(0.60, 0.10)))
-        val insideExtra = TakeoffPoint(0.65, 0.15)
+        // جوّه الحلقة التانية: [0.60, 0.70] في المحورين.
+        val insideExtra = TakeoffPoint(0.65, 0.65)
         assertTrue(TakeoffMath.hitTest(shape, insideExtra, page, tapRadiusPt = 10.0))
     }
 
