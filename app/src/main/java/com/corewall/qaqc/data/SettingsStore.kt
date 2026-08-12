@@ -26,7 +26,19 @@ data class AppSettings(
      * متوافق) لوحده، والصباع بيفضل للتمرير والتكبير. مقفول افتراضياً
      * عشان الأجهزة اللي مالهاش قلم — لو اتفتح عليها الرسم هيبقى مستحيل.
      */
-    val stylusOnly: Boolean = false
+    val stylusOnly: Boolean = false,
+
+    // ---- حصر الكميات: مظهر الرسم ----
+    // كلها قابلة للتحكّم من شاشة إعدادات الحصر — عشان كل جهاز وكل رسمة
+    // ليها كثافة تفاصيل مختلفة، ومفيش مقاس واحد يناسب الكل.
+    /** سُمك خطوط الأشكال على الشاشة (نقاط بكسل، مش نقط PDF). */
+    val takeoffStrokeWidth: Float = 3.6f,
+    /** نصف قطر علامة العدّ/العمود. */
+    val takeoffMarkerRadius: Float = 8.5f,
+    /** مضاعف حجم خط الأسماء والكميات فوق الأشكال. */
+    val takeoffTextScale: Float = 1f,
+    /** نصف قطر الالتقاط للرأس القريب، بنقط PDF. */
+    val takeoffSnapRadiusPt: Float = 14f
 )
 
 class SettingsStore(context: Context) {
@@ -44,7 +56,11 @@ class SettingsStore(context: Context) {
                 .getOrDefault(AppTheme.IOS_LIGHT),
             showNames = prefs.getBoolean("showNames", true),
             showStatuses = prefs.getBoolean("showStatuses", true),
-            stylusOnly = prefs.getBoolean("stylusOnly", false)
+            stylusOnly = prefs.getBoolean("stylusOnly", false),
+            takeoffStrokeWidth = prefs.getFloat("takeoffStrokeWidth", 3.6f),
+            takeoffMarkerRadius = prefs.getFloat("takeoffMarkerRadius", 8.5f),
+            takeoffTextScale = prefs.getFloat("takeoffTextScale", 1f),
+            takeoffSnapRadiusPt = prefs.getFloat("takeoffSnapRadiusPt", 14f)
         )
     )
     val settings: StateFlow<AppSettings> = _settings
@@ -57,6 +73,10 @@ class SettingsStore(context: Context) {
             .putBoolean("showNames", next.showNames)
             .putBoolean("showStatuses", next.showStatuses)
             .putBoolean("stylusOnly", next.stylusOnly)
+            .putFloat("takeoffStrokeWidth", next.takeoffStrokeWidth)
+            .putFloat("takeoffMarkerRadius", next.takeoffMarkerRadius)
+            .putFloat("takeoffTextScale", next.takeoffTextScale)
+            .putFloat("takeoffSnapRadiusPt", next.takeoffSnapRadiusPt)
             .apply()
     }
 

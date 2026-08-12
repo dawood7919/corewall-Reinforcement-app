@@ -320,6 +320,58 @@ object TakeoffMath {
         return all.all { it.x in min.x..max.x && it.y in min.y..max.y }
     }
 
+    /**
+     * البند بيلمس مستطيل تحديد؟ — نافذة عبور بأسلوب AutoCAD: يكفي رأس
+     * واحد جوّه المستطيل، أو ضلع بيعدّي من جوّاه حتى لو كل رؤوسه برّه
+     * (شكل كبير عدّى فوق مستطيل صغير). أوسع بكتير من [fullyInside] —
+     * ده اللي بيخلّي التحديد بمستطيل مفيد فعلاً على رسمة مزدحمة.
+     *
+     * الإحداثيات منسّبة على الاتنين زي [fullyInside] بالظبط.
+     */
+    fun crossesBox(item: TakeoffItem, min: TakeoffPoint, max: TakeoffPoint): Boolean {
+        val rings = buildList {
+            if (item.verts.isNotEmpty()) add(item.verts)
+            addAll(item.extraRings)
+            addAll(item.extraSegments)
+        }
+        if (rings.isEmpty()) return false
+        fun inBox(p: TakeoffPoint) = p.x in min.x..max.x && p.y in min.y..max.y
+        for (ring in rings) {
+            if (ring.any(::inBox)) return true
+            for (i in 0 until ring.size - 1) {
+                if (segmentCrossesBox(ring[i], ring[i + 1], min, max)) return true
+            }
+        }
+        return false
+    }
+
+    private fun segmentCrossesBox(
+        a: TakeoffPoint, b: TakeoffPoint, min: TakeoffPoint, max: TakeoffPoint
+    ): Boolean {
+        val corners = listOf(
+            TakeoffPoint(min.x, min.y), TakeoffPoint(max.x, min.y),
+            TakeoffPoint(max.x, max.y), TakeoffPoint(min.x, max.y)
+        )
+        for (i in corners.indices) {
+            if (segmentsIntersect(a, b, corners[i], corners[(i + 1) % corners.size])) return true
+        }
+        return false
+    }
+
+    /** تقاطع خطّين — بالاتجاه (orientation)، مش بالمعادلة الخطية. */
+    private fun segmentsIntersect(
+        p1: TakeoffPoint, p2: TakeoffPoint, p3: TakeoffPoint, p4: TakeoffPoint
+    ): Boolean {
+        fun cross(o: TakeoffPoint, a: TakeoffPoint, b: TakeoffPoint) =
+            (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+        val d1 = cross(p3, p4, p1)
+        val d2 = cross(p3, p4, p2)
+        val d3 = cross(p1, p2, p3)
+        val d4 = cross(p1, p2, p4)
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+            ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+    }
+
     private fun distanceToSegment(
         px: Double, py: Double,
         ax: Double, ay: Double,

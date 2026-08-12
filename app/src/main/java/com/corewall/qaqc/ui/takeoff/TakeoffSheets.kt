@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.corewall.qaqc.data.AppSettings
 import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.takeoff.PageGeometry
 import com.corewall.qaqc.takeoff.TakeoffCategory
@@ -795,4 +797,108 @@ private fun toolTitle(tool: TakeoffTool): String = when (tool) {
     TakeoffTool.VOLUME -> "حجم جديد"
     TakeoffTool.COLUMN -> "عمود جديد"
     TakeoffTool.DIMENSION -> "بُعد جديد"
+}
+
+/**
+ * إعدادات مظهر الرسم — سُمك الخطوط، حجم علامة العدّ/العمود، حجم النص،
+ * ونصف قطر الالتقاط. كلها متخزّنة في [AppSettings] العامة (نفس ملف
+ * إعدادات التطبيق)، فمش هتتصفّر لو المستخدم قفل وفتح الرسمة.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TakeoffSettingsSheet(
+    settings: AppSettings,
+    onUpdate: ((AppSettings) -> AppSettings) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = LocalCwColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = c.surface,
+        shape = Radius.sheet
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.lg)
+                .padding(bottom = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.xs)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "إعدادات الرسم",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = c.textPrimary,
+                    modifier = Modifier.weight(1f)
+                )
+                CwIconButton(Icons.Filled.Close, "إغلاق", onDismiss)
+            }
+
+            SettingsSliderRow(
+                label = "سُمك خطوط الأشكال",
+                valueLabel = "%.1f".format(settings.takeoffStrokeWidth),
+                value = settings.takeoffStrokeWidth,
+                range = 2f..7f,
+                onChange = { v -> onUpdate { it.copy(takeoffStrokeWidth = v) } }
+            )
+            SettingsSliderRow(
+                label = "حجم علامة العدّ والعمود",
+                valueLabel = "%.1f".format(settings.takeoffMarkerRadius),
+                value = settings.takeoffMarkerRadius,
+                range = 6f..18f,
+                onChange = { v -> onUpdate { it.copy(takeoffMarkerRadius = v) } }
+            )
+            SettingsSliderRow(
+                label = "حجم الاسم والكمية فوق الشكل",
+                valueLabel = "${(settings.takeoffTextScale * 100).roundToInt()}٪",
+                value = settings.takeoffTextScale,
+                range = 0.7f..1.8f,
+                onChange = { v -> onUpdate { it.copy(takeoffTextScale = v) } }
+            )
+            SettingsSliderRow(
+                label = "نصف قطر الالتقاط للرأس القريب",
+                valueLabel = "%.0f نقطة".format(settings.takeoffSnapRadiusPt),
+                value = settings.takeoffSnapRadiusPt,
+                range = 6f..30f,
+                onChange = { v -> onUpdate { it.copy(takeoffSnapRadiusPt = v) } }
+            )
+
+            Spacer(Modifier.height(Space.xs))
+            CwButton(
+                "رجّع الافتراضي",
+                {
+                    onUpdate {
+                        it.copy(
+                            takeoffStrokeWidth = 3.6f,
+                            takeoffMarkerRadius = 8.5f,
+                            takeoffTextScale = 1f,
+                            takeoffSnapRadiusPt = 14f
+                        )
+                    }
+                },
+                style = CwButtonStyle.Secondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSliderRow(
+    label: String,
+    valueLabel: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    onChange: (Float) -> Unit
+) {
+    val c = LocalCwColors.current
+    Column(Modifier.padding(vertical = Space.xs)) {
+        Row {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = c.textPrimary, modifier = Modifier.weight(1f))
+            Text(valueLabel, style = MaterialTheme.typography.labelMedium, color = c.textTertiary)
+        }
+        Slider(value = value, onValueChange = onChange, valueRange = range)
+    }
 }

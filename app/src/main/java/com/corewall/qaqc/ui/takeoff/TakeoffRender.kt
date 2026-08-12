@@ -58,7 +58,11 @@ fun DrawScope.drawTakeoffItems(
     netQuantityOf: (TakeoffItem) -> Double,
     selectedId: String?,
     /** تحديد جماعي (بمستطيل) — نفس تمييز التحديد المفرد، بلا مقابض رؤوس. */
-    multiSelectedIds: Set<String> = emptySet()
+    multiSelectedIds: Set<String> = emptySet(),
+    /** من إعدادات الحصر — قابلة للتحكّم، مش ثابتة. */
+    strokeWidth: Float = STROKE,
+    markerRadius: Float = MARKER_RADIUS,
+    textScale: Float = 1f
 ) {
     for (item in items) {
         if (!item.visible || item.page != page) continue
@@ -68,7 +72,7 @@ fun DrawScope.drawTakeoffItems(
         // لو الصف القديم اتخزّن من غير قناة alpha.
         val paint = Color((item.colorArgb or 0xFF000000L).toInt())
         val selected = item.id == selectedId || item.id in multiSelectedIds
-        val width = if (selected) STROKE * 1.8f else STROKE
+        val width = if (selected) strokeWidth * 1.8f else strokeWidth
 
         when (item.tool) {
             TakeoffTool.AREA -> {
@@ -107,8 +111,8 @@ fun DrawScope.drawTakeoffItems(
             TakeoffTool.COUNT -> {
                 item.verts.forEach { marker ->
                     state.pagePointToScreen(page, marker.x.toFloat(), marker.y.toFloat())?.let { p ->
-                        drawCircle(paint, MARKER_RADIUS, p)
-                        drawCircle(Color.White, MARKER_RADIUS * 0.4f, p)
+                        drawCircle(paint, markerRadius, p)
+                        drawCircle(Color.White, markerRadius * 0.4f, p)
                     }
                 }
             }
@@ -140,7 +144,7 @@ fun DrawScope.drawTakeoffItems(
             TakeoffTool.COLUMN -> {
                 item.verts.forEach { marker ->
                     state.pagePointToScreen(page, marker.x.toFloat(), marker.y.toFloat())?.let { p ->
-                        val half = MARKER_RADIUS
+                        val half = markerRadius
                         drawRect(
                             paint,
                             topLeft = Offset(p.x - half, p.y - half),
@@ -173,7 +177,7 @@ fun DrawScope.drawTakeoffItems(
         // التسمية: اسم + كمية فوق الشكل. البُعد ليه رسمه الخاص فوق،
         // والخصم بيترسم كفتحة مش بند مستقل — الاتنين مستبعدين هنا.
         if (item.tool != TakeoffTool.DIMENSION) {
-            drawTakeoffLabel(state, page, item, formatQuantity(item.tool, netQuantityOf(item)), paint)
+            drawTakeoffLabel(state, page, item, formatQuantity(item.tool, netQuantityOf(item)), paint, textScale)
         }
 
         // المقابض بس للتحديد المفرد — التحديد الجماعي بمستطيل غرضه
@@ -235,7 +239,9 @@ fun DrawScope.drawTakeoffDraft(
     page: Int,
     points: List<TakeoffPoint>,
     tool: TakeoffTool,
-    colour: Color
+    colour: Color,
+    strokeWidth: Float = STROKE,
+    markerRadius: Float = MARKER_RADIUS
 ) {
     val screen = points.mapNotNull {
         state.pagePointToScreen(page, it.x.toFloat(), it.y.toFloat())
@@ -243,7 +249,7 @@ fun DrawScope.drawTakeoffDraft(
     if (screen.isEmpty()) return
 
     when (tool) {
-        TakeoffTool.COUNT, TakeoffTool.COLUMN -> screen.forEach { drawCircle(colour, MARKER_RADIUS, it) }
+        TakeoffTool.COUNT, TakeoffTool.COLUMN -> screen.forEach { drawCircle(colour, markerRadius, it) }
         else -> {
             val closes = tool == TakeoffTool.AREA || tool == TakeoffTool.DEDUCT || tool == TakeoffTool.VOLUME
             if (screen.size >= 2) {
@@ -255,7 +261,7 @@ fun DrawScope.drawTakeoffDraft(
                 if (closes) drawPath(path, colour.copy(alpha = FILL_ALPHA))
                 drawPath(
                     path, colour,
-                    style = Stroke(STROKE, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    style = Stroke(strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
                 )
             }
             screen.forEach { drawCircle(colour, 4f, it) }
@@ -292,15 +298,17 @@ fun netOf(
 // وبتدّي تشكيل عربي سليم. الـPaint متعمولة مرة واحدة برّه الدالة عن
 // قصد — تخصيص كائنين في كل نداء وسط التكبير بيولّع الـGC.
 
+private const val LABEL_NAME_BASE_SIZE = 30f
+private const val LABEL_QTY_BASE_SIZE = 26f
 private val labelNamePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = android.graphics.Paint.Align.CENTER
-    textSize = 30f
+    textSize = LABEL_NAME_BASE_SIZE
     isFakeBoldText = true
     color = android.graphics.Color.WHITE
 }
 private val labelQtyPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = android.graphics.Paint.Align.CENTER
-    textSize = 26f
+    textSize = LABEL_QTY_BASE_SIZE
     color = android.graphics.Color.WHITE
 }
 private val labelBgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
@@ -339,10 +347,16 @@ private fun DrawScope.drawTakeoffLabel(
     page: Int,
     item: TakeoffItem,
     quantityText: String,
-    accent: Color
+    accent: Color,
+    textScale: Float = 1f
 ) {
     val anchor = labelAnchor(item) ?: return
     val p = state.pagePointToScreen(page, anchor.x.toFloat(), anchor.y.toFloat()) ?: return
+
+    // مطاطة: بتتغيّر مرة واحدة هنا كل رسمة، مش تخصيص كائن جديد — نفس
+    // الـPaint المشترك، بس مقاسه بيتحدّث حسب إعداد المستخدم.
+    labelNamePaint.textSize = LABEL_NAME_BASE_SIZE * textScale
+    labelQtyPaint.textSize = LABEL_QTY_BASE_SIZE * textScale
 
     val isMarkerTool = item.tool == TakeoffTool.COUNT || item.tool == TakeoffTool.COLUMN
     val lines = if (isMarkerTool) listOf("${item.name} (${item.verts.size})") else listOf(item.name, quantityText)

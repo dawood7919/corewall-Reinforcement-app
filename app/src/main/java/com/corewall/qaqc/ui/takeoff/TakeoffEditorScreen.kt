@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PinDrop
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Square
 import androidx.compose.material.icons.filled.SquareFoot
 import androidx.compose.material.icons.filled.Straighten
@@ -141,14 +142,17 @@ import kotlin.math.hypot
  */
 private enum class EditorMode { POINTER, DRAW, RECT, VERTEX, BOXSELECT }
 
-/** بند لسه ماتخزنش — مستنّي اسم وفئة ولون من [TakeoffNameSheet]. */
-private data class PendingShape(val tool: TakeoffTool, val page: Int, val points: List<TakeoffPoint>)
+/**
+ * أداة مختارة مستنّية اسم وفئة ولون **قبل** الرسم — عكس السلوك القديم
+ * (السؤال بعد ما الشكل يخلص). المستخدم عايز الـID يتحجز في القاعدة
+ * من الأول عشان يقدر يرشّحه في الصيغ بـ`@` وهو لسه بيرسم، مش بعدين.
+ * [viaRect] بيفرّق مستطيل عن رسم بالنقر — نفس الأداة (مساحة) بس وضع
+ * تحرير مختلف ([EditorMode.RECT] بدل [EditorMode.DRAW]).
+ */
+private data class PendingNaming(val tool: TakeoffTool, val viaRect: Boolean = false)
 
 /** لون ثابت لخطوط القياس المرجعية — مميّز عن باليت البنود وعن رمادي الخصم. */
 private const val DIMENSION_COLOR = 0xFF42A5F5L
-
-/** نصف قطر الالتقاط للرأس القريب، بالنقط — نفس نصف قطر لمس التحديد. */
-private const val SNAP_RADIUS_PT = 14.0
 
 /** لون ثابت لكل التعليقات — طبقة توضيح واحدة، مالهاش باليت زي البنود. */
 private const val ANNOTATION_COLOR = 0xFFFFB300L
@@ -268,10 +272,13 @@ fun TakeoffEditorScreen(
     var totalsOpen by remember { mutableStateOf(false) }
     var formulasOpen by remember { mutableStateOf(false) }
     var toolsSheetOpen by remember { mutableStateOf(false) }
+    var settingsOpen by remember { mutableStateOf(false) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     /** بند بنضيف له هندسة إضافية (حلقة/قطعة جديدة) بدل إنشاء بند مستقل. */
     var addToShapeFor by remember { mutableStateOf<TakeoffItem?>(null) }
-    var pendingShape by remember { mutableStateOf<PendingShape?>(null) }
+    var pendingNaming by remember { mutableStateOf<PendingNaming?>(null) }
+    /** بند اتسمّى واتحجز ID له بس لسه ماترسمش — بيتحدّث بالهندسة عند الحفظ. */
+    var pendingDrawItemId by remember { mutableStateOf<Long?>(null) }
     var editingItem by remember { mutableStateOf<TakeoffItem?>(null) }
     var snapEnabled by remember { mutableStateOf(true) }
 
@@ -328,6 +335,10 @@ fun TakeoffEditorScreen(
         calibrating = false
         deductFor = null
         addToShapeFor = null
+        // بند اتسمّى وحجز ID بس اتسابته (المستخدم بدّل أداة أو خرج) —
+        // بيترسم مالوش هندسة، فمالوش لزمة يفضل شبح جوّه القاعدة.
+        pendingDrawItemId?.let { id -> scope.launch { vm.takeoff.deleteItem(id) } }
+        pendingDrawItemId = null
         rectDraft = null
         rectPage = -1
         boxStart = null
@@ -448,7 +459,17 @@ fun TakeoffEditorScreen(
             return
         }
 
-        pendingShape = PendingShape(tool, page, points)
+        // الاسم والفئة واللون اتاخدوا **قبل** ما الرسم يبدأ (شوف `pickTool`)
+        // — البند أصلاً محجوز له صف في القاعدة، وده بس بيحطّ هندسته فيه.
+        val placeholderId = pendingDrawItemId
+        if (placeholderId != null) {
+            scope.launch {
+                vm.takeoff.itemById(placeholderId)?.let { row ->
+                    vm.takeoff.saveItem(row.copy(page = page, pointsJson = vm.takeoff.encodeRing(points)))
+                }
+            }
+        }
+        pendingDrawItemId = null
         draft.clear(); draftPage.intValue = -1
     }
 
@@ -473,7 +494,7 @@ fun TakeoffEditorScreen(
                 if (d < bestDist) { bestDist = d; best = v }
             }
         }
-        return if (bestDist <= SNAP_RADIUS_PT) best ?: p else p
+        return if (bestDist <= settings.takeoffSnapRadiusPt) best ?: p else p
     }
 
     fun addPoint(screen: Offset) {
@@ -494,13 +515,34 @@ fun TakeoffEditorScreen(
         val minY = minOf(a.y, b.y); val maxY = maxOf(a.y, b.y)
         // مستطيل أصغر من نص بكسل عمليًا = لمسة غلط مش شكل مقصود.
         if (maxX - minX < 0.002 || maxY - minY < 0.002) return
-        pendingShape = PendingShape(
-            TakeoffTool.AREA, page,
-            listOf(
-                TakeoffPoint(minX, minY), TakeoffPoint(maxX, minY),
-                TakeoffPoint(maxX, maxY), TakeoffPoint(minX, maxY)
-            )
+        val points = listOf(
+            TakeoffPoint(minX, minY), TakeoffPoint(maxX, minY),
+            TakeoffPoint(maxX, maxY), TakeoffPoint(minX, maxY)
         )
+        val placeholderId = pendingDrawItemId
+        if (placeholderId != null) {
+            scope.launch {
+                vm.takeoff.itemById(placeholderId)?.let { row ->
+                    vm.takeoff.saveItem(row.copy(page = page, pointsJson = vm.takeoff.encodeRing(points)))
+                }
+            }
+        }
+        pendingDrawItemId = null
+    }
+
+    /**
+     * اختيار أداة — بيسأل عن الاسم/الفئة/اللون **الأول**، وبعدين يدخل
+     * وضع الرسم. البُعد وحده مستثنى: مالوش اسم ولا فئة أصلاً (زي الخصم
+     * بالظبط)، فمفيش لزمة يوقف يسأل.
+     */
+    fun pickTool(picked: TakeoffTool, viaRect: Boolean = false) {
+        clearDrafts()
+        if (picked == TakeoffTool.DIMENSION) {
+            mode = EditorMode.DRAW
+            tool = picked
+        } else {
+            pendingNaming = PendingNaming(picked, viaRect)
+        }
     }
 
     fun saveAnnotation(type: TakeoffAnnotationType, page: Int, points: List<TakeoffPoint>, text: String = "") {
@@ -686,7 +728,7 @@ fun TakeoffEditorScreen(
                                         maxOf(hs.nx, he.nx).toDouble(), maxOf(hs.ny, he.ny).toDouble()
                                     )
                                     multiSelectedIds = pageItems
-                                        .filter { it.page == hs.page && TakeoffMath.fullyInside(it, minP, maxP) }
+                                        .filter { it.page == hs.page && TakeoffMath.crossesBox(it, minP, maxP) }
                                         .map { it.id }.toSet()
                                 }
                             }
@@ -780,7 +822,10 @@ fun TakeoffEditorScreen(
                         // (مفلترة قبل كده)، فمفيش داعي نبحث هندسة صفحة كل بند.
                         netQuantityOf = { it2 -> TakeoffMath.netQuantity(it2, renderItems, pageGeometry) },
                         selectedId = selectedId,
-                        multiSelectedIds = multiSelectedIds
+                        multiSelectedIds = multiSelectedIds,
+                        strokeWidth = settings.takeoffStrokeWidth,
+                        markerRadius = settings.takeoffMarkerRadius,
+                        textScale = settings.takeoffTextScale
                     )
                     drawTakeoffAnnotations(
                         state = s, annotations = pageAnnotations, page = s.currentPage,
@@ -801,7 +846,8 @@ fun TakeoffEditorScreen(
                             page = s.currentPage,
                             points = calibPoints.toList(),
                             tool = TakeoffTool.LENGTH,
-                            colour = calibrationColour
+                            colour = calibrationColour,
+                            strokeWidth = settings.takeoffStrokeWidth
                         )
                     }
                     val placingDimOffset = tool == TakeoffTool.DIMENSION && draft.size == 2 && dimDragPoint != null
@@ -811,7 +857,9 @@ fun TakeoffEditorScreen(
                             page = draftPage.intValue,
                             points = draft.toList(),
                             tool = if (deductFor != null) TakeoffTool.DEDUCT else tool,
-                            colour = activeColour
+                            colour = activeColour,
+                            strokeWidth = settings.takeoffStrokeWidth,
+                            markerRadius = settings.takeoffMarkerRadius
                         )
                     }
                     // معاينة حية لخط القياس وهو بيتسحب — بالشكل النهائي بالظبط
@@ -832,7 +880,8 @@ fun TakeoffEditorScreen(
                             points = listOf(
                                 a, TakeoffPoint(b.x, a.y), b, TakeoffPoint(a.x, b.y)
                             ),
-                            tool = TakeoffTool.AREA, colour = activeColour
+                            tool = TakeoffTool.AREA, colour = activeColour,
+                            strokeWidth = settings.takeoffStrokeWidth
                         )
                     }
                     val bs = boxStart; val be = boxEnd
@@ -863,6 +912,7 @@ fun TakeoffEditorScreen(
                 onTotals = { totalsOpen = true },
                 onFormulas = { formulasOpen = true },
                 onCalibrate = { endSession(); calibrating = true },
+                onSettings = { settingsOpen = true },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
@@ -926,7 +976,7 @@ fun TakeoffEditorScreen(
                         annotationTool = annotationTool,
                         selectedAnnotationId = selectedAnnotationId,
                         onPointer = { endSession() },
-                        onPick = { picked -> clearDrafts(); mode = EditorMode.DRAW; tool = picked },
+                        onPick = { picked -> pickTool(picked) },
                         onMore = { toolsSheetOpen = true },
                         onDone = { if (annotationTool != null) finishAnnotation() else commit() },
                         onAddToShape = {
@@ -1009,8 +1059,8 @@ fun TakeoffEditorScreen(
                     it == TakeoffTool.AREA || it == TakeoffTool.VOLUME
                 },
             annotationTool = annotationTool,
-            onPick = { picked -> clearDrafts(); mode = EditorMode.DRAW; tool = picked },
-            onRect = { clearDrafts(); mode = EditorMode.RECT },
+            onPick = { picked -> pickTool(picked) },
+            onRect = { pickTool(TakeoffTool.AREA, viaRect = true) },
             onVertexEdit = { clearDrafts(); mode = EditorMode.VERTEX },
             onBoxSelect = { clearDrafts(); mode = EditorMode.BOXSELECT; selectedId = null },
             onAnnotate = { picked ->
@@ -1042,10 +1092,18 @@ fun TakeoffEditorScreen(
         )
     }
 
-    pendingShape?.let { pending ->
+    if (settingsOpen) {
+        TakeoffSettingsSheet(
+            settings = settings,
+            onUpdate = { transform -> vm.updateSettings(transform) },
+            onDismiss = { settingsOpen = false }
+        )
+    }
+
+    pendingNaming?.let { naming ->
         TakeoffNameSheet(
-            tool = pending.tool,
-            suggestedName = defaultName(pending.tool, rows.size + 1),
+            tool = naming.tool,
+            suggestedName = defaultName(naming.tool, rows.size + 1),
             categories = categories,
             onCreateCategory = { name, color, onCreated ->
                 val pid = projectId
@@ -1057,14 +1115,35 @@ fun TakeoffEditorScreen(
                 }
             },
             onConfirm = { name, categoryId, colorArgb, thickness, colLength, colWidth, colHeight ->
-                saveNewItem(
-                    pending.tool, pending.page, pending.points, name, categoryId, colorArgb,
-                    thickness, colLength, colWidth, colHeight
-                )
+                pendingNaming = null
+                // البند بيتحجز في القاعدة دلوقتي، من غير هندسة لسه — عشان
+                // الـID يبقى موجود من الأول للصيغ. وضع الرسم مايتفعّلش إلا
+                // لما الـID يرجع فعلاً، عشان مفيش سباق بين اللمسة الأولى
+                // وكتابة القاعدة.
+                scope.launch {
+                    val newId = vm.takeoff.saveItem(
+                        TakeoffItemEntity(
+                            drawingId = drawingId,
+                            page = state.currentPage,
+                            tool = naming.tool.name,
+                            name = name,
+                            colorArgb = colorArgb,
+                            pointsJson = "[]",
+                            categoryId = categoryId,
+                            thickness = thickness,
+                            colLength = colLength,
+                            colWidth = colWidth,
+                            colHeight = colHeight,
+                            createdAt = System.currentTimeMillis()
+                        )
+                    )
+                    pendingDrawItemId = newId
+                    mode = if (naming.viaRect) EditorMode.RECT else EditorMode.DRAW
+                    tool = naming.tool
+                }
                 colourIndex++
-                pendingShape = null
             },
-            onDismiss = { pendingShape = null }
+            onDismiss = { pendingNaming = null }
         )
     }
 
@@ -1166,6 +1245,7 @@ private fun TakeoffTopBar(
     onTotals: () -> Unit,
     onFormulas: () -> Unit,
     onCalibrate: () -> Unit,
+    onSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
@@ -1194,6 +1274,7 @@ private fun TakeoffTopBar(
             CwIconButton(Icons.Filled.Straighten, "معايرة المقياس", onCalibrate)
             CwIconButton(Icons.Filled.Calculate, "الصيغ", onFormulas)
             CwIconButton(Icons.Filled.Functions, "الإجماليات", onTotals)
+            CwIconButton(Icons.Filled.Settings, "إعدادات الرسم", onSettings)
         }
     }
 }
