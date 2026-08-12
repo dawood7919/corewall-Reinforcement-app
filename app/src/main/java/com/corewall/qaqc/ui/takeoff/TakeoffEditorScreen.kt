@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Delete
@@ -27,7 +29,9 @@ import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PinDrop
 import androidx.compose.material.icons.filled.Square
+import androidx.compose.material.icons.filled.SquareFoot
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.CircularProgressIndicator
@@ -56,6 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
+import com.corewall.qaqc.data.db.TakeoffAnnotationEntity
 import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.data.db.TakeoffItemEntity
 import com.corewall.qaqc.pdfengine.PageLayout
@@ -68,6 +73,8 @@ import com.corewall.qaqc.pdfengine.TileEngine
 import com.corewall.qaqc.pdfengine.pageHit
 import com.corewall.qaqc.stylus.PointerKind
 import com.corewall.qaqc.takeoff.PageGeometry
+import com.corewall.qaqc.takeoff.TakeoffAnnotation
+import com.corewall.qaqc.takeoff.TakeoffAnnotationType
 import com.corewall.qaqc.takeoff.TakeoffItem
 import com.corewall.qaqc.takeoff.TakeoffMath
 import com.corewall.qaqc.takeoff.TakeoffPoint
@@ -83,6 +90,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.hypot
 
 /**
  * شاشة الحصر — الرسمة وأدواتها.
@@ -112,6 +120,15 @@ private enum class EditorMode { POINTER, DRAW, RECT, VERTEX, BOXSELECT }
 
 /** بند لسه ماتخزنش — مستنّي اسم وفئة ولون من [TakeoffNameSheet]. */
 private data class PendingShape(val tool: TakeoffTool, val page: Int, val points: List<TakeoffPoint>)
+
+/** لون ثابت لخطوط القياس المرجعية — مميّز عن باليت البنود وعن رمادي الخصم. */
+private const val DIMENSION_COLOR = 0xFF42A5F5L
+
+/** نصف قطر الالتقاط للرأس القريب، بالنقط — نفس نصف قطر لمس التحديد. */
+private const val SNAP_RADIUS_PT = 14.0
+
+/** لون ثابت لكل التعليقات — طبقة توضيح واحدة، مالهاش باليت زي البنود. */
+private const val ANNOTATION_COLOR = 0xFFFFB300L
 
 @Composable
 fun TakeoffEditorScreen(
@@ -187,10 +204,16 @@ fun TakeoffEditorScreen(
         .collectAsStateWithLifecycle(emptyList())
     val formulaRows by remember(drawingId) { vm.takeoff.formulas(drawingId) }
         .collectAsStateWithLifecycle(emptyList())
+    val annotationRows by remember(drawingId) { vm.takeoff.annotations(drawingId) }
+        .collectAsStateWithLifecycle(emptyList())
 
     val items = remember(rows) { rows.map { vm.takeoff.toModel(it) } }
     val pageItems = remember(items, state.currentPage) {
         items.filter { it.page == state.currentPage }
+    }
+    val annotations = remember(annotationRows) { annotationRows.map { vm.takeoff.annotationToModel(it) } }
+    val pageAnnotations = remember(annotations, state.currentPage) {
+        annotations.filter { it.page == state.currentPage }
     }
 
     /** هندسة الصفحة الحالية — مقاسها بالنقط + معايرتها. */
@@ -224,6 +247,14 @@ fun TakeoffEditorScreen(
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     var pendingShape by remember { mutableStateOf<PendingShape?>(null) }
     var editingItem by remember { mutableStateOf<TakeoffItem?>(null) }
+
+    // ── حالة التعليقات — طبقة مستقلة عن أدوات الحصر تمامًا.
+    var annotationTool by remember { mutableStateOf<TakeoffAnnotationType?>(null) }
+    val annotationDraft = remember(path) { mutableStateListOf<TakeoffPoint>() }
+    var annotationDraftPage by remember { mutableIntStateOf(-1) }
+    var textPromptPoint by remember { mutableStateOf<TakeoffPoint?>(null) }
+    var textPromptPage by remember { mutableIntStateOf(-1) }
+    var selectedAnnotationId by remember { mutableStateOf<String?>(null) }
 
     /**
      * المسوّدة **بإحداثيات الصفحة المنسّبة**، مش بإحداثيات الشاشة.
@@ -266,6 +297,11 @@ fun TakeoffEditorScreen(
         vertexItemId = null
         vertexIndex = null
         vertexPoints.clear()
+        annotationTool = null
+        annotationDraft.clear()
+        annotationDraftPage = -1
+        textPromptPoint = null
+        textPromptPage = -1
     }
 
     fun endSession() {
@@ -273,6 +309,7 @@ fun TakeoffEditorScreen(
         clearDrafts()
         mode = EditorMode.POINTER
         selectedId = null
+        selectedAnnotationId = null
         multiSelectedIds = emptySet()
     }
 
@@ -310,9 +347,21 @@ fun TakeoffEditorScreen(
         val enough = when (tool) {
             TakeoffTool.COUNT, TakeoffTool.COLUMN -> points.isNotEmpty()
             TakeoffTool.LENGTH -> points.size >= 2
+            TakeoffTool.DIMENSION -> points.size == 3
             else -> points.size >= 3
         }
         if (!enough) { draft.clear(); draftPage.intValue = -1; return }
+
+        // البُعد مرجع بصري — زي الخصم بالظبط، بدون اسم ولا فئة ولون ثابت،
+        // ومستبعد من الإجماليات والـBOQ ومراجع الصيغ بحكم [TakeoffTool.isQuantity].
+        if (tool == TakeoffTool.DIMENSION) {
+            saveNewItem(
+                TakeoffTool.DIMENSION, page, points,
+                defaultName(TakeoffTool.DIMENSION, rows.size + 1), null, DIMENSION_COLOR
+            )
+            draft.clear(); draftPage.intValue = -1
+            return
+        }
 
         val parent = deductFor
         if (parent != null) {
@@ -340,13 +389,39 @@ fun TakeoffEditorScreen(
         draft.clear(); draftPage.intValue = -1
     }
 
+    /**
+     * أقرب رأس موجود بالفعل على نفس الصفحة، لو جوّه نصف قطر الالتقاط.
+     *
+     * بيفحص `verts` بس (مش الحلقات المتجمّعة) — نفس القيد اللي في تعديل
+     * الرؤوس، ولنفس السبب: التجميع مالوش واجهة تضيف له لسه.
+     *
+     * بيشتغل بس على [addPoint] (رسم بالنقر) — سحب المستطيل وسحب الرأس
+     * مش ملتقطين لسه، عشان الالتقاط أثناء السحب المستمر محتاج مؤشّر
+     * بصري ("هيتلقط هنا") من غير ده بيحس المستخدم إن الشكل بيرتعش.
+     */
+    fun snapPoint(p: TakeoffPoint, page: Int): TakeoffPoint {
+        var best: TakeoffPoint? = null
+        var bestDist = Double.MAX_VALUE
+        for (candidate in pageItems) {
+            if (candidate.page != page || !candidate.visible) continue
+            candidate.verts.forEach { v ->
+                val d = hypot((p.x - v.x) * pageGeometry.widthPt, (p.y - v.y) * pageGeometry.heightPt)
+                if (d < bestDist) { bestDist = d; best = v }
+            }
+        }
+        return if (bestDist <= SNAP_RADIUS_PT) best ?: p else p
+    }
+
     fun addPoint(screen: Offset) {
         val hit = state.pageHit(screen) ?: return
         if (draftPage.intValue < 0) draftPage.intValue = hit.page
         // لمسة على صفحة تانية وأنت في نص شكل بتتجاهل — البند بيخص صفحة
         // واحدة، وشكل بيعدّي بين صفحتين مالوش معنى في الحصر.
         if (hit.page != draftPage.intValue) return
-        draft += TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+        draft += snapPoint(TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble()), hit.page)
+        // البُعد ثابت بتلات نقط بالظبط: طرف، طرف، إزاحة خط القياس —
+        // اللمسة التالتة بتقفله لوحدها من غير ما تستنى ضغطة مطوّلة.
+        if (tool == TakeoffTool.DIMENSION && draft.size == 3) commit()
     }
 
     fun finishRect(a: TakeoffPoint, b: TakeoffPoint, page: Int) {
@@ -361,6 +436,58 @@ fun TakeoffEditorScreen(
                 TakeoffPoint(maxX, maxY), TakeoffPoint(minX, maxY)
             )
         )
+    }
+
+    fun saveAnnotation(type: TakeoffAnnotationType, page: Int, points: List<TakeoffPoint>, text: String = "") {
+        scope.launch {
+            vm.takeoff.saveAnnotation(
+                TakeoffAnnotationEntity(
+                    drawingId = drawingId,
+                    page = page,
+                    type = type.name,
+                    pointsJson = vm.takeoff.encodeRing(points),
+                    colorArgb = ANNOTATION_COLOR,
+                    text = text,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    /** بتقفل السحابة أو السهم لو عنده نقط كفاية، وبترمي المسوّدة برضو لو لأ. */
+    fun finishAnnotation() {
+        val points = annotationDraft.toList()
+        val page = annotationDraftPage
+        val type = annotationTool
+        if (type != null && page >= 0) {
+            val enough = when (type) {
+                TakeoffAnnotationType.CLOUD -> points.size >= 3
+                TakeoffAnnotationType.ARROW -> points.size >= 2
+                TakeoffAnnotationType.TEXT -> false // بتتحفظ من نافذة النص مباشرة، مش من هنا
+            }
+            if (enough) saveAnnotation(type, page, points)
+        }
+        annotationDraft.clear()
+        annotationDraftPage = -1
+    }
+
+    /** توجيه اللمسة حسب نوع التعليق النشط — بديل [addPoint] وقت التعليق. */
+    fun handleAnnotationTap(screen: Offset, type: TakeoffAnnotationType) {
+        val hit = state.pageHit(screen) ?: return
+        if (annotationDraftPage < 0) annotationDraftPage = hit.page
+        if (hit.page != annotationDraftPage) return
+        val p = snapPoint(TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble()), hit.page)
+        when (type) {
+            TakeoffAnnotationType.TEXT -> {
+                textPromptPoint = p
+                textPromptPage = hit.page
+            }
+            TakeoffAnnotationType.ARROW -> {
+                annotationDraft += p
+                if (annotationDraft.size == 2) finishAnnotation()
+            }
+            TakeoffAnnotationType.CLOUD -> annotationDraft += p
+        }
     }
 
     // ── الحسابات المشتقّة من الوضع
@@ -496,25 +623,36 @@ fun TakeoffEditorScreen(
                                 }
                             }
                         }
+                        // التعليقات طبقة مستقلة — بتاخد الأولوية على وضع
+                        // النقر العادي، وبتفضل شغّالة أيًا كان `mode`.
+                        annotationTool != null -> handleAnnotationTap(point, annotationTool!!)
                         mode == EditorMode.POINTER || mode == EditorMode.VERTEX -> {
                             val hit = state.pageHit(point)
-                            selectedId = hit?.let { h ->
-                                val p = TakeoffPoint(h.nx.toDouble(), h.ny.toDouble())
+                            val p = hit?.let { h -> TakeoffPoint(h.nx.toDouble(), h.ny.toDouble()) }
+                            selectedId = p?.let { pt ->
                                 // من الآخر للأول: الشكل اللي اترسم بعدين هو
                                 // اللي فوق بصرياً، فلازم يكسب اللمسة.
                                 pageItems.lastOrNull { candidate ->
                                     candidate.visible && TakeoffMath.hitTest(
-                                        candidate, p, pageGeometry, tapRadiusPt = 14.0
+                                        candidate, pt, pageGeometry, tapRadiusPt = 14.0
                                     )
                                 }?.id
                             }
                             multiSelectedIds = emptySet()
+                            // لمسة ماخدتش بند حصر — جرّب تلاقيها على تعليق
+                            // بدل ما تسيب المستخدم بلا طريقة يشيله بيها.
+                            selectedAnnotationId = if (selectedId == null && p != null) {
+                                pageAnnotations.lastOrNull { it.visible && annotationHit(it, p, pageGeometry) }?.id
+                            } else null
                         }
                         mode == EditorMode.DRAW -> addPoint(point)
                         else -> Unit
                     }
                 },
-                onLongPress = { _, _ -> if (mode == EditorMode.DRAW) commit() },
+                onLongPress = { _, _ ->
+                    if (annotationTool == TakeoffAnnotationType.CLOUD) finishAnnotation()
+                    else if (mode == EditorMode.DRAW) commit()
+                },
                 overlay = { s ->
                     val renderItems = if (vertexItemId != null && vertexPoints.isNotEmpty()) {
                         val draggedId = vertexItemId.toString()
@@ -529,9 +667,23 @@ fun TakeoffEditorScreen(
                                 it.tool == TakeoffTool.DEDUCT && it.parentId == parent.id
                             }
                         },
+                        // كل عناصر renderItems أصلاً من نفس الصفحة الحالية
+                        // (مفلترة قبل كده)، فمفيش داعي نبحث هندسة صفحة كل بند.
+                        netQuantityOf = { it2 -> TakeoffMath.netQuantity(it2, renderItems, pageGeometry) },
                         selectedId = selectedId,
                         multiSelectedIds = multiSelectedIds
                     )
+                    drawTakeoffAnnotations(
+                        state = s, annotations = pageAnnotations, page = s.currentPage,
+                        selectedId = selectedAnnotationId
+                    )
+                    if (annotationDraft.isNotEmpty() && annotationDraftPage >= 0) {
+                        drawTakeoffAnnotationDraft(
+                            state = s, page = annotationDraftPage,
+                            points = annotationDraft.toList(),
+                            colour = Color((ANNOTATION_COLOR or 0xFF000000L).toInt())
+                        )
+                    }
                     // نقطتا المعايرة لازم تبانوا وهو بيحطهم — من غير ده
                     // المستخدم مش عارف إذا كانت لمسته اتسجّلت ولا لأ.
                     if (calibrating && calibPoints.isNotEmpty()) {
@@ -592,18 +744,28 @@ fun TakeoffEditorScreen(
                 mode = mode,
                 tool = tool,
                 deducting = deductFor != null,
-                hasDraft = draft.isNotEmpty(),
+                hasDraft = draft.isNotEmpty() || annotationDraft.isNotEmpty(),
                 canDeduct = selectedId != null &&
                     pageItems.firstOrNull { it.id == selectedId }?.tool.let {
                         it == TakeoffTool.AREA || it == TakeoffTool.VOLUME
                     },
                 selectedId = selectedId,
                 multiCount = multiSelectedIds.size,
+                annotationTool = annotationTool,
+                selectedAnnotationId = selectedAnnotationId,
                 onPointer = { endSession() },
                 onPick = { picked -> clearDrafts(); mode = EditorMode.DRAW; tool = picked },
                 onRect = { clearDrafts(); mode = EditorMode.RECT },
                 onVertexEdit = { clearDrafts(); mode = EditorMode.VERTEX },
                 onBoxSelect = { clearDrafts(); mode = EditorMode.BOXSELECT; selectedId = null },
+                onAnnotate = { picked ->
+                    clearDrafts()
+                    // لازم يرجع لوضع مالوش سحب (POINTER) — لو فضل RECT/
+                    // VERTEX/BOXSELECT شغّال، drawingActive بيفضل true
+                    // وطبقة النقر بتتقفل تمامًا، فالتعليق مش هيستقبل أي لمسة.
+                    mode = EditorMode.POINTER
+                    annotationTool = picked
+                },
                 onDeduct = {
                     val parent = pageItems.firstOrNull { it.id == selectedId }
                     if (parent != null) {
@@ -611,7 +773,7 @@ fun TakeoffEditorScreen(
                         deductFor = parent; mode = EditorMode.DRAW; tool = TakeoffTool.AREA
                     }
                 },
-                onDone = { commit() },
+                onDone = { if (annotationTool != null) finishAnnotation() else commit() },
                 onDeleteSelected = {
                     selectedId?.toLongOrNull()?.let { id ->
                         scope.launch { vm.takeoff.deleteItem(id) }
@@ -622,6 +784,12 @@ fun TakeoffEditorScreen(
                     val ids = multiSelectedIds.mapNotNull { it.toLongOrNull() }
                     scope.launch { ids.forEach { vm.takeoff.deleteItem(it) } }
                     multiSelectedIds = emptySet()
+                },
+                onDeleteAnnotation = {
+                    selectedAnnotationId?.toLongOrNull()?.let { id ->
+                        scope.launch { vm.takeoff.deleteAnnotation(id) }
+                    }
+                    selectedAnnotationId = null
                 },
                 onEditSelected = { editingItem = pageItems.firstOrNull { it.id == selectedId } },
                 modifier = Modifier
@@ -736,6 +904,30 @@ fun TakeoffEditorScreen(
             onDismiss = { editingItem = null }
         )
     }
+
+    if (textPromptPoint != null && textPromptPage >= 0) {
+        TakeoffTextAnnotationSheet(
+            onConfirm = { text ->
+                saveAnnotation(TakeoffAnnotationType.TEXT, textPromptPage, listOf(textPromptPoint!!), text)
+                textPromptPoint = null; textPromptPage = -1
+            },
+            onDismiss = { textPromptPoint = null; textPromptPage = -1 }
+        )
+    }
+}
+
+/**
+ * اللمسة لمست تعليق؟ — إعادة استخدام لخوارزميات [TakeoffMath] الموجودة
+ * بدل ما تتكرّر: نقطة-جوّه-مضلّع للسحابة، ومسافة-لخط للسهم.
+ */
+private fun annotationHit(a: TakeoffAnnotation, p: TakeoffPoint, page: PageGeometry): Boolean = when (a.type) {
+    TakeoffAnnotationType.CLOUD -> TakeoffMath.pointInRing(p, a.verts)
+    TakeoffAnnotationType.ARROW ->
+        a.verts.size >= 2 && TakeoffMath.distanceToPolylinePt(p, a.verts, page) <= 14.0
+    TakeoffAnnotationType.TEXT ->
+        a.verts.isNotEmpty() && hypot(
+            (p.x - a.verts[0].x) * page.widthPt, (p.y - a.verts[0].y) * page.heightPt
+        ) <= 28.0
 }
 
 private fun defaultName(tool: TakeoffTool, index: Int): String = when (tool) {
@@ -745,6 +937,7 @@ private fun defaultName(tool: TakeoffTool, index: Int): String = when (tool) {
     TakeoffTool.DEDUCT -> "خصم $index"
     TakeoffTool.VOLUME -> "حجم $index"
     TakeoffTool.COLUMN -> "عمود $index"
+    TakeoffTool.DIMENSION -> "بُعد $index"
 }
 
 @Composable
@@ -804,15 +997,19 @@ private fun TakeoffToolBar(
     canDeduct: Boolean,
     selectedId: String?,
     multiCount: Int,
+    annotationTool: TakeoffAnnotationType?,
+    selectedAnnotationId: String?,
     onPointer: () -> Unit,
     onPick: (TakeoffTool) -> Unit,
     onRect: () -> Unit,
     onVertexEdit: () -> Unit,
     onBoxSelect: () -> Unit,
+    onAnnotate: (TakeoffAnnotationType) -> Unit,
     onDeduct: () -> Unit,
     onDone: () -> Unit,
     onDeleteSelected: () -> Unit,
     onDeleteMulti: () -> Unit,
+    onDeleteAnnotation: () -> Unit,
     onEditSelected: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -859,6 +1056,10 @@ private fun TakeoffToolBar(
                 active = mode == EditorMode.DRAW && tool == TakeoffTool.COLUMN
             )
             CwIconButton(
+                Icons.Filled.SquareFoot, "بُعد", { onPick(TakeoffTool.DIMENSION) },
+                active = mode == EditorMode.DRAW && tool == TakeoffTool.DIMENSION
+            )
+            CwIconButton(
                 Icons.Filled.ContentCut, "خصم من المحدّد", onDeduct,
                 active = deducting, enabled = canDeduct || deducting
             )
@@ -870,6 +1071,18 @@ private fun TakeoffToolBar(
                 Icons.Filled.HighlightAlt, "تحديد بمستطيل", onBoxSelect,
                 active = mode == EditorMode.BOXSELECT
             )
+            CwIconButton(
+                Icons.Filled.Cloud, "سحابة", { onAnnotate(TakeoffAnnotationType.CLOUD) },
+                active = annotationTool == TakeoffAnnotationType.CLOUD
+            )
+            CwIconButton(
+                Icons.AutoMirrored.Filled.ArrowForward, "سهم", { onAnnotate(TakeoffAnnotationType.ARROW) },
+                active = annotationTool == TakeoffAnnotationType.ARROW
+            )
+            CwIconButton(
+                Icons.Filled.TextFields, "نص", { onAnnotate(TakeoffAnnotationType.TEXT) },
+                active = annotationTool == TakeoffAnnotationType.TEXT
+            )
             if (hasDraft) {
                 CwIconButton(Icons.Filled.Check, "إنهاء الشكل", onDone, tint = c.success.fg)
             }
@@ -877,6 +1090,11 @@ private fun TakeoffToolBar(
                 CwIconButton(Icons.Filled.Edit, "تعديل البند", onEditSelected)
                 CwIconButton(
                     Icons.Filled.Delete, "احذف المحدّد", onDeleteSelected, tint = c.danger.fg
+                )
+            }
+            if (selectedAnnotationId != null) {
+                CwIconButton(
+                    Icons.Filled.Delete, "احذف التعليق", onDeleteAnnotation, tint = c.danger.fg
                 )
             }
             if (multiCount > 0) {

@@ -191,9 +191,9 @@ fun TakeoffTotalsSheet(
     val c = LocalCwColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val visible = remember(items) { items.filter { it.visible && it.tool != TakeoffTool.DEDUCT } }
+    val visible = remember(items) { items.filter { it.visible && it.tool.isQuantity } }
     val totals = remember(visible, pageGeometry) {
-        TakeoffTool.entries.filter { it != TakeoffTool.DEDUCT }.associateWith { tool ->
+        TakeoffTool.entries.filter { it.isQuantity }.associateWith { tool ->
             visible.filter { it.tool == tool }
                 .sumOf { TakeoffMath.netQuantity(it, items, pageGeometry) }
         }
@@ -306,6 +306,7 @@ private fun toolLabel(tool: TakeoffTool): String = when (tool) {
     TakeoffTool.DEDUCT -> "الخصومات"
     TakeoffTool.VOLUME -> "الأحجام"
     TakeoffTool.COLUMN -> "الأعمدة"
+    TakeoffTool.DIMENSION -> "الأبعاد"
 }
 
 /**
@@ -664,6 +665,37 @@ fun TakeoffEditItemSheet(
     }
 }
 
+/** نص ملاحظة على الرسمة — تعليق مش بند حصر، بيتفتح بلمسة واحدة. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TakeoffTextAnnotationSheet(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    val c = LocalCwColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var text by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = c.surface,
+        shape = Radius.sheet
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.lg)
+                .padding(bottom = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.sm)
+        ) {
+            Text("ملاحظة على الرسمة", style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
+            CwField(value = text, onValueChange = { text = it }, label = "النص", minLines = 2)
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                CwButton("حفظ", { if (text.isNotBlank()) onConfirm(text) }, enabled = text.isNotBlank())
+                CwButton("إلغاء", onDismiss, style = CwButtonStyle.Ghost)
+            }
+        }
+    }
+}
+
 private fun toolTitle(tool: TakeoffTool): String = when (tool) {
     TakeoffTool.AREA -> "مساحة جديدة"
     TakeoffTool.LENGTH -> "طول جديد"
@@ -671,4 +703,5 @@ private fun toolTitle(tool: TakeoffTool): String = when (tool) {
     TakeoffTool.DEDUCT -> "خصم جديد"
     TakeoffTool.VOLUME -> "حجم جديد"
     TakeoffTool.COLUMN -> "عمود جديد"
+    TakeoffTool.DIMENSION -> "بُعد جديد"
 }

@@ -208,7 +208,7 @@ private fun TakeoffFormulaEditor(
     // كل بند فيه اسم قابل للاستخدام كمرجع — من كل صفحات الرسمة دي، مش
     // الصفحة الحالية بس. الخصومات مالهاش داعي تتعرض كمرجع مستقل.
     val referencable = remember(items, categories) {
-        items.filter { it.tool != com.corewall.qaqc.takeoff.TakeoffTool.DEDUCT }.map { item ->
+        items.filter { it.tool.isQuantity }.map { item ->
             val catName = categories.firstOrNull { it.id.toString() == item.categoryId }?.name
             item to takeoffVarPath(catName, null, item.name)
         }

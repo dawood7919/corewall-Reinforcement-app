@@ -710,4 +710,17 @@ interface TakeoffDao {
 
     @Query("DELETE FROM takeoff_formulas WHERE drawingId = :drawingId")
     suspend fun clearDrawingFormulas(drawingId: Long)
+
+    // ── التعليقات
+    @Query("SELECT * FROM takeoff_annotations WHERE drawingId = :drawingId ORDER BY id")
+    fun observeAnnotations(drawingId: Long): Flow<List<TakeoffAnnotationEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAnnotation(entity: TakeoffAnnotationEntity): Long
+
+    @Query("DELETE FROM takeoff_annotations WHERE id = :id")
+    suspend fun deleteAnnotation(id: Long)
+
+    @Query("DELETE FROM takeoff_annotations WHERE drawingId = :drawingId")
+    suspend fun clearDrawingAnnotations(drawingId: Long)
 }

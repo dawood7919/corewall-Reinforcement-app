@@ -121,6 +121,11 @@ object TakeoffMath {
         TakeoffTool.COLUMN ->
             item.verts.size.toDouble() *
                 (item.colLength ?: 0.0) * (item.colWidth ?: 0.0) * (item.colHeight ?: 0.0)
+
+        // أول نقطتين بس — التالتة إزاحة خط القياس بصريًا، مالهاش دخل
+        // بالمسافة الحقيقية.
+        TakeoffTool.DIMENSION ->
+            if (item.verts.size >= 2) length(item.verts.take(2), page) else 0.0
     }
 
     /**
@@ -326,5 +331,8 @@ object TakeoffMath {
                     (p.y - marker.y) * page.heightPt
                 ) <= tapRadiusPt
             }
+
+        TakeoffTool.DIMENSION ->
+            item.verts.size >= 2 && distanceToPolylinePt(p, item.verts.take(2), page) <= tapRadiusPt
     }
 }

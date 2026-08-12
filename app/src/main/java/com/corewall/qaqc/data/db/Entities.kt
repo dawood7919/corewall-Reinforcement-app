@@ -808,3 +808,25 @@ data class TakeoffFormulaEntity(
     val refsJson: String = "{}",
     val createdAt: Long
 )
+
+/**
+ * تعليق — سحابة/سهم/نص. **مش** بند حصر: مالوش كمية ولا فئة، ومستبعد من
+ * كل حساب بحكم إنه في جدول تاني خالص، مش بس علَم على صف موجود.
+ */
+@Serializable
+@Entity(
+    tableName = "takeoff_annotations",
+    indices = [Index(value = ["drawingId", "page"])]
+)
+data class TakeoffAnnotationEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val drawingId: Long,
+    val page: Int,
+    /** CLOUD · ARROW · TEXT */
+    val type: String,
+    val pointsJson: String,
+    val colorArgb: Long,
+    val text: String = "",
+    val visible: Boolean = true,
+    val createdAt: Long
+)

@@ -3,6 +3,7 @@ package com.corewall.qaqc.takeoff
 import android.content.Context
 import android.net.Uri
 import com.corewall.qaqc.data.db.AppDatabase
+import com.corewall.qaqc.data.db.TakeoffAnnotationEntity
 import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.data.db.TakeoffDrawingEntity
 import com.corewall.qaqc.data.db.TakeoffFormulaEntity
@@ -93,6 +94,7 @@ class TakeoffStore(
             dao.clearDrawingItems(drawing.id)
             dao.clearScales(drawing.id)
             dao.clearDrawingFormulas(drawing.id)
+            dao.clearDrawingAnnotations(drawing.id)
             runCatching { File(drawing.filePath).delete() }
             dao.deleteDrawing(drawing.id)
         }
@@ -186,6 +188,7 @@ class TakeoffStore(
         dao.clearDrawingItems(drawing.id)
         dao.clearScales(drawing.id)
         dao.clearDrawingFormulas(drawing.id)
+        dao.clearDrawingAnnotations(drawing.id)
         runCatching { File(drawing.filePath).delete() }
         dao.deleteDrawing(drawing.id)
     }
@@ -231,6 +234,25 @@ class TakeoffStore(
         withContext(Dispatchers.IO) { dao.upsertFormula(entity) }
 
     suspend fun deleteFormula(id: Long) = withContext(Dispatchers.IO) { dao.deleteFormula(id) }
+
+    // ═══════════════════════════════════════════════ التعليقات
+
+    fun annotations(drawingId: Long): Flow<List<TakeoffAnnotationEntity>> = dao.observeAnnotations(drawingId)
+
+    suspend fun saveAnnotation(entity: TakeoffAnnotationEntity): Long =
+        withContext(Dispatchers.IO) { dao.upsertAnnotation(entity) }
+
+    suspend fun deleteAnnotation(id: Long) = withContext(Dispatchers.IO) { dao.deleteAnnotation(id) }
+
+    fun annotationToModel(row: TakeoffAnnotationEntity): TakeoffAnnotation = TakeoffAnnotation(
+        id = row.id.toString(),
+        type = runCatching { TakeoffAnnotationType.valueOf(row.type) }.getOrDefault(TakeoffAnnotationType.TEXT),
+        page = row.page,
+        verts = decodeRing(row.pointsJson),
+        colorArgb = row.colorArgb,
+        text = row.text,
+        visible = row.visible
+    )
 
     // ═══════════════════════════════════════════════ التحويل
 

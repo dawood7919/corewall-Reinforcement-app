@@ -42,9 +42,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TakeoffItemEntity::class,
         TakeoffCategoryEntity::class,
         TakeoffGroupEntity::class,
-        TakeoffFormulaEntity::class
+        TakeoffFormulaEntity::class,
+        TakeoffAnnotationEntity::class
     ],
-    version = 22,
+    version = 23,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -504,6 +505,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** التعليقات — جدول جديد، بيضيف بس. */
+        private val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `takeoff_annotations` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`drawingId` INTEGER NOT NULL, `page` INTEGER NOT NULL, " +
+                        "`type` TEXT NOT NULL, `pointsJson` TEXT NOT NULL, " +
+                        "`colorArgb` INTEGER NOT NULL, `text` TEXT NOT NULL, " +
+                        "`visible` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_takeoff_annotations_drawingId_page` ON `takeoff_annotations` (`drawingId`, `page`)")
+            }
+        }
+
         private val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_filePath` ON `pdf_annotations` (`filePath`)")
@@ -589,7 +605,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                    MIGRATION_21_22
+                    MIGRATION_21_22, MIGRATION_22_23
                 ).build().also { instance = it }
             }
     }
