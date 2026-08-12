@@ -40,6 +40,21 @@ package com.corewall.qaqc.takeoff
 data class TakeoffPoint(val x: Double, val y: Double)
 
 /**
+ * الجزء الهندسي الذي ينتمي إليه رأس قابل للتحرير.
+ *
+ * البند قد يحتوي شكله الأساسي بالإضافة إلى حلقات أو قطاعات منفصلة. تخزين
+ * هدف التحرير بهذا الشكل يمنع تعديل الشكل الأساسي بالخطأ عند لمس جزء مضاف.
+ */
+enum class TakeoffGeometryPart { PRIMARY, EXTRA_RING, EXTRA_SEGMENT }
+
+/** موقع رأس ضمن هندسة بند الحصر؛ [partIndex] يحدد الحلقة أو القطعة الإضافية. */
+data class TakeoffVertexTarget(
+    val part: TakeoffGeometryPart,
+    val partIndex: Int = 0,
+    val vertexIndex: Int
+)
+
+/**
  * الجسر بين الصفحة والواقع.
  *
  * [metresPerPoint] هو نفسه مفهوم `unitsPerPixel` في المواصفة، بس بالنقطة

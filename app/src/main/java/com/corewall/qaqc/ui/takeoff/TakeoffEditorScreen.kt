@@ -96,10 +96,12 @@ import com.corewall.qaqc.stylus.PointerKind
 import com.corewall.qaqc.takeoff.PageGeometry
 import com.corewall.qaqc.takeoff.TakeoffAnnotation
 import com.corewall.qaqc.takeoff.TakeoffAnnotationType
+import com.corewall.qaqc.takeoff.TakeoffGeometryPart
 import com.corewall.qaqc.takeoff.TakeoffItem
 import com.corewall.qaqc.takeoff.TakeoffMath
 import com.corewall.qaqc.takeoff.TakeoffPoint
 import com.corewall.qaqc.takeoff.TakeoffTool
+import com.corewall.qaqc.takeoff.TakeoffVertexTarget
 import com.corewall.qaqc.ui.design.CwIconButton
 import com.corewall.qaqc.ui.design.CwText
 import com.corewall.qaqc.ui.design.Elevation
@@ -321,11 +323,11 @@ fun TakeoffEditorScreen(
     // ── حالة سحب رأس — نسخة محلية من رؤوس البند المحدّد بيتحرّك رأس
     //    فيها لحد ما يرفع إصبعه، وقتها بس بتتحفظ.
     var vertexItemId by remember { mutableStateOf<Long?>(null) }
-    var vertexIndex by remember { mutableStateOf<Int?>(null) }
+    var vertexTarget by remember { mutableStateOf<TakeoffVertexTarget?>(null) }
     val vertexPoints = remember { mutableStateListOf<TakeoffPoint>() }
     /** آخر رأس اتلمس في وضع تعديل الرؤوس — بيفضل بعد ما السحب يخلص عشان
      *  زرار "احذف الرأس" يعرف يشتغل على إيه. */
-    var vertexFocusIndex by remember { mutableStateOf<Int?>(null) }
+    var vertexFocusTarget by remember { mutableStateOf<TakeoffVertexTarget?>(null) }
 
     fun clearDrafts() {
         draft.clear()
@@ -344,9 +346,9 @@ fun TakeoffEditorScreen(
         boxStart = null
         boxEnd = null
         vertexItemId = null
-        vertexIndex = null
+        vertexTarget = null
         vertexPoints.clear()
-        vertexFocusIndex = null
+        vertexFocusTarget = null
         annotationTool = null
         annotationDraft.clear()
         annotationDraftPage = -1
@@ -386,6 +388,21 @@ fun TakeoffEditorScreen(
                     createdAt = System.currentTimeMillis()
                 )
             )
+        }
+    }
+
+    /** يحفظ الجزء الهندسي المستهدف فقط، مع إبقاء بقية حلقات وقطاعات البند كما هي. */
+    fun persistVertexPart(itemId: Long, target: TakeoffVertexTarget, points: List<TakeoffPoint>) {
+        scope.launch {
+            vm.takeoff.itemById(itemId)?.let { row ->
+                val updated = TakeoffMath.withVertices(vm.takeoff.toModel(row), target, points)
+                val persisted = when (target.part) {
+                    TakeoffGeometryPart.PRIMARY -> row.copy(pointsJson = vm.takeoff.encodeRing(updated.verts))
+                    TakeoffGeometryPart.EXTRA_RING -> row.copy(extraRingsJson = vm.takeoff.encodeRings(updated.extraRings))
+                    TakeoffGeometryPart.EXTRA_SEGMENT -> row.copy(extraSegmentsJson = vm.takeoff.encodeRings(updated.extraSegments))
+                }
+                vm.takeoff.saveItem(persisted)
+            }
         }
     }
 
@@ -489,7 +506,12 @@ fun TakeoffEditorScreen(
         var bestDist = Double.MAX_VALUE
         for (candidate in pageItems) {
             if (candidate.page != page || !candidate.visible) continue
-            candidate.verts.forEach { v ->
+            val vertices = buildList {
+                addAll(candidate.verts)
+                candidate.extraRings.forEach { addAll(it) }
+                candidate.extraSegments.forEach { addAll(it) }
+            }
+            vertices.forEach { v ->
                 val d = hypot((p.x - v.x) * pageGeometry.widthPt, (p.y - v.y) * pageGeometry.heightPt)
                 if (d < bestDist) { bestDist = d; best = v }
             }
@@ -639,30 +661,22 @@ fun TakeoffEditorScreen(
                             val hit = state.pageHit(screen)
                             if (item != null && hit != null && hit.page == item.page) {
                                 val p = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
-                                val existingIdx = TakeoffMath.nearestVertexIndex(
+                                val existingTarget = TakeoffMath.nearestVertexTarget(
                                     item, p, pageGeometry, tapRadiusPt = 16.0
                                 )
-                                if (existingIdx != null) {
+                                val target = existingTarget ?: TakeoffMath.nearestEdgeInsertTarget(
+                                    item, p, pageGeometry, radiusPt = 16.0
+                                )
+                                if (target != null) {
                                     vertexItemId = item.id.toLongOrNull()
-                                    vertexIndex = existingIdx
+                                    vertexTarget = target
                                     vertexPoints.clear()
-                                    vertexPoints.addAll(item.verts)
-                                } else {
-                                    // مفيش رأس قريب — لو اللمسة على ضلع، بندرج رأس
-                                    // جديد هناك وبنسحبه على طول (زي أي أداة CAD).
-                                    val closed = item.tool != TakeoffTool.LENGTH
-                                    val insertAt = TakeoffMath.nearestEdgeInsertIndex(
-                                        item.verts, p, pageGeometry, closed, radiusPt = 16.0
-                                    )
-                                    if (insertAt != null) {
-                                        vertexItemId = item.id.toLongOrNull()
-                                        vertexPoints.clear()
-                                        vertexPoints.addAll(item.verts)
-                                        vertexPoints.add(insertAt, p)
-                                        vertexIndex = insertAt
+                                    vertexPoints.addAll(TakeoffMath.verticesFor(item, target))
+                                    if (existingTarget == null) {
+                                        vertexPoints.add(target.vertexIndex, p)
                                     }
+                                    vertexFocusTarget = target
                                 }
-                                vertexFocusIndex = vertexIndex
                             }
                         }
                         EditorMode.DRAW -> {
@@ -690,7 +704,7 @@ fun TakeoffEditorScreen(
                         }
                         EditorMode.BOXSELECT -> { boxEnd = screen }
                         EditorMode.VERTEX -> {
-                            val idx = vertexIndex
+                            val idx = vertexTarget?.vertexIndex
                             val hit = state.pageHit(screen)
                             if (idx != null && hit != null && idx < vertexPoints.size) {
                                 vertexPoints[idx] = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
@@ -736,15 +750,11 @@ fun TakeoffEditorScreen(
                         }
                         EditorMode.VERTEX -> {
                             val itemId = vertexItemId
-                            if (itemId != null && vertexPoints.isNotEmpty()) {
-                                val snapshot = vertexPoints.toList()
-                                scope.launch {
-                                    vm.takeoff.itemById(itemId)?.let { row ->
-                                        vm.takeoff.saveItem(row.copy(pointsJson = vm.takeoff.encodeRing(snapshot)))
-                                    }
-                                }
+                            val target = vertexTarget
+                            if (itemId != null && target != null && vertexPoints.isNotEmpty()) {
+                                persistVertexPart(itemId, target, vertexPoints.toList())
                             }
-                            vertexItemId = null; vertexIndex = null; vertexPoints.clear()
+                            vertexItemId = null; vertexTarget = null; vertexPoints.clear()
                         }
                         EditorMode.DRAW -> {
                             if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
@@ -759,7 +769,7 @@ fun TakeoffEditorScreen(
                 onDrawCancel = {
                     rectDraft = null; rectPage = -1
                     boxStart = null; boxEnd = null
-                    vertexItemId = null; vertexIndex = null; vertexPoints.clear()
+                    vertexItemId = null; vertexTarget = null; vertexPoints.clear()
                     dimDragPoint = null
                 },
                 onTap = { point, kind ->
@@ -805,9 +815,12 @@ fun TakeoffEditorScreen(
                     else if (mode == EditorMode.DRAW) commit()
                 },
                 overlay = { s ->
-                    val renderItems = if (vertexItemId != null && vertexPoints.isNotEmpty()) {
+                    val renderItems = if (vertexItemId != null && vertexTarget != null && vertexPoints.isNotEmpty()) {
                         val draggedId = vertexItemId.toString()
-                        pageItems.map { if (it.id == draggedId) it.copy(verts = vertexPoints.toList()) else it }
+                        val target = vertexTarget!!
+                        pageItems.map {
+                            if (it.id == draggedId) TakeoffMath.withVertices(it, target, vertexPoints.toList()) else it
+                        }
                     } else pageItems
                     drawTakeoffItems(
                         state = s,
@@ -959,6 +972,9 @@ fun TakeoffEditorScreen(
                     )
                 } else {
                     val selectedItem = pageItems.firstOrNull { it.id == selectedId }
+                    val focusedVertices = selectedItem?.let { selected ->
+                        vertexFocusTarget?.let { target -> TakeoffMath.verticesFor(selected, target) }
+                    }.orEmpty()
                     TakeoffToolBar(
                         mode = mode,
                         tool = tool,
@@ -969,9 +985,9 @@ fun TakeoffEditorScreen(
                             it == TakeoffTool.AREA || it == TakeoffTool.VOLUME || it == TakeoffTool.LENGTH
                         },
                         addingToShape = addToShapeFor != null,
-                        canDeleteVertex = vertexFocusIndex != null && selectedItem != null &&
+                        canDeleteVertex = vertexFocusTarget != null && selectedItem != null &&
                             selectedItem.tool != TakeoffTool.DIMENSION &&
-                            selectedItem.verts.size > minVertsFor(selectedItem.tool),
+                            focusedVertices.size > minVertsFor(selectedItem.tool),
                         multiCount = multiSelectedIds.size,
                         annotationTool = annotationTool,
                         selectedAnnotationId = selectedAnnotationId,
@@ -999,21 +1015,20 @@ fun TakeoffEditorScreen(
                             }
                         },
                         onDeleteVertex = {
-                            val idx = vertexFocusIndex
+                            val target = vertexFocusTarget
                             val item = selectedItem
                             val itemId = item?.id?.toLongOrNull()
-                            if (idx != null && item != null && itemId != null &&
+                            val vertices = if (item != null && target != null) {
+                                TakeoffMath.verticesFor(item, target)
+                            } else emptyList()
+                            if (target != null && item != null && itemId != null &&
                                 item.tool != TakeoffTool.DIMENSION &&
-                                idx < item.verts.size && item.verts.size > minVertsFor(item.tool)
+                                target.vertexIndex < vertices.size && vertices.size > minVertsFor(item.tool)
                             ) {
-                                val updated = item.verts.toMutableList().also { it.removeAt(idx) }
-                                scope.launch {
-                                    vm.takeoff.itemById(itemId)?.let { row ->
-                                        vm.takeoff.saveItem(row.copy(pointsJson = vm.takeoff.encodeRing(updated)))
-                                    }
-                                }
+                                val updated = vertices.toMutableList().also { it.removeAt(target.vertexIndex) }
+                                persistVertexPart(itemId, target, updated)
                             }
-                            vertexFocusIndex = null
+                            vertexFocusTarget = null
                         },
                         onDeleteSelected = {
                             selectedId?.toLongOrNull()?.let { id ->
