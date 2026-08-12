@@ -295,6 +295,12 @@ fun TakeoffEditorScreen(
     val draftPage = remember { mutableIntStateOf(-1) }
     /** نقطتا المعايرة — بتتجمعوا بنفس آلية المسوّدة. */
     val calibPoints = remember(path) { mutableStateListOf<TakeoffPoint>() }
+    /**
+     * نقطة إزاحة خط القياس وهو بيتسحب — زي AutoCAD بالظبط: بعد لمسَتين
+     * تحدّدوا الطرفين، النقطة التالتة مش لمسة تالتة، دي سحب مستمر ("لوره
+     * أو أدّام") لحد ما تسيب إصبعك في المكان المطلوب.
+     */
+    var dimDragPoint by remember { mutableStateOf<TakeoffPoint?>(null) }
 
     // ── حالة المستطيل (سحب) — نفس مبدأ المسوّدة: صفحة منسّبة، مش شاشة.
     var rectDraft by remember { mutableStateOf<Pair<TakeoffPoint, TakeoffPoint>?>(null) }
@@ -317,6 +323,7 @@ fun TakeoffEditorScreen(
     fun clearDrafts() {
         draft.clear()
         draftPage.intValue = -1
+        dimDragPoint = null
         calibPoints.clear()
         calibrating = false
         deductFor = null
@@ -470,15 +477,16 @@ fun TakeoffEditorScreen(
     }
 
     fun addPoint(screen: Offset) {
+        // البُعد بس اثنين من اللمسات (الطرفين) — النقطة التالتة (إزاحة خط
+        // القياس) سحب مستمر مش لمسة، وبتتولّى من `onDrawStart/Move/End`
+        // بمجرّد ما `draft.size` توصل ٢ (شوف `drawingActive` تحت).
+        if (tool == TakeoffTool.DIMENSION && draft.size >= 2) return
         val hit = state.pageHit(screen) ?: return
         if (draftPage.intValue < 0) draftPage.intValue = hit.page
         // لمسة على صفحة تانية وأنت في نص شكل بتتجاهل — البند بيخص صفحة
         // واحدة، وشكل بيعدّي بين صفحتين مالوش معنى في الحصر.
         if (hit.page != draftPage.intValue) return
         draft += snapPoint(TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble()), hit.page)
-        // البُعد ثابت بتلات نقط بالظبط: طرف، طرف، إزاحة خط القياس —
-        // اللمسة التالتة بتقفله لوحدها من غير ما تستنى ضغطة مطوّلة.
-        if (tool == TakeoffTool.DIMENSION && draft.size == 3) commit()
     }
 
     fun finishRect(a: TakeoffPoint, b: TakeoffPoint, page: Int) {
@@ -556,7 +564,8 @@ fun TakeoffEditorScreen(
      * فأجّلنا الإصلاح ده بدل ما نضيف تعقيد لمرحلة أولى.
      */
     val drawingActive = mode == EditorMode.RECT || mode == EditorMode.BOXSELECT ||
-        (mode == EditorMode.VERTEX && selectedId != null)
+        (mode == EditorMode.VERTEX && selectedId != null) ||
+        (mode == EditorMode.DRAW && tool == TakeoffTool.DIMENSION && draft.size == 2)
     val penHasJob = settings.stylusOnly && mode != EditorMode.POINTER
     val activeColour = Color(
         (TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size] or 0xFF000000L).toInt()
@@ -614,6 +623,17 @@ fun TakeoffEditorScreen(
                                 vertexFocusIndex = vertexIndex
                             }
                         }
+                        EditorMode.DRAW -> {
+                            // خط قياس بس — طرفاه بلمستين عاديتين، وده سحب نقطة
+                            // الإزاحة التالتة بعدهم على طول ("لوره أو أدّام").
+                            if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
+                                state.pageHit(screen)?.let { hit ->
+                                    if (hit.page == draftPage.intValue) {
+                                        dimDragPoint = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                    }
+                                }
+                            }
+                        }
                         else -> Unit
                     }
                 },
@@ -632,6 +652,15 @@ fun TakeoffEditorScreen(
                             val hit = state.pageHit(screen)
                             if (idx != null && hit != null && idx < vertexPoints.size) {
                                 vertexPoints[idx] = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                            }
+                        }
+                        EditorMode.DRAW -> {
+                            if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
+                                state.pageHit(screen)?.let { hit ->
+                                    if (hit.page == draftPage.intValue) {
+                                        dimDragPoint = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                    }
+                                }
                             }
                         }
                         else -> Unit
@@ -675,6 +704,13 @@ fun TakeoffEditorScreen(
                             }
                             vertexItemId = null; vertexIndex = null; vertexPoints.clear()
                         }
+                        EditorMode.DRAW -> {
+                            if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
+                                dimDragPoint?.let { draft += it }
+                                dimDragPoint = null
+                                commit()
+                            }
+                        }
                         else -> Unit
                     }
                 },
@@ -682,6 +718,7 @@ fun TakeoffEditorScreen(
                     rectDraft = null; rectPage = -1
                     boxStart = null; boxEnd = null
                     vertexItemId = null; vertexIndex = null; vertexPoints.clear()
+                    dimDragPoint = null
                 },
                 onTap = { point, kind ->
                     val penOnly = settings.stylusOnly && mode != EditorMode.POINTER
@@ -767,13 +804,26 @@ fun TakeoffEditorScreen(
                             colour = calibrationColour
                         )
                     }
-                    if (draft.isNotEmpty() && draftPage.intValue >= 0) {
+                    val placingDimOffset = tool == TakeoffTool.DIMENSION && draft.size == 2 && dimDragPoint != null
+                    if (draft.isNotEmpty() && draftPage.intValue >= 0 && !placingDimOffset) {
                         drawTakeoffDraft(
                             state = s,
                             page = draftPage.intValue,
                             points = draft.toList(),
                             tool = if (deductFor != null) TakeoffTool.DEDUCT else tool,
                             colour = activeColour
+                        )
+                    }
+                    // معاينة حية لخط القياس وهو بيتسحب — بالشكل النهائي بالظبط
+                    // (خطوط امتداد + سهمين + الرقم)، مش خط بسيط زي أي مسوّدة
+                    // تانية، عشان المستخدم يشوف بالظبط فين هيتحط قبل ما يسيب إصبعه.
+                    if (placingDimOffset && draftPage.intValue >= 0) {
+                        val liveLength = TakeoffMath.length(draft.toList(), pageGeometry)
+                        drawDimension(
+                            state = s, page = draftPage.intValue,
+                            p1 = draft[0], p2 = draft[1], pOffset = dimDragPoint!!,
+                            text = formatQuantity(TakeoffTool.DIMENSION, liveLength),
+                            color = activeColour
                         )
                     }
                     rectDraft?.let { (a, b) ->

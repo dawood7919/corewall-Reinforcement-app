@@ -23,10 +23,15 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 
-/** سُمك خط البند على الشاشة. ثابت بصرياً — مش بيكبر مع التكبير. */
-private const val STROKE = 2.5f
+/**
+ * سُمك خط البند على الشاشة. ثابت بصرياً — مش بيكبر مع التكبير.
+ *
+ * مكبّر عن قصد (كان ٢.٥) — خط رفيع كان بيضيع فوق رسمة PDF كثيفة
+ * الخطوط، وهدف المظهر هنا هو "أداة CAD احترافية" مش خط شعرة.
+ */
+private const val STROKE = 3.6f
 private const val FILL_ALPHA = 0.22f
-private const val MARKER_RADIUS = 7f
+private const val MARKER_RADIUS = 8.5f
 private const val LABEL_PAD = 10f
 private const val PROGRESS_BAR_H = 6f
 
@@ -380,20 +385,32 @@ private fun DrawScope.drawTakeoffLabel(
 
 private val dimTextPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = android.graphics.Paint.Align.CENTER
-    textSize = 24f
+    textSize = 30f
+    isFakeBoldText = true
+    color = android.graphics.Color.WHITE
 }
+private val dimTextBgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+    color = android.graphics.Color.argb(230, 20, 22, 28)
+}
+private val dimTextRectF = android.graphics.RectF()
 private const val DIM_GAP = 4f
-private const val DIM_OVERSHOOT = 6f
-private const val DIM_ARROW = 10f
+private const val DIM_OVERSHOOT = 8f
+private const val DIM_ARROW = 14f
+private const val DIM_LINE_WIDTH = 2.8f
+private const val DIM_EXT_WIDTH = 2f
 
 /**
  * خط قياس بأسلوب AutoCAD: خطوط امتداد من الطرفين لخط القياس المُزاح،
- * سهمين، ونص فوق منتصفه.
+ * سهمين، ورقم في شريحة معتمة فوق منتصفه — واضح فوق أي خلفية رسمة.
+ *
+ * مش `private`: بتترسم مرتين — مرة للبند المحفوظ من [drawTakeoffItems]،
+ * ومرة تانية كمعاينة حية وقت سحب نقطة الإزاحة (شوف `onDrawMove` في
+ * شاشة المحرّر) — نفس دالة الرسم، غير كده كانت هتتكرّر بفروق دقيقة.
  *
  * [pOffset] مش بيتحسب منه رقم — غرضه بس تحديد بعد خط القياس عن الخط
  * الأصلي p1-p2 بصريًا (أقرب نقطة إسقاط عمودي عليه).
  */
-private fun DrawScope.drawDimension(
+fun DrawScope.drawDimension(
     state: PdfViewerState,
     page: Int,
     p1: TakeoffPoint,
@@ -422,12 +439,12 @@ private fun DrawScope.drawDimension(
     fun extension(from: Offset, to: Offset) {
         val gapStart = Offset(from.x + nx * DIM_GAP * sign, from.y + ny * DIM_GAP * sign)
         val overshoot = Offset(to.x + nx * DIM_OVERSHOOT * sign, to.y + ny * DIM_OVERSHOOT * sign)
-        drawLine(color, gapStart, overshoot, strokeWidth = 1.4f)
+        drawLine(color, gapStart, overshoot, strokeWidth = DIM_EXT_WIDTH)
     }
     extension(s1, d1)
     extension(s2, d2)
 
-    drawLine(color, d1, d2, strokeWidth = 1.6f)
+    drawLine(color, d1, d2, strokeWidth = DIM_LINE_WIDTH)
     drawArrowhead(d1, d2, color)
     drawArrowhead(d2, d1, color)
 
@@ -436,8 +453,17 @@ private fun DrawScope.drawDimension(
     drawContext.canvas.nativeCanvas.apply {
         save()
         rotate(Math.toDegrees(angle.toDouble()).toFloat(), mid.x, mid.y)
-        dimTextPaint.color = color.toArgb()
-        drawText(text, mid.x, mid.y - 6f, dimTextPaint)
+        // مركز الشريحة فوق الخط بمسافة ثابتة — الرقم بيفضل واضح حتى لو
+        // خط القياس فوق تفاصيل كتير في الرسمة الأصلية.
+        val textCenterY = mid.y - dimTextPaint.textSize * 0.5f - 6f
+        val w = dimTextPaint.measureText(text)
+        val pad = 7f
+        dimTextRectF.set(
+            mid.x - w / 2f - pad, textCenterY - dimTextPaint.textSize / 2f - pad,
+            mid.x + w / 2f + pad, textCenterY + dimTextPaint.textSize / 2f + pad
+        )
+        drawRoundRect(dimTextRectF, 5f, 5f, dimTextBgPaint)
+        drawText(text, mid.x, textCenterY + dimTextPaint.textSize / 3f, dimTextPaint)
         restore()
     }
 }
