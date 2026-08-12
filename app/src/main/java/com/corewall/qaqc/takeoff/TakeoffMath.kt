@@ -277,6 +277,38 @@ object TakeoffMath {
     }
 
     /**
+     * فهرس الإدراج لرأس جديد على أقرب ضلع للنقطة — الرأس الجديد بيتحط
+     * **قبل** الفهرس المرجوع. `closed=true` بتضيف ضلع الإغلاق (آخر رأس
+     * لأول رأس) زي أي مضلّع؛ `false` (الطول) بتوقف عند آخر رأس.
+     *
+     * دي اللي بتعمل "إضافة رأس" في تعديل الرؤوس: سحب من نقطة على ضلع
+     * (مش على رأس موجود) بيدرج رأس جديد هناك بدل ما محصلش حاجة.
+     */
+    fun nearestEdgeInsertIndex(
+        verts: List<TakeoffPoint>,
+        p: TakeoffPoint,
+        page: PageGeometry,
+        closed: Boolean,
+        radiusPt: Double
+    ): Int? {
+        if (verts.size < 2) return null
+        val px = p.x * page.widthPt
+        val py = p.y * page.heightPt
+        var bestIdx = -1
+        var bestDist = Double.MAX_VALUE
+        val lastEdge = if (closed) verts.size - 1 else verts.size - 2
+        for (i in 0..lastEdge) {
+            val a = verts[i]
+            val b = verts[(i + 1) % verts.size]
+            val d = distanceToSegment(
+                px, py, a.x * page.widthPt, a.y * page.heightPt, b.x * page.widthPt, b.y * page.heightPt
+            )
+            if (d < bestDist) { bestDist = d; bestIdx = i + 1 }
+        }
+        return bestIdx.takeIf { bestDist <= radiusPt }
+    }
+
+    /**
      * البند بالكامل جوّه مستطيل تحديد؟ — لازم **كل** رأس جوّه، مش أي رأس.
      *
      * الإحداثيات منسّبة على الاتنين فمفيش داعي لـ[PageGeometry]: المقارنة

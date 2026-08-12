@@ -2,11 +2,13 @@ package com.corewall.qaqc.ui.takeoff
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -19,6 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -28,19 +32,23 @@ import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.HighlightAlt
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PinDrop
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Square
 import androidx.compose.material.icons.filled.SquareFoot
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.ViewColumn
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -61,6 +69,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -260,8 +269,11 @@ fun TakeoffEditorScreen(
     var formulasOpen by remember { mutableStateOf(false) }
     var toolsSheetOpen by remember { mutableStateOf(false) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
+    /** بند بنضيف له هندسة إضافية (حلقة/قطعة جديدة) بدل إنشاء بند مستقل. */
+    var addToShapeFor by remember { mutableStateOf<TakeoffItem?>(null) }
     var pendingShape by remember { mutableStateOf<PendingShape?>(null) }
     var editingItem by remember { mutableStateOf<TakeoffItem?>(null) }
+    var snapEnabled by remember { mutableStateOf(true) }
 
     // ── حالة التعليقات — طبقة مستقلة عن أدوات الحصر تمامًا.
     var annotationTool by remember { mutableStateOf<TakeoffAnnotationType?>(null) }
@@ -298,6 +310,9 @@ fun TakeoffEditorScreen(
     var vertexItemId by remember { mutableStateOf<Long?>(null) }
     var vertexIndex by remember { mutableStateOf<Int?>(null) }
     val vertexPoints = remember { mutableStateListOf<TakeoffPoint>() }
+    /** آخر رأس اتلمس في وضع تعديل الرؤوس — بيفضل بعد ما السحب يخلص عشان
+     *  زرار "احذف الرأس" يعرف يشتغل على إيه. */
+    var vertexFocusIndex by remember { mutableStateOf<Int?>(null) }
 
     fun clearDrafts() {
         draft.clear()
@@ -305,6 +320,7 @@ fun TakeoffEditorScreen(
         calibPoints.clear()
         calibrating = false
         deductFor = null
+        addToShapeFor = null
         rectDraft = null
         rectPage = -1
         boxStart = null
@@ -312,6 +328,7 @@ fun TakeoffEditorScreen(
         vertexItemId = null
         vertexIndex = null
         vertexPoints.clear()
+        vertexFocusIndex = null
         annotationTool = null
         annotationDraft.clear()
         annotationDraftPage = -1
@@ -400,6 +417,30 @@ fun TakeoffEditorScreen(
             return
         }
 
+        // إضافة لشكل موجود — حلقة أو قطعة تانية بتتلحق بنفس البند، مش بند
+        // جديد. بنقرا آخر نسخة من `items` وقت الحفظ نفسه، مش النسخة اللي
+        // كانت موجودة وقت الضغط على "أضف للشكل" — عشان أي تعديل حصل في
+        // الفترة دي مايتلغيش.
+        val addTarget = addToShapeFor
+        if (addTarget != null) {
+            val itemId = addTarget.id.toLongOrNull()
+            val live = items.firstOrNull { it.id == addTarget.id }
+            if (itemId != null && live != null) {
+                scope.launch {
+                    vm.takeoff.itemById(itemId)?.let { row ->
+                        val updated = if (addTarget.tool == TakeoffTool.LENGTH) {
+                            row.copy(extraSegmentsJson = vm.takeoff.encodeRings(live.extraSegments + listOf(points)))
+                        } else {
+                            row.copy(extraRingsJson = vm.takeoff.encodeRings(live.extraRings + listOf(points)))
+                        }
+                        vm.takeoff.saveItem(updated)
+                    }
+                }
+            }
+            draft.clear(); draftPage.intValue = -1; addToShapeFor = null
+            return
+        }
+
         pendingShape = PendingShape(tool, page, points)
         draft.clear(); draftPage.intValue = -1
     }
@@ -415,6 +456,7 @@ fun TakeoffEditorScreen(
      * بصري ("هيتلقط هنا") من غير ده بيحس المستخدم إن الشكل بيرتعش.
      */
     fun snapPoint(p: TakeoffPoint, page: Int): TakeoffPoint {
+        if (!snapEnabled) return p
         var best: TakeoffPoint? = null
         var bestDist = Double.MAX_VALUE
         for (candidate in pageItems) {
@@ -545,16 +587,31 @@ fun TakeoffEditorScreen(
                             val item = pageItems.firstOrNull { it.id == selectedId }
                             val hit = state.pageHit(screen)
                             if (item != null && hit != null && hit.page == item.page) {
-                                val idx = TakeoffMath.nearestVertexIndex(
-                                    item, TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble()),
-                                    pageGeometry, tapRadiusPt = 16.0
+                                val p = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                val existingIdx = TakeoffMath.nearestVertexIndex(
+                                    item, p, pageGeometry, tapRadiusPt = 16.0
                                 )
-                                if (idx != null) {
+                                if (existingIdx != null) {
                                     vertexItemId = item.id.toLongOrNull()
-                                    vertexIndex = idx
+                                    vertexIndex = existingIdx
                                     vertexPoints.clear()
                                     vertexPoints.addAll(item.verts)
+                                } else {
+                                    // مفيش رأس قريب — لو اللمسة على ضلع، بندرج رأس
+                                    // جديد هناك وبنسحبه على طول (زي أي أداة CAD).
+                                    val closed = item.tool != TakeoffTool.LENGTH
+                                    val insertAt = TakeoffMath.nearestEdgeInsertIndex(
+                                        item.verts, p, pageGeometry, closed, radiusPt = 16.0
+                                    )
+                                    if (insertAt != null) {
+                                        vertexItemId = item.id.toLongOrNull()
+                                        vertexPoints.clear()
+                                        vertexPoints.addAll(item.verts)
+                                        vertexPoints.add(insertAt, p)
+                                        vertexIndex = insertAt
+                                    }
                                 }
+                                vertexFocusIndex = vertexIndex
                             }
                         }
                         else -> Unit
@@ -744,7 +801,11 @@ fun TakeoffEditorScreen(
             )
 
             TakeoffTopBar(
-                title = if (calibrating) "عاير المقياس" else null,
+                title = when {
+                    calibrating -> "عاير المقياس"
+                    addToShapeFor != null -> "إضافة لـ: ${addToShapeFor?.name}"
+                    else -> null
+                },
                 calibrated = pageGeometry.calibrated,
                 page = state.currentPage + 1,
                 pageCount = active.pageCount,
@@ -755,69 +816,134 @@ fun TakeoffEditorScreen(
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
-            if (calibrating) {
-                // لوحة عادية جوّه الـBox، مش شيت مودال — عشان تفضل الرسمة
-                // فوقها قابلة للمس (شوف التعليق فوق [TakeoffCalibratePanel]).
-                TakeoffCalibratePanel(
-                    points = calibPoints.toList(),
-                    pageGeometry = pageGeometry,
-                    onApply = { metresPerPoint, note, allPages ->
-                        scope.launch {
-                            if (allPages) {
-                                vm.takeoff.copyScaleToAllPages(
-                                    drawingId,
-                                    com.corewall.qaqc.data.db.TakeoffScaleEntity(
-                                        drawingId, state.currentPage, metresPerPoint, note
-                                    ),
-                                    active.pageCount
-                                )
-                            } else {
-                                vm.takeoff.setScale(drawingId, state.currentPage, metresPerPoint, note)
+            TakeoffFloatingZoomControls(
+                onZoomIn = { state.zoomBy(1.25f, Offset(state.viewport.width / 2f, state.viewport.height / 2f)) },
+                onZoomOut = { state.zoomBy(0.8f, Offset(state.viewport.width / 2f, state.viewport.height / 2f)) },
+                onFit = { state.fitPage() },
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(Space.md)
+            )
+
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (calibrating) {
+                    // لوحة عادية جوّه الـBox، مش شيت مودال — عشان تفضل الرسمة
+                    // فوقها قابلة للمس (شوف التعليق فوق [TakeoffCalibratePanel]).
+                    TakeoffCalibratePanel(
+                        points = calibPoints.toList(),
+                        pageGeometry = pageGeometry,
+                        onApply = { metresPerPoint, note, allPages ->
+                            scope.launch {
+                                if (allPages) {
+                                    vm.takeoff.copyScaleToAllPages(
+                                        drawingId,
+                                        com.corewall.qaqc.data.db.TakeoffScaleEntity(
+                                            drawingId, state.currentPage, metresPerPoint, note
+                                        ),
+                                        active.pageCount
+                                    )
+                                } else {
+                                    vm.takeoff.setScale(drawingId, state.currentPage, metresPerPoint, note)
+                                }
                             }
-                        }
-                        endSession()
-                    },
-                    onClearPoints = { calibPoints.clear() },
-                    onCancel = { endSession() },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                )
-            } else {
-                TakeoffToolBar(
-                    mode = mode,
-                    tool = tool,
-                    deducting = deductFor != null,
-                    hasDraft = draft.isNotEmpty() || annotationDraft.isNotEmpty(),
-                    selectedId = selectedId,
-                    multiCount = multiSelectedIds.size,
-                    annotationTool = annotationTool,
-                    selectedAnnotationId = selectedAnnotationId,
-                    onPointer = { endSession() },
-                    onPick = { picked -> clearDrafts(); mode = EditorMode.DRAW; tool = picked },
-                    onMore = { toolsSheetOpen = true },
-                    onDone = { if (annotationTool != null) finishAnnotation() else commit() },
-                    onDeleteSelected = {
-                        selectedId?.toLongOrNull()?.let { id ->
-                            scope.launch { vm.takeoff.deleteItem(id) }
-                        }
-                        selectedId = null
-                    },
-                    onDeleteMulti = {
-                        val ids = multiSelectedIds.mapNotNull { it.toLongOrNull() }
-                        scope.launch { ids.forEach { vm.takeoff.deleteItem(it) } }
-                        multiSelectedIds = emptySet()
-                    },
-                    onDeleteAnnotation = {
-                        selectedAnnotationId?.toLongOrNull()?.let { id ->
-                            scope.launch { vm.takeoff.deleteAnnotation(id) }
-                        }
-                        selectedAnnotationId = null
-                    },
-                    onEditSelected = { editingItem = pageItems.firstOrNull { it.id == selectedId } },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
+                            endSession()
+                        },
+                        onClearPoints = { calibPoints.clear() },
+                        onCancel = { endSession() }
+                    )
+                } else {
+                    val selectedItem = pageItems.firstOrNull { it.id == selectedId }
+                    TakeoffToolBar(
+                        mode = mode,
+                        tool = tool,
+                        deducting = deductFor != null,
+                        hasDraft = draft.isNotEmpty() || annotationDraft.isNotEmpty(),
+                        selectedId = selectedId,
+                        canAddToShape = selectedItem?.tool.let {
+                            it == TakeoffTool.AREA || it == TakeoffTool.VOLUME || it == TakeoffTool.LENGTH
+                        },
+                        addingToShape = addToShapeFor != null,
+                        canDeleteVertex = vertexFocusIndex != null && selectedItem != null &&
+                            selectedItem.tool != TakeoffTool.DIMENSION &&
+                            selectedItem.verts.size > minVertsFor(selectedItem.tool),
+                        multiCount = multiSelectedIds.size,
+                        annotationTool = annotationTool,
+                        selectedAnnotationId = selectedAnnotationId,
+                        onPointer = { endSession() },
+                        onPick = { picked -> clearDrafts(); mode = EditorMode.DRAW; tool = picked },
+                        onMore = { toolsSheetOpen = true },
+                        onDone = { if (annotationTool != null) finishAnnotation() else commit() },
+                        onAddToShape = {
+                            val target = selectedItem
+                            if (target != null) {
+                                clearDrafts()
+                                addToShapeFor = target
+                                mode = EditorMode.DRAW
+                                tool = target.tool
+                            }
+                        },
+                        onToggleVisible = {
+                            val itemId = selectedId?.toLongOrNull()
+                            if (itemId != null) {
+                                scope.launch {
+                                    vm.takeoff.itemById(itemId)?.let { row ->
+                                        vm.takeoff.saveItem(row.copy(visible = !row.visible))
+                                    }
+                                }
+                            }
+                        },
+                        onDeleteVertex = {
+                            val idx = vertexFocusIndex
+                            val item = selectedItem
+                            val itemId = item?.id?.toLongOrNull()
+                            if (idx != null && item != null && itemId != null &&
+                                item.tool != TakeoffTool.DIMENSION &&
+                                idx < item.verts.size && item.verts.size > minVertsFor(item.tool)
+                            ) {
+                                val updated = item.verts.toMutableList().also { it.removeAt(idx) }
+                                scope.launch {
+                                    vm.takeoff.itemById(itemId)?.let { row ->
+                                        vm.takeoff.saveItem(row.copy(pointsJson = vm.takeoff.encodeRing(updated)))
+                                    }
+                                }
+                            }
+                            vertexFocusIndex = null
+                        },
+                        onDeleteSelected = {
+                            selectedId?.toLongOrNull()?.let { id ->
+                                scope.launch { vm.takeoff.deleteItem(id) }
+                            }
+                            selectedId = null
+                        },
+                        onDeleteMulti = {
+                            val ids = multiSelectedIds.mapNotNull { it.toLongOrNull() }
+                            scope.launch { ids.forEach { vm.takeoff.deleteItem(it) } }
+                            multiSelectedIds = emptySet()
+                        },
+                        onDeleteAnnotation = {
+                            selectedAnnotationId?.toLongOrNull()?.let { id ->
+                                scope.launch { vm.takeoff.deleteAnnotation(id) }
+                            }
+                            selectedAnnotationId = null
+                        },
+                        onEditSelected = { editingItem = selectedItem }
+                    )
+                }
+
+                TakeoffStatusBar(
+                    page = state.currentPage + 1,
+                    pageCount = active.pageCount,
+                    scaleNote = scaleRows.firstOrNull { it.page == state.currentPage }
+                        ?.note?.takeIf { it.isNotBlank() },
+                    zoomPercent = state.zoomPercent(),
+                    snapEnabled = snapEnabled,
+                    onToggleSnap = { snapEnabled = !snapEnabled }
                 )
             }
         }
@@ -973,6 +1099,13 @@ private fun defaultName(tool: TakeoffTool, index: Int): String = when (tool) {
     TakeoffTool.DIMENSION -> "بُعد $index"
 }
 
+/** أقل عدد رؤوس مسموح بيه قبل ما "احذف الرأس" يوقف — زي القيد الهندسي لكل أداة. */
+private fun minVertsFor(tool: TakeoffTool): Int = when (tool) {
+    TakeoffTool.LENGTH -> 2
+    TakeoffTool.COUNT, TakeoffTool.COLUMN -> 1
+    else -> 3
+}
+
 @Composable
 private fun TakeoffTopBar(
     title: String?,
@@ -1015,6 +1148,95 @@ private fun TakeoffTopBar(
     }
 }
 
+/** أزرار تكبير/تصغير/ملائمة طايفة فوق الرسمة — تحكّم دقيق غير لقطة الأصابع. */
+@Composable
+private fun TakeoffFloatingZoomControls(
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onFit: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val c = LocalCwColors.current
+    Surface(
+        modifier = modifier,
+        color = c.surface,
+        shape = Radius.shapeLg,
+        shadowElevation = Elevation.floating,
+        border = BorderStroke(DesignStroke.hair, c.outline)
+    ) {
+        Column(
+            Modifier.padding(Space.xxs),
+            verticalArrangement = Arrangement.spacedBy(Space.xxs)
+        ) {
+            CwIconButton(Icons.Filled.Add, "تكبير", onZoomIn)
+            CwIconButton(Icons.Filled.Remove, "تصغير", onZoomOut)
+            CwIconButton(Icons.Filled.FitScreen, "ملائمة الصفحة", onFit)
+        }
+    }
+}
+
+/**
+ * شريط الحالة — صفحة/مقياس/تكبير/وحدة وحالة الالتقاط، زي أي أداة CAD
+ * احترافية. الوحدة ثابتة "م" دلوقتي — تبديلها للإمبراطوري مش مطلوب لسه.
+ */
+@Composable
+private fun TakeoffStatusBar(
+    page: Int,
+    pageCount: Int,
+    scaleNote: String?,
+    zoomPercent: Int,
+    snapEnabled: Boolean,
+    onToggleSnap: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val c = LocalCwColors.current
+    Surface(modifier.fillMaxWidth(), color = c.surfaceAlt) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Space.lg, vertical = Space.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.lg)
+        ) {
+            StatusField("صفحة $page/$pageCount")
+            StatusField(scaleNote?.let { "مقياس $it" } ?: "غير معاير", warn = scaleNote == null)
+            StatusField("تكبير $zoomPercent%")
+            StatusField("وحدة م")
+            Spacer(Modifier.weight(1f))
+            Row(
+                Modifier
+                    .clip(Radius.pill)
+                    .clickable(onClick = onToggleSnap)
+                    .padding(horizontal = Space.sm, vertical = Space.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.xxs)
+            ) {
+                Icon(
+                    Icons.Filled.GpsFixed, contentDescription = null,
+                    tint = if (snapEnabled) c.accent else c.textTertiary,
+                    modifier = Modifier.size(IconSize.sm)
+                )
+                Text(
+                    if (snapEnabled) "التقاط: شغّال" else "التقاط: متوقّف",
+                    style = CwText.codeSmall,
+                    color = if (snapEnabled) c.accent else c.textTertiary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusField(text: String, warn: Boolean = false) {
+    val c = LocalCwColors.current
+    Text(
+        text,
+        style = CwText.codeSmall,
+        color = if (warn) c.danger.fg else c.textSecondary,
+        maxLines = 1
+    )
+}
+
 /**
  * شريط الأدوات السفلي.
  *
@@ -1029,6 +1251,9 @@ private fun TakeoffToolBar(
     deducting: Boolean,
     hasDraft: Boolean,
     selectedId: String?,
+    canAddToShape: Boolean,
+    addingToShape: Boolean,
+    canDeleteVertex: Boolean,
     multiCount: Int,
     annotationTool: TakeoffAnnotationType?,
     selectedAnnotationId: String?,
@@ -1036,6 +1261,9 @@ private fun TakeoffToolBar(
     onPick: (TakeoffTool) -> Unit,
     onMore: () -> Unit,
     onDone: () -> Unit,
+    onAddToShape: () -> Unit,
+    onToggleVisible: () -> Unit,
+    onDeleteVertex: () -> Unit,
     onDeleteSelected: () -> Unit,
     onDeleteMulti: () -> Unit,
     onDeleteAnnotation: () -> Unit,
@@ -1090,10 +1318,20 @@ private fun TakeoffToolBar(
                         .background(c.divider)
                 )
             }
+            if (addingToShape) {
+                CwIconButton(Icons.Filled.Close, "إلغاء الإضافة", onPointer, tint = c.warning.fg)
+            }
+            if (mode == EditorMode.VERTEX && canDeleteVertex) {
+                CwIconButton(Icons.Filled.Delete, "احذف الرأس المحدّد", onDeleteVertex, tint = c.danger.fg)
+            }
             if (hasDraft) {
                 CwIconButton(Icons.Filled.Check, "إنهاء الشكل", onDone, tint = c.success.fg)
             }
-            if (selectedId != null) {
+            if (selectedId != null && !addingToShape) {
+                if (canAddToShape) {
+                    CwIconButton(Icons.Filled.AddCircleOutline, "أضف للشكل", onAddToShape)
+                }
+                CwIconButton(Icons.Filled.Visibility, "إخفاء/إظهار", onToggleVisible)
                 CwIconButton(Icons.Filled.Edit, "تعديل البند", onEditSelected)
                 CwIconButton(
                     Icons.Filled.Delete, "احذف المحدّد", onDeleteSelected, tint = c.danger.fg
