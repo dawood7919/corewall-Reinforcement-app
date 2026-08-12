@@ -559,6 +559,14 @@ fun TakeoffEditorScreen(
      */
     fun pickTool(picked: TakeoffTool, viaRect: Boolean = false) {
         clearDrafts()
+        // العدّ والأعمدة لا يحتاجان مقياساً لأنهما علامات؛ أما بقية الأدوات
+        // فتنتج طولاً أو مساحة أو حجماً، لذلك نبدأ بالمعايرة بدلاً من حفظ
+        // كمية صفرية أو غير موثوقة.
+        val needsScale = picked != TakeoffTool.COUNT && picked != TakeoffTool.COLUMN
+        if (needsScale && !pageGeometry.calibrated) {
+            calibrating = true
+            return
+        }
         if (picked == TakeoffTool.DIMENSION) {
             mode = EditorMode.DRAW
             tool = picked
@@ -619,6 +627,13 @@ fun TakeoffEditorScreen(
         }
     }
 
+    fun undoLastDraftPoint() {
+        when {
+            draft.isNotEmpty() -> draft.removeAt(draft.lastIndex)
+            annotationDraft.isNotEmpty() -> annotationDraft.removeAt(annotationDraft.lastIndex)
+        }
+    }
+
     // ── الحسابات المشتقّة من الوضع
     /**
      * ملحوظة معروفة: طبقة السحب دي مش بتفرّق بين القلم والصباع (بعكس
@@ -635,6 +650,20 @@ fun TakeoffEditorScreen(
         (TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size] or 0xFF000000L).toInt()
     )
     val calibrationColour = c.accent
+    val draftPoints = draft.toList()
+    val activeDraftTool = if (deductFor != null) TakeoffTool.DEDUCT else tool
+    val liveReadout = when {
+        draftPoints.isEmpty() -> null
+        activeDraftTool == TakeoffTool.COUNT || activeDraftTool == TakeoffTool.COLUMN ->
+            "${if (activeDraftTool == TakeoffTool.COUNT) "عد" else "أعمدة"}: ${draftPoints.size}"
+        activeDraftTool == TakeoffTool.LENGTH ->
+            "طول حي: ${formatQuantity(TakeoffTool.LENGTH, TakeoffMath.length(draftPoints, pageGeometry))}"
+        activeDraftTool == TakeoffTool.DIMENSION && draftPoints.size >= 2 ->
+            "بُعد حي: ${formatQuantity(TakeoffTool.DIMENSION, TakeoffMath.length(draftPoints.take(2), pageGeometry))}"
+        (activeDraftTool == TakeoffTool.AREA || activeDraftTool == TakeoffTool.DEDUCT || activeDraftTool == TakeoffTool.VOLUME) && draftPoints.size >= 3 ->
+            "مساحة حية: ${formatQuantity(TakeoffTool.AREA, TakeoffMath.area(draftPoints, pageGeometry))}"
+        else -> "ضع النقطة التالية (${draftPoints.size})"
+    }
 
     Surface(Modifier.fillMaxSize(), color = c.background) {
         Box(Modifier.fillMaxSize()) {
@@ -923,7 +952,6 @@ fun TakeoffEditorScreen(
                 pageCount = active.pageCount,
                 onBack = onClose,
                 onTotals = { totalsOpen = true },
-                onFormulas = { formulasOpen = true },
                 onCalibrate = { endSession(); calibrating = true },
                 onSettings = { settingsOpen = true },
                 modifier = Modifier.align(Alignment.TopCenter)
@@ -975,12 +1003,15 @@ fun TakeoffEditorScreen(
                     val focusedVertices = selectedItem?.let { selected ->
                         vertexFocusTarget?.let { target -> TakeoffMath.verticesFor(selected, target) }
                     }.orEmpty()
-                    TakeoffToolBar(
-                        mode = mode,
-                        tool = tool,
+                    S25MeasurementDock(
+                        pointerActive = mode == EditorMode.POINTER,
+                        activeTool = tool,
                         deducting = deductFor != null,
+                        calibrated = pageGeometry.calibrated,
+                        snapEnabled = snapEnabled,
+                        liveReadout = liveReadout,
                         hasDraft = draft.isNotEmpty() || annotationDraft.isNotEmpty(),
-                        selectedId = selectedId,
+                        selected = selectedId != null,
                         canAddToShape = selectedItem?.tool.let {
                             it == TakeoffTool.AREA || it == TakeoffTool.VOLUME || it == TakeoffTool.LENGTH
                         },
@@ -989,9 +1020,9 @@ fun TakeoffEditorScreen(
                             selectedItem.tool != TakeoffTool.DIMENSION &&
                             focusedVertices.size > minVertsFor(selectedItem.tool),
                         multiCount = multiSelectedIds.size,
-                        annotationTool = annotationTool,
-                        selectedAnnotationId = selectedAnnotationId,
                         onPointer = { endSession() },
+                        onUndo = { undoLastDraftPoint() },
+                        onToggleSnap = { snapEnabled = !snapEnabled },
                         onPick = { picked -> pickTool(picked) },
                         onMore = { toolsSheetOpen = true },
                         onDone = { if (annotationTool != null) finishAnnotation() else commit() },
@@ -1041,25 +1072,9 @@ fun TakeoffEditorScreen(
                             scope.launch { ids.forEach { vm.takeoff.deleteItem(it) } }
                             multiSelectedIds = emptySet()
                         },
-                        onDeleteAnnotation = {
-                            selectedAnnotationId?.toLongOrNull()?.let { id ->
-                                scope.launch { vm.takeoff.deleteAnnotation(id) }
-                            }
-                            selectedAnnotationId = null
-                        },
                         onEditSelected = { editingItem = selectedItem }
                     )
                 }
-
-                TakeoffStatusBar(
-                    page = state.currentPage + 1,
-                    pageCount = active.pageCount,
-                    scaleNote = scaleRows.firstOrNull { it.page == state.currentPage }
-                        ?.note?.takeIf { it.isNotBlank() },
-                    zoomPercent = state.zoomPercent(),
-                    snapEnabled = snapEnabled,
-                    onToggleSnap = { snapEnabled = !snapEnabled }
-                )
             }
         }
     }
@@ -1073,19 +1088,10 @@ fun TakeoffEditorScreen(
                 pageItems.firstOrNull { it.id == selectedId }?.tool.let {
                     it == TakeoffTool.AREA || it == TakeoffTool.VOLUME
                 },
-            annotationTool = annotationTool,
             onPick = { picked -> pickTool(picked) },
             onRect = { pickTool(TakeoffTool.AREA, viaRect = true) },
             onVertexEdit = { clearDrafts(); mode = EditorMode.VERTEX },
             onBoxSelect = { clearDrafts(); mode = EditorMode.BOXSELECT; selectedId = null },
-            onAnnotate = { picked ->
-                clearDrafts()
-                // لازم يرجع لوضع مالوش سحب (POINTER) — لو فضل RECT/
-                // VERTEX/BOXSELECT شغّال، drawingActive بيفضل true
-                // وطبقة النقر بتتقفل تمامًا، فالتعليق مش هيستقبل أي لمسة.
-                mode = EditorMode.POINTER
-                annotationTool = picked
-            },
             onDeduct = {
                 val parent = pageItems.firstOrNull { it.id == selectedId }
                 if (parent != null) {
@@ -1258,7 +1264,6 @@ private fun TakeoffTopBar(
     pageCount: Int,
     onBack: () -> Unit,
     onTotals: () -> Unit,
-    onFormulas: () -> Unit,
     onCalibrate: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier
@@ -1287,7 +1292,6 @@ private fun TakeoffTopBar(
                 )
             }
             CwIconButton(Icons.Filled.Straighten, "معايرة المقياس", onCalibrate)
-            CwIconButton(Icons.Filled.Calculate, "الصيغ", onFormulas)
             CwIconButton(Icons.Filled.Functions, "الإجماليات", onTotals)
             CwIconButton(Icons.Filled.Settings, "إعدادات الرسم", onSettings)
         }
@@ -1509,12 +1513,10 @@ private fun TakeoffToolsSheet(
     tool: TakeoffTool,
     deducting: Boolean,
     canDeduct: Boolean,
-    annotationTool: TakeoffAnnotationType?,
     onPick: (TakeoffTool) -> Unit,
     onRect: () -> Unit,
     onVertexEdit: () -> Unit,
     onBoxSelect: () -> Unit,
-    onAnnotate: (TakeoffAnnotationType) -> Unit,
     onDeduct: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1536,7 +1538,7 @@ private fun TakeoffToolsSheet(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "أدوات الحصر",
+                    "أدوات القياس",
                     style = MaterialTheme.typography.titleMedium,
                     color = c.textPrimary,
                     modifier = Modifier.weight(1f)
@@ -1566,22 +1568,6 @@ private fun TakeoffToolsSheet(
                 }
                 ToolGridItem(Icons.Filled.SquareFoot, "بُعد", tool == TakeoffTool.DIMENSION) {
                     onPick(TakeoffTool.DIMENSION); onDismiss()
-                }
-            }
-
-            Text("التعليق", style = CwText.sectionLabel, color = c.textTertiary)
-            ToolGrid {
-                ToolGridItem(Icons.Filled.Cloud, "سحابة", annotationTool == TakeoffAnnotationType.CLOUD) {
-                    onAnnotate(TakeoffAnnotationType.CLOUD); onDismiss()
-                }
-                ToolGridItem(
-                    Icons.AutoMirrored.Filled.ArrowForward, "سهم",
-                    annotationTool == TakeoffAnnotationType.ARROW
-                ) {
-                    onAnnotate(TakeoffAnnotationType.ARROW); onDismiss()
-                }
-                ToolGridItem(Icons.Filled.TextFields, "نص", annotationTool == TakeoffAnnotationType.TEXT) {
-                    onAnnotate(TakeoffAnnotationType.TEXT); onDismiss()
                 }
             }
 
