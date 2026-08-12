@@ -1,5 +1,7 @@
 package com.corewall.qaqc.ui.takeoff
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,15 +9,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
@@ -25,6 +31,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.HighlightAlt
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PinDrop
@@ -35,10 +42,13 @@ import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +68,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.TakeoffAnnotationEntity
@@ -82,9 +93,12 @@ import com.corewall.qaqc.takeoff.TakeoffTool
 import com.corewall.qaqc.ui.design.CwIconButton
 import com.corewall.qaqc.ui.design.CwText
 import com.corewall.qaqc.ui.design.Elevation
+import com.corewall.qaqc.ui.design.IconSize
 import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.design.Sizes
 import com.corewall.qaqc.ui.design.Space
+import com.corewall.qaqc.ui.design.Stroke as DesignStroke
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -244,6 +258,7 @@ fun TakeoffEditorScreen(
     var calibrating by remember { mutableStateOf(false) }
     var totalsOpen by remember { mutableStateOf(false) }
     var formulasOpen by remember { mutableStateOf(false) }
+    var toolsSheetOpen by remember { mutableStateOf(false) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     var pendingShape by remember { mutableStateOf<PendingShape?>(null) }
     var editingItem by remember { mutableStateOf<TakeoffItem?>(null) }
@@ -740,86 +755,104 @@ fun TakeoffEditorScreen(
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
-            TakeoffToolBar(
-                mode = mode,
-                tool = tool,
-                deducting = deductFor != null,
-                hasDraft = draft.isNotEmpty() || annotationDraft.isNotEmpty(),
-                canDeduct = selectedId != null &&
-                    pageItems.firstOrNull { it.id == selectedId }?.tool.let {
-                        it == TakeoffTool.AREA || it == TakeoffTool.VOLUME
+            if (calibrating) {
+                // لوحة عادية جوّه الـBox، مش شيت مودال — عشان تفضل الرسمة
+                // فوقها قابلة للمس (شوف التعليق فوق [TakeoffCalibratePanel]).
+                TakeoffCalibratePanel(
+                    points = calibPoints.toList(),
+                    pageGeometry = pageGeometry,
+                    onApply = { metresPerPoint, note, allPages ->
+                        scope.launch {
+                            if (allPages) {
+                                vm.takeoff.copyScaleToAllPages(
+                                    drawingId,
+                                    com.corewall.qaqc.data.db.TakeoffScaleEntity(
+                                        drawingId, state.currentPage, metresPerPoint, note
+                                    ),
+                                    active.pageCount
+                                )
+                            } else {
+                                vm.takeoff.setScale(drawingId, state.currentPage, metresPerPoint, note)
+                            }
+                        }
+                        endSession()
                     },
-                selectedId = selectedId,
-                multiCount = multiSelectedIds.size,
-                annotationTool = annotationTool,
-                selectedAnnotationId = selectedAnnotationId,
-                onPointer = { endSession() },
-                onPick = { picked -> clearDrafts(); mode = EditorMode.DRAW; tool = picked },
-                onRect = { clearDrafts(); mode = EditorMode.RECT },
-                onVertexEdit = { clearDrafts(); mode = EditorMode.VERTEX },
-                onBoxSelect = { clearDrafts(); mode = EditorMode.BOXSELECT; selectedId = null },
-                onAnnotate = { picked ->
-                    clearDrafts()
-                    // لازم يرجع لوضع مالوش سحب (POINTER) — لو فضل RECT/
-                    // VERTEX/BOXSELECT شغّال، drawingActive بيفضل true
-                    // وطبقة النقر بتتقفل تمامًا، فالتعليق مش هيستقبل أي لمسة.
-                    mode = EditorMode.POINTER
-                    annotationTool = picked
-                },
-                onDeduct = {
-                    val parent = pageItems.firstOrNull { it.id == selectedId }
-                    if (parent != null) {
-                        draft.clear(); draftPage.intValue = -1
-                        deductFor = parent; mode = EditorMode.DRAW; tool = TakeoffTool.AREA
-                    }
-                },
-                onDone = { if (annotationTool != null) finishAnnotation() else commit() },
-                onDeleteSelected = {
-                    selectedId?.toLongOrNull()?.let { id ->
-                        scope.launch { vm.takeoff.deleteItem(id) }
-                    }
-                    selectedId = null
-                },
-                onDeleteMulti = {
-                    val ids = multiSelectedIds.mapNotNull { it.toLongOrNull() }
-                    scope.launch { ids.forEach { vm.takeoff.deleteItem(it) } }
-                    multiSelectedIds = emptySet()
-                },
-                onDeleteAnnotation = {
-                    selectedAnnotationId?.toLongOrNull()?.let { id ->
-                        scope.launch { vm.takeoff.deleteAnnotation(id) }
-                    }
-                    selectedAnnotationId = null
-                },
-                onEditSelected = { editingItem = pageItems.firstOrNull { it.id == selectedId } },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-            )
+                    onClearPoints = { calibPoints.clear() },
+                    onCancel = { endSession() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                )
+            } else {
+                TakeoffToolBar(
+                    mode = mode,
+                    tool = tool,
+                    deducting = deductFor != null,
+                    hasDraft = draft.isNotEmpty() || annotationDraft.isNotEmpty(),
+                    selectedId = selectedId,
+                    multiCount = multiSelectedIds.size,
+                    annotationTool = annotationTool,
+                    selectedAnnotationId = selectedAnnotationId,
+                    onPointer = { endSession() },
+                    onPick = { picked -> clearDrafts(); mode = EditorMode.DRAW; tool = picked },
+                    onMore = { toolsSheetOpen = true },
+                    onDone = { if (annotationTool != null) finishAnnotation() else commit() },
+                    onDeleteSelected = {
+                        selectedId?.toLongOrNull()?.let { id ->
+                            scope.launch { vm.takeoff.deleteItem(id) }
+                        }
+                        selectedId = null
+                    },
+                    onDeleteMulti = {
+                        val ids = multiSelectedIds.mapNotNull { it.toLongOrNull() }
+                        scope.launch { ids.forEach { vm.takeoff.deleteItem(it) } }
+                        multiSelectedIds = emptySet()
+                    },
+                    onDeleteAnnotation = {
+                        selectedAnnotationId?.toLongOrNull()?.let { id ->
+                            scope.launch { vm.takeoff.deleteAnnotation(id) }
+                        }
+                        selectedAnnotationId = null
+                    },
+                    onEditSelected = { editingItem = pageItems.firstOrNull { it.id == selectedId } },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                )
+            }
         }
     }
 
-    if (calibrating) {
-        TakeoffCalibrateSheet(
-            points = calibPoints.toList(),
-            pageGeometry = pageGeometry,
-            onApply = { metresPerPoint, note, allPages ->
-                scope.launch {
-                    if (allPages) {
-                        vm.takeoff.copyScaleToAllPages(
-                            drawingId,
-                            com.corewall.qaqc.data.db.TakeoffScaleEntity(
-                                drawingId, state.currentPage, metresPerPoint, note
-                            ),
-                            active.pageCount
-                        )
-                    } else {
-                        vm.takeoff.setScale(drawingId, state.currentPage, metresPerPoint, note)
-                    }
-                }
-                endSession()
+    if (toolsSheetOpen) {
+        TakeoffToolsSheet(
+            mode = mode,
+            tool = tool,
+            deducting = deductFor != null,
+            canDeduct = selectedId != null &&
+                pageItems.firstOrNull { it.id == selectedId }?.tool.let {
+                    it == TakeoffTool.AREA || it == TakeoffTool.VOLUME
+                },
+            annotationTool = annotationTool,
+            onPick = { picked -> clearDrafts(); mode = EditorMode.DRAW; tool = picked },
+            onRect = { clearDrafts(); mode = EditorMode.RECT },
+            onVertexEdit = { clearDrafts(); mode = EditorMode.VERTEX },
+            onBoxSelect = { clearDrafts(); mode = EditorMode.BOXSELECT; selectedId = null },
+            onAnnotate = { picked ->
+                clearDrafts()
+                // لازم يرجع لوضع مالوش سحب (POINTER) — لو فضل RECT/
+                // VERTEX/BOXSELECT شغّال، drawingActive بيفضل true
+                // وطبقة النقر بتتقفل تمامًا، فالتعليق مش هيستقبل أي لمسة.
+                mode = EditorMode.POINTER
+                annotationTool = picked
             },
-            onDismiss = { endSession() }
+            onDeduct = {
+                val parent = pageItems.firstOrNull { it.id == selectedId }
+                if (parent != null) {
+                    draft.clear(); draftPage.intValue = -1
+                    deductFor = parent; mode = EditorMode.DRAW; tool = TakeoffTool.AREA
+                }
+            },
+            onDismiss = { toolsSheetOpen = false }
         )
     }
 
@@ -985,8 +1018,9 @@ private fun TakeoffTopBar(
 /**
  * شريط الأدوات السفلي.
  *
- * ملفوف في تمرير أفقي — تسعة أزرار مش هتتلم في عرض شاشة موبايل واحد
- * غير كده.
+ * أربع أدوات سريعة بس + زرار "المزيد" اللي بيفتح [TakeoffToolsSheet] —
+ * بدل ما تتلمّ تسعة أزرار أيقونة من غير تسمية في شريط واحد مضغوط.
+ * الأفعال السياقية (إنهاء/تعديل/حذف) بتفضل هنا لأنها مش اختيار أداة.
  */
 @Composable
 private fun TakeoffToolBar(
@@ -994,18 +1028,13 @@ private fun TakeoffToolBar(
     tool: TakeoffTool,
     deducting: Boolean,
     hasDraft: Boolean,
-    canDeduct: Boolean,
     selectedId: String?,
     multiCount: Int,
     annotationTool: TakeoffAnnotationType?,
     selectedAnnotationId: String?,
     onPointer: () -> Unit,
     onPick: (TakeoffTool) -> Unit,
-    onRect: () -> Unit,
-    onVertexEdit: () -> Unit,
-    onBoxSelect: () -> Unit,
-    onAnnotate: (TakeoffAnnotationType) -> Unit,
-    onDeduct: () -> Unit,
+    onMore: () -> Unit,
     onDone: () -> Unit,
     onDeleteSelected: () -> Unit,
     onDeleteMulti: () -> Unit,
@@ -1014,6 +1043,11 @@ private fun TakeoffToolBar(
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
+    val moreActive = mode == EditorMode.RECT || mode == EditorMode.VERTEX ||
+        mode == EditorMode.BOXSELECT || annotationTool != null || deducting ||
+        (mode == EditorMode.DRAW && tool != TakeoffTool.AREA && tool != TakeoffTool.LENGTH && tool != TakeoffTool.COUNT)
+    val hasContext = hasDraft || selectedId != null || selectedAnnotationId != null || multiCount > 0
+
     Surface(
         modifier.padding(Space.md),
         color = c.surface,
@@ -1023,9 +1057,9 @@ private fun TakeoffToolBar(
         Row(
             Modifier
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = Space.sm, vertical = Space.xxs),
+                .padding(horizontal = Space.sm, vertical = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.xxs)
+            horizontalArrangement = Arrangement.spacedBy(Space.xs)
         ) {
             CwIconButton(
                 Icons.Filled.PanTool, "تنقّل وتحديد", onPointer,
@@ -1036,10 +1070,6 @@ private fun TakeoffToolBar(
                 active = mode == EditorMode.DRAW && !deducting && tool == TakeoffTool.AREA
             )
             CwIconButton(
-                Icons.Filled.CropSquare, "مستطيل", onRect,
-                active = mode == EditorMode.RECT
-            )
-            CwIconButton(
                 Icons.Filled.Timeline, "طول", { onPick(TakeoffTool.LENGTH) },
                 active = mode == EditorMode.DRAW && tool == TakeoffTool.LENGTH
             )
@@ -1048,41 +1078,18 @@ private fun TakeoffToolBar(
                 active = mode == EditorMode.DRAW && tool == TakeoffTool.COUNT
             )
             CwIconButton(
-                Icons.Filled.Layers, "حجم", { onPick(TakeoffTool.VOLUME) },
-                active = mode == EditorMode.DRAW && !deducting && tool == TakeoffTool.VOLUME
+                Icons.Filled.MoreHoriz, "كل الأدوات", onMore,
+                active = moreActive
             )
-            CwIconButton(
-                Icons.Filled.ViewColumn, "عمود", { onPick(TakeoffTool.COLUMN) },
-                active = mode == EditorMode.DRAW && tool == TakeoffTool.COLUMN
-            )
-            CwIconButton(
-                Icons.Filled.SquareFoot, "بُعد", { onPick(TakeoffTool.DIMENSION) },
-                active = mode == EditorMode.DRAW && tool == TakeoffTool.DIMENSION
-            )
-            CwIconButton(
-                Icons.Filled.ContentCut, "خصم من المحدّد", onDeduct,
-                active = deducting, enabled = canDeduct || deducting
-            )
-            CwIconButton(
-                Icons.Filled.OpenWith, "تعديل الرؤوس", onVertexEdit,
-                active = mode == EditorMode.VERTEX
-            )
-            CwIconButton(
-                Icons.Filled.HighlightAlt, "تحديد بمستطيل", onBoxSelect,
-                active = mode == EditorMode.BOXSELECT
-            )
-            CwIconButton(
-                Icons.Filled.Cloud, "سحابة", { onAnnotate(TakeoffAnnotationType.CLOUD) },
-                active = annotationTool == TakeoffAnnotationType.CLOUD
-            )
-            CwIconButton(
-                Icons.AutoMirrored.Filled.ArrowForward, "سهم", { onAnnotate(TakeoffAnnotationType.ARROW) },
-                active = annotationTool == TakeoffAnnotationType.ARROW
-            )
-            CwIconButton(
-                Icons.Filled.TextFields, "نص", { onAnnotate(TakeoffAnnotationType.TEXT) },
-                active = annotationTool == TakeoffAnnotationType.TEXT
-            )
+
+            if (hasContext) {
+                Box(
+                    Modifier
+                        .padding(horizontal = Space.xxs)
+                        .size(width = Space.hair, height = Sizes.touch * 0.6f)
+                        .background(c.divider)
+                )
+            }
             if (hasDraft) {
                 CwIconButton(Icons.Filled.Check, "إنهاء الشكل", onDone, tint = c.success.fg)
             }
@@ -1102,6 +1109,166 @@ private fun TakeoffToolBar(
                     Icons.Filled.DeleteSweep, "احذف $multiCount بند", onDeleteMulti, tint = c.danger.fg
                 )
             }
+        }
+    }
+}
+
+/**
+ * "أدوات الحصر" — شيت شبكي مقسّم لأقسام (قياس/تعليق/تحرير)، كل أداة
+ * كارت بأيقونة ملوّنة واسم تحتها. بديل الشريط المضغوط لما المستخدم
+ * يحتاج أداة مش من الأربعة السريعة.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TakeoffToolsSheet(
+    mode: EditorMode,
+    tool: TakeoffTool,
+    deducting: Boolean,
+    canDeduct: Boolean,
+    annotationTool: TakeoffAnnotationType?,
+    onPick: (TakeoffTool) -> Unit,
+    onRect: () -> Unit,
+    onVertexEdit: () -> Unit,
+    onBoxSelect: () -> Unit,
+    onAnnotate: (TakeoffAnnotationType) -> Unit,
+    onDeduct: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = LocalCwColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = c.surface,
+        shape = Radius.sheet
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.lg)
+                .padding(bottom = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.md)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "أدوات الحصر",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = c.textPrimary,
+                    modifier = Modifier.weight(1f)
+                )
+                CwIconButton(Icons.Filled.Close, "إغلاق", onDismiss)
+            }
+
+            Text("القياس", style = CwText.sectionLabel, color = c.textTertiary)
+            ToolGrid {
+                ToolGridItem(Icons.Filled.Square, "مساحة", tool == TakeoffTool.AREA && !deducting) {
+                    onPick(TakeoffTool.AREA); onDismiss()
+                }
+                ToolGridItem(Icons.Filled.CropSquare, "مستطيل", mode == EditorMode.RECT) {
+                    onRect(); onDismiss()
+                }
+                ToolGridItem(Icons.Filled.Timeline, "طول", tool == TakeoffTool.LENGTH) {
+                    onPick(TakeoffTool.LENGTH); onDismiss()
+                }
+                ToolGridItem(Icons.Filled.PinDrop, "عدّ", tool == TakeoffTool.COUNT) {
+                    onPick(TakeoffTool.COUNT); onDismiss()
+                }
+                ToolGridItem(Icons.Filled.Layers, "حجم", tool == TakeoffTool.VOLUME && !deducting) {
+                    onPick(TakeoffTool.VOLUME); onDismiss()
+                }
+                ToolGridItem(Icons.Filled.ViewColumn, "عمود", tool == TakeoffTool.COLUMN) {
+                    onPick(TakeoffTool.COLUMN); onDismiss()
+                }
+                ToolGridItem(Icons.Filled.SquareFoot, "بُعد", tool == TakeoffTool.DIMENSION) {
+                    onPick(TakeoffTool.DIMENSION); onDismiss()
+                }
+            }
+
+            Text("التعليق", style = CwText.sectionLabel, color = c.textTertiary)
+            ToolGrid {
+                ToolGridItem(Icons.Filled.Cloud, "سحابة", annotationTool == TakeoffAnnotationType.CLOUD) {
+                    onAnnotate(TakeoffAnnotationType.CLOUD); onDismiss()
+                }
+                ToolGridItem(
+                    Icons.AutoMirrored.Filled.ArrowForward, "سهم",
+                    annotationTool == TakeoffAnnotationType.ARROW
+                ) {
+                    onAnnotate(TakeoffAnnotationType.ARROW); onDismiss()
+                }
+                ToolGridItem(Icons.Filled.TextFields, "نص", annotationTool == TakeoffAnnotationType.TEXT) {
+                    onAnnotate(TakeoffAnnotationType.TEXT); onDismiss()
+                }
+            }
+
+            Text("التحرير", style = CwText.sectionLabel, color = c.textTertiary)
+            ToolGrid {
+                ToolGridItem(Icons.Filled.OpenWith, "تعديل الرؤوس", mode == EditorMode.VERTEX) {
+                    onVertexEdit(); onDismiss()
+                }
+                ToolGridItem(Icons.Filled.HighlightAlt, "تحديد بمستطيل", mode == EditorMode.BOXSELECT) {
+                    onBoxSelect(); onDismiss()
+                }
+                ToolGridItem(
+                    Icons.Filled.ContentCut, "خصم من المحدّد", deducting,
+                    enabled = canDeduct || deducting
+                ) {
+                    onDeduct(); onDismiss()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * صف كروت أدوات، بيتمرّر أفقيًا. مش شبكة ملتفّة عن قصد — `FlowRow` مش
+ * مضمون في نسخة Compose Foundation المجمّدة هنا، والتمرير الأفقي نفس
+ * النمط المستخدم في شيبات المقاييس فوق، فمفيش لغة بصرية جديدة.
+ */
+@Composable
+private fun ToolGrid(content: @Composable () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm)
+    ) { content() }
+}
+
+@Composable
+private fun ToolGridItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    active: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val c = LocalCwColors.current
+    val container = if (active) c.accentContainer else c.surfaceAlt
+    val content = if (!enabled) c.textTertiary.copy(alpha = 0.4f) else if (active) c.accent else c.textSecondary
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.width(84.dp),
+        shape = Radius.shapeLg,
+        color = container,
+        border = if (active) BorderStroke(DesignStroke.hair, c.accent) else null
+    ) {
+        Column(
+            Modifier
+                .padding(vertical = Space.md, horizontal = Space.xs)
+                .heightIn(min = Sizes.touch),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs)
+        ) {
+            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(IconSize.lg))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = content,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.corewall.qaqc.ui.takeoff
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,13 +20,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -42,15 +47,22 @@ import com.corewall.qaqc.takeoff.TakeoffItem
 import com.corewall.qaqc.takeoff.TakeoffMath
 import com.corewall.qaqc.takeoff.TakeoffPoint
 import com.corewall.qaqc.takeoff.TakeoffTool
+import com.corewall.qaqc.ui.design.CwBanner
 import com.corewall.qaqc.ui.design.CwButton
 import com.corewall.qaqc.ui.design.CwButtonStyle
 import com.corewall.qaqc.ui.design.CwChip
 import com.corewall.qaqc.ui.design.CwField
+import com.corewall.qaqc.ui.design.CwIconButton
+import com.corewall.qaqc.ui.design.CwSegmented
 import com.corewall.qaqc.ui.design.CwText
+import com.corewall.qaqc.ui.design.CwTone
+import com.corewall.qaqc.ui.design.Elevation
 import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
+import com.corewall.qaqc.ui.design.Stroke as CwStroke
 import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 /** مم على الورق لكل نقطة PDF: بوصة ÷ ٧٢. */
 private const val MM_PER_POINT = 25.4 / 72.0
@@ -63,24 +75,32 @@ private val RATIOS = listOf(20, 25, 50, 100, 200, 500, 1000)
  *
  * طريقتين، والاتنين مقصودين:
  *
- * ١. **مقياس معماري** (١:٥٠، ١:١٠٠…) — لمسة واحدة، ودقيق تماماً **لو**
+ * ١. **بُعد معلوم** — المستخدم بيلمس طرفَي بُعد مكتوب في الرسمة وبيكتب
+ *    قيمته. دي اللي بتنقذ الملفات اللي اتطبعت بمقياس مختلف أو اتعملها
+ *    scale وقت التصدير، وده بيحصل أكتر ما حد يتخيّل. **الافتراضية** —
+ *    هي اللي بتشتغل مع أي ملف أيًا كان مصدره.
+ * ٢. **مقياس معماري** (١:٥٠، ١:١٠٠…) — لمسة واحدة، ودقيق تماماً **لو**
  *    الملف اتصدّر بمقاسه الحقيقي. الحساب من نقطة الـPDF مباشرة
  *    (٢٥.٤÷٧٢ مم) — مافيش دقة رسترة في المعادلة، فمفيش ثابت يقدر يخرب
  *    المعايرة لو اتغيّر بعدين.
- * ٢. **بُعد معلوم** — المستخدم بيلمس طرفَي بُعد مكتوب في الرسمة وبيكتب
- *    قيمته. دي اللي بتنقذ الملفات اللي اتطبعت بمقياس مختلف أو اتعملها
- *    scale وقت التصدير، وده بيحصل أكتر ما حد يتخيّل.
+ *
+ * **لوحة عادية مش شيت مودال بقصد**: [ModalBottomSheet] بيحط ستارة (scrim)
+ * فوق الشاشة كلها بتاخد أي لمسة برّه الشيت وتقفله — يعني المستخدم مايقدرش
+ * يلمس الرسمة نفسها عشان يحطّ نقطتي البُعد، والمعايرة بتبقى مستحيلة عمليًا.
+ * اللوحة دي بتترسم في مكانها العادي جوّه [Box] الشاشة، فمفيش ستارة، والرسمة
+ * فوقها فاضية للمس زي أي وضع رسم تاني.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TakeoffCalibrateSheet(
+fun TakeoffCalibratePanel(
     points: List<TakeoffPoint>,
     pageGeometry: PageGeometry,
     onApply: (metresPerPoint: Double, note: String, allPages: Boolean) -> Unit,
-    onDismiss: () -> Unit
+    onClearPoints: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var tabIndex by remember { mutableIntStateOf(0) }
     var realLength by remember { mutableStateOf("") }
     var allPages by remember { mutableStateOf(true) }
 
@@ -92,84 +112,155 @@ fun TakeoffCalibrateSheet(
             (points[1].y - points[0].y) * pageGeometry.heightPt
         )
     }
+    val metres = realLength.toDoubleOrNull()
+    val valid = points.size >= 2 && pixelDistance > 0.0 && metres != null && metres > 0.0
+    val metresPerPoint = if (valid) metres!! / pixelDistance else null
+    val computedRatio = metresPerPoint?.let { (it * 1000.0 / MM_PER_POINT).roundToInt() }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = c.surface,
-        shape = Radius.sheet
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = c.surface,
+        shape = Radius.sheet,
+        shadowElevation = Elevation.overlay,
+        border = BorderStroke(CwStroke.hair, c.outline)
     ) {
         Column(
             Modifier
                 .navigationBarsPadding()
                 .padding(horizontal = Space.lg)
-                .padding(bottom = Space.lg),
-            verticalArrangement = Arrangement.spacedBy(Space.sm)
+                .padding(top = Space.md, bottom = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.md)
         ) {
-            Text("معايرة المقياس", style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "معايرة المقياس",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = c.textPrimary,
+                    modifier = Modifier.weight(1f)
+                )
+                CwIconButton(Icons.Filled.Close, "إلغاء المعايرة", onCancel)
+            }
 
-            Text("مقياس معماري", style = CwText.codeSmall, color = c.textTertiary)
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm)
-            ) {
-                RATIOS.forEach { ratio ->
-                    CwChip(
-                        label = "١:$ratio",
-                        selected = false,
-                        onClick = {
-                            // مم للنقطة × النسبة ÷ ١٠٠٠ = متر لكل نقطة
-                            onApply(MM_PER_POINT * ratio / 1000.0, "١:$ratio", allPages)
-                        }
+            CwSegmented(
+                options = listOf("بُعد معلوم", "مقياس معماري"),
+                selectedIndex = tabIndex,
+                label = { it },
+                onSelect = { tabIndex = it }
+            )
+
+            if (tabIndex == 0) {
+                CalibrationPointsRow(pointCount = points.size)
+                Text(
+                    when (points.size) {
+                        0 -> "المس أول طرف للبُعد على الرسمة."
+                        1 -> "المس الطرف التاني."
+                        else -> "المسافة على الورق: ${"%.1f".format(pixelDistance)} نقطة"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.textSecondary
+                )
+
+                if (points.size >= 2) {
+                    CwField(
+                        value = realLength,
+                        onValueChange = { realLength = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                        label = "الطول الحقيقي بالمتر",
+                        placeholder = "6.00",
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                        )
                     )
                 }
-            }
 
-            Spacer(Modifier.height(Space.xs))
-            Text("أو بُعد معلوم", style = CwText.codeSmall, color = c.textTertiary)
-
-            Text(
-                when (points.size) {
-                    0 -> "المس أول طرف للبُعد على الرسمة."
-                    1 -> "المس الطرف التاني."
-                    else -> "المسافة على الورق: ${"%.1f".format(pixelDistance)} نقطة"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = c.textSecondary
-            )
-
-            if (points.size >= 2) {
-                CwField(
-                    value = realLength,
-                    onValueChange = { realLength = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                    label = "الطول الحقيقي بالمتر",
-                    placeholder = "6.00",
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                if (computedRatio != null) {
+                    CwBanner(
+                        title = "المقياس المحسوب ١:$computedRatio",
+                        tone = CwTone.Success,
+                        detail = "١ م = %.2f نقطة على الورق".format(1.0 / metresPerPoint!!)
                     )
-                )
-            }
+                }
 
-            CwChip(
-                label = if (allPages) "هيتطبّق على كل الصفحات" else "الصفحة دي بس",
-                selected = allPages,
-                onClick = { allPages = !allPages }
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                val metres = realLength.toDoubleOrNull()
-                val valid = points.size >= 2 && pixelDistance > 0.0 &&
-                    metres != null && metres > 0.0
-                CwButton(
-                    "طبّق",
-                    {
-                        if (valid) onApply(metres!! / pixelDistance, "بُعد معلوم", allPages)
-                    },
-                    enabled = valid
+                CwChip(
+                    label = if (allPages) "هيتطبّق على كل الصفحات" else "الصفحة دي بس",
+                    selected = allPages,
+                    onClick = { allPages = !allPages }
                 )
-                CwButton("إلغاء", onDismiss, style = CwButtonStyle.Ghost)
+
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    CwButton(
+                        "تأكيد",
+                        {
+                            if (valid) onApply(metresPerPoint!!, "بُعد معلوم", allPages)
+                        },
+                        enabled = valid
+                    )
+                    CwButton("مسح النقط", onClearPoints, style = CwButtonStyle.Secondary)
+                }
+            } else {
+                Text(
+                    "اختر المقياس المطبوع على الرسمة — بيتطبّق فورًا.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.textSecondary
+                )
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm)
+                ) {
+                    RATIOS.forEach { ratio ->
+                        CwChip(
+                            label = "١:$ratio",
+                            selected = false,
+                            onClick = {
+                                // مم للنقطة × النسبة ÷ ١٠٠٠ = متر لكل نقطة
+                                onApply(MM_PER_POINT * ratio / 1000.0, "١:$ratio", allPages)
+                            }
+                        )
+                    }
+                }
+                CwChip(
+                    label = if (allPages) "هيتطبّق على كل الصفحات" else "الصفحة دي بس",
+                    selected = allPages,
+                    onClick = { allPages = !allPages }
+                )
             }
         }
+    }
+}
+
+/** ① ــــ ② — تقدّم لمس نقطتي البُعد، زي مؤشّر معايرة النسخة المرجعية. */
+@Composable
+private fun CalibrationPointsRow(pointCount: Int, modifier: Modifier = Modifier) {
+    val c = LocalCwColors.current
+    Row(
+        modifier.fillMaxWidth().padding(vertical = Space.xs),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CalibrationBadge(index = 1, filled = pointCount >= 1)
+        Box(
+            Modifier
+                .weight(1f)
+                .height(CwStroke.thick)
+                .background(if (pointCount >= 2) c.accent else c.outline)
+        )
+        CalibrationBadge(index = 2, filled = pointCount >= 2)
+    }
+}
+
+@Composable
+private fun CalibrationBadge(index: Int, filled: Boolean) {
+    val c = LocalCwColors.current
+    Box(
+        Modifier
+            .size(32.dp)
+            .background(if (filled) c.accent else c.surfaceAlt, CircleShape)
+            .border(CwStroke.hair, if (filled) c.accent else c.outline, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            "$index",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (filled) c.onAccent else c.textTertiary
+        )
     }
 }
 
