@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -130,7 +129,7 @@ internal fun V2TakeoffProjectsScreen(vm: MainViewModel, modifier: Modifier = Mod
                 ) {
                     Icon(Icons.Filled.Straighten, null, tint = V2Colors.Accent)
                     Spacer(Modifier.width(V2Space.sm))
-                    Column(Modifier.weight(1f)) {
+                    Column(Modifier.padding(end = V2Space.sm)) {
                         Text(project.name, color = V2Colors.Ink, fontWeight = FontWeight.SemiBold)
                         if (project.note.isNotBlank()) Text(project.note, color = V2Colors.InkMuted)
                     }
