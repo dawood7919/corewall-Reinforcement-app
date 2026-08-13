@@ -70,6 +70,15 @@ internal class WorkspaceViewport {
         )
     }
 
+    /** يحوّل موضع اللمس مرة واحدة إلى إحداثيات وثيقة ثابتة ٠..١. */
+    fun screenToDocument(x: Float, y: Float): V2DocumentPoint? {
+        if (zoom <= 0f || pageWidthPt <= 0f || pageHeightPt <= 0f) return null
+        val pageX = (x - panX) / zoom
+        val pageY = (y - panY) / zoom
+        if (pageX !in 0f..pageWidthPt || pageY !in 0f..pageHeightPt) return null
+        return V2DocumentPoint(pageX / pageWidthPt, pageY / pageHeightPt)
+    }
+
     private fun clamp() {
         if (width == 0 || height == 0 || pageWidthPt <= 0f || pageHeightPt <= 0f) return
         val contentW = pageWidthPt * zoom

@@ -29,8 +29,17 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
         style = Paint.Style.STROKE
         strokeWidth = 1f
     }
+    private val measurements = V2MeasurementLayer()
+    private val overlay = V2OverlayLayer(measurements)
     private val gesture = GestureDetector(context, GestureListener())
     private val scaler = ScaleGestureDetector(context, ScaleListener())
+    private val stylus = V2StylusInput(
+        enabled = { measurements.capturesStylus },
+        onDown = { x, y, pressure, eraser -> dispatchStylusDown(x, y, pressure, eraser) },
+        onMove = { x, y, pressure -> dispatchStylusMove(x, y, pressure) },
+        onUp = { x, y, pressure -> dispatchStylusUp(x, y, pressure) },
+        onCancel = { measurements.cancelStylusStroke(); invalidate() }
+    )
 
     private var session: PdfDocumentSession? = null
     private var scheduler: V2TileScheduler? = null
@@ -73,6 +82,33 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
         session = null
     }
 
+    fun selectWorkspaceTool(tool: V2WorkspaceTool) {
+        measurements.selectTool(tool)
+        invalidate()
+    }
+
+    fun setMeasurementCalibration(calibration: V2PageCalibration) {
+        measurements.setCalibration(calibration)
+        invalidate()
+    }
+
+    fun finishMeasurement(): V2MeasurementFinishResult {
+        val result = measurements.finishMeasurement()
+        invalidate()
+        return result
+    }
+
+    fun undoMeasurementPoint(): Boolean {
+        val undone = measurements.undoLastDraftPoint()
+        if (undone) invalidate()
+        return undone
+    }
+
+    fun cancelMeasurement() {
+        measurements.cancelDraft()
+        invalidate()
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         viewport.updateViewport(w, h)
         schedule()
@@ -90,11 +126,13 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
         val sharpLevel = levelFor(viewport.zoom)
         drawLayer(canvas, current, (sharpLevel - 1).coerceAtLeast(0))
         drawLayer(canvas, current, sharpLevel)
+        overlay.draw(canvas, pageIndex, pageSize.width, pageSize.height, viewport.zoom)
         canvas.drawRect(0f, 0f, pageSize.width, pageSize.height, borderPaint)
         canvas.restore()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (stylus.handle(event)) return true
         scaler.onTouchEvent(event)
         gesture.onTouchEvent(event)
         if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
@@ -110,6 +148,25 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
 
     private fun schedule() {
         scheduler?.requestVisible(viewport, pageIndex, pageSize)
+    }
+
+    private fun dispatchStylusDown(x: Float, y: Float, pressure: Float, eraser: Boolean) {
+        viewport.screenToDocument(x, y)?.let { point ->
+            measurements.onStylusDown(point, pageIndex, pressure, eraser)
+            invalidate()
+        }
+    }
+
+    private fun dispatchStylusMove(x: Float, y: Float, pressure: Float) {
+        viewport.screenToDocument(x, y)?.let { point ->
+            measurements.onStylusMove(point, pageIndex, pressure)
+            invalidate()
+        }
+    }
+
+    private fun dispatchStylusUp(x: Float, y: Float, pressure: Float) {
+        measurements.onStylusUp(viewport.screenToDocument(x, y), pageIndex, pressure)
+        invalidate()
     }
 
     private fun drawLayer(canvas: Canvas, tiles: V2TileScheduler, level: Int) {
