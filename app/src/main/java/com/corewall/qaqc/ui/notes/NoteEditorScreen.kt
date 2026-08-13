@@ -47,6 +47,8 @@ import androidx.compose.material.icons.filled.HorizontalRule
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.PushPin
@@ -189,6 +191,8 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
 
     // ---- الصور / الملفات ----
     var pendingCamera by remember { mutableStateOf<File?>(null) }
+    var sketchFile by remember(note.id) { mutableStateOf<File?>(null) }
+    var audioFile by remember(note.id) { mutableStateOf<File?>(null) }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
             vm.files.importNoteImages(uris, note.level, note.elementId).also { vm.registerFiles(it, note.level) }.forEach {
@@ -343,7 +347,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                                     cursorBrush = SolidColor(accent),
                                     visualTransformation = transform,
-                                    decorationBox = { inner -> if (body.text.isEmpty()) Text("ابدأ الكتابة… استخدم شريط الأدوات تحت للتنسيق والصور.", style = MaterialTheme.typography.bodyLarge, color = muted); inner() },
+                                    decorationBox = { inner -> if (body.text.isEmpty()) Text("دوّن ما تراه، ثم أضف صورة أو رسمًا أو صوتًا من شريط الالتقاط.", style = MaterialTheme.typography.bodyLarge, color = muted); inner() },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(if (mode == Mode.SPLIT) 1000.dp else 1200.dp)
@@ -411,6 +415,17 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
 
             // ===== شريط الأدوات (فوق الكيبورد) =====
             if (mode != Mode.PREVIEW) {
+                NoteCaptureRail(
+                    onGallery = { gallery.launch(arrayOf("image/*")) },
+                    onCamera = {
+                        val f = vm.files.newImageFile(note.level, note.elementId)
+                        pendingCamera = f
+                        camera.launch(vm.files.uriFor(f))
+                    },
+                    onSketch = { sketchFile = vm.files.newNoteSketchFile(note.level, note.elementId) },
+                    onAudio = { audioFile = vm.files.newNoteAudioFile(note.level, note.elementId) },
+                    onFile = { filePicker.launch(arrayOf("*/*")) }
+                )
                 var calloutMenu by remember { mutableStateOf(false) }
                 Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, shadowElevation = 8.dp) {
                     Row(
@@ -456,13 +471,6 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                                 }
                             }
                         }
-                        TbDivider()
-                        Tb(Icons.Filled.PhotoLibrary, "صور", tint = accent) { gallery.launch(arrayOf("image/*")) }
-                        Tb(Icons.Filled.PhotoCamera, "كاميرا", tint = accent) {
-                            val f = vm.files.newImageFile(note.level, note.elementId)
-                            pendingCamera = f; camera.launch(vm.files.uriFor(f))
-                        }
-                        Tb(Icons.Filled.AttachFile, "ملف", tint = accent) { filePicker.launch(arrayOf("*/*")) }
                     }
                 }
             }
@@ -476,6 +484,66 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
             onDismiss = { optionsOpen = false },
             onNoteGone = { optionsOpen = false; onClose() }
         )
+    }
+
+    sketchFile?.let { file ->
+        NoteSketchSheet(
+            file = file,
+            onDismiss = { file.delete(); sketchFile = null },
+            onSaved = { saved ->
+                insert("\n![رسم ميداني](${saved.absolutePath})\n")
+                sketchFile = null
+            }
+        )
+    }
+    audioFile?.let { file ->
+        NoteAudioSheet(
+            file = file,
+            onDismiss = { file.delete(); audioFile = null },
+            onSaved = { saved ->
+                insert("\n[[audio:${saved.absolutePath}]]\n")
+                audioFile = null
+            }
+        )
+    }
+}
+
+/** شريط التقاط ميداني ظاهر؛ يفصل إضافة الوسائط عن تنسيق النص ويقلل البحث داخل القوائم. */
+@Composable
+private fun NoteCaptureRail(
+    onGallery: () -> Unit,
+    onCamera: () -> Unit,
+    onSketch: () -> Unit,
+    onAudio: () -> Unit,
+    onFile: () -> Unit
+) {
+    val c = com.corewall.qaqc.ui.design.LocalCwColors.current
+    Surface(color = c.surfaceAlt) {
+        LazyRow(
+            Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm)
+        ) {
+            item { CaptureTool(Icons.Filled.PhotoLibrary, "صورة", onGallery) }
+            item { CaptureTool(Icons.Filled.PhotoCamera, "كاميرا", onCamera) }
+            item { CaptureTool(Icons.Filled.Brush, "رسم", onSketch) }
+            item { CaptureTool(Icons.Filled.Mic, "صوت", onAudio) }
+            item { CaptureTool(Icons.Filled.AttachFile, "ملف", onFile) }
+        }
+    }
+}
+
+@Composable
+private fun CaptureTool(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val c = com.corewall.qaqc.ui.design.LocalCwColors.current
+    Surface(onClick = onClick, color = c.surface, shape = Radius.pill) {
+        Row(
+            Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.xs)
+        ) {
+            Icon(icon, null, tint = c.accent, modifier = Modifier.size(18.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, color = c.textPrimary)
+        }
     }
 }
 
@@ -502,7 +570,8 @@ private fun TbDivider() {
 private fun allMediaPaths(md: String): List<String> {
     val imgs = Regex("""!\[.*?]\((.+?)\)""").findAll(md).map { it.groupValues[1] }
     val files = Regex("""\[\[file:(.+?)]]""").findAll(md).map { it.groupValues[1] }
-    return (imgs + files).toList()
+    val audio = Regex("""\[\[audio:(.+?)]]""").findAll(md).map { it.groupValues[1] }
+    return (imgs + files + audio).toList()
 }
 
 /** يبدّل حالة سطر تشيك ليست معيّن. */

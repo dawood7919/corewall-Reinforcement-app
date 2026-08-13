@@ -187,11 +187,22 @@ class FilesManager(private val context: Context) {
         }
     }
 
+    /** المجلد الخاص بكل مرفقات ملاحظة؛ يُحذف مع الملاحظة من مسار التنظيف نفسه. */
+    fun noteMediaDir(level: String, elementId: String): File =
+        File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").ensure()
+
     /** ملف صورة جديد فاضي لالتقاط صورة بالكاميرا (جوّه مجلد صور الملاحظات). */
     fun newImageFile(level: String, elementId: String): File {
-        val dir = File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").ensure()
-        return File(dir, "IMG_${System.currentTimeMillis()}.jpg")
+        return File(noteMediaDir(level, elementId), "IMG_${System.currentTimeMillis()}.jpg")
     }
+
+    /** ملف PNG لرسم يدوي محفوظ كمرفق صورة داخل الملاحظة. */
+    fun newNoteSketchFile(level: String, elementId: String): File =
+        File(noteMediaDir(level, elementId), "SKETCH_${System.currentTimeMillis()}.png")
+
+    /** ملف M4A لتسجيل صوتي محلي مرتبط بالملاحظة. */
+    fun newNoteAudioFile(level: String, elementId: String): File =
+        File(noteMediaDir(level, elementId), "VOICE_${System.currentTimeMillis()}.m4a")
 
     /** ملف صورة جديد لالتقاط صورة موقع (Site Photos) — داخل المجلد الحالي. */
     fun newSitePhotoFile(level: String, folder: String = ""): File {
@@ -201,8 +212,7 @@ class FilesManager(private val context: Context) {
 
     /** نسخ صور مختارة من المعرض لمجلد صور الملاحظات — بترجع مساراتها. */
     fun importNoteImages(uris: List<Uri>, level: String, elementId: String): List<File> {
-        val dir = File(root, "notes/${sanitize(level)}/${sanitize(elementId)}").ensure()
-        return importUris(uris, dir)
+        return importUris(uris, noteMediaDir(level, elementId))
     }
 
     fun mimeOf(file: File): String {

@@ -161,6 +161,7 @@ fun NoteContent(
                 is NoteBlock.Callout -> CalloutCard(b, ic)
                 is NoteBlock.Image -> ImageCard(b.path, b.caption, onOpen = { onOpenImage(b.path) })
                 is NoteBlock.FileCard -> FileAttachmentCard(b.path, onOpen = { onOpenFile(b.path) })
+                is NoteBlock.Audio -> AudioAttachmentCard(b.path)
                 is NoteBlock.Table -> NoteTable(b, ic)
             }
         }

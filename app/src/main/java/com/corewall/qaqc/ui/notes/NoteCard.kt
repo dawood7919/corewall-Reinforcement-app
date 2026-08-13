@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -159,11 +161,13 @@ fun NoteCard(
                 )
             }
 
+            val imageCount = remember(note.body) { countImages(note.body) }
+            val audioCount = remember(note.body) { countAudio(note.body) }
             val hasFooter = labels.isNotEmpty() || note.reminderAt != null ||
-                note.noteType.isNotBlank()
+                note.noteType.isNotBlank() || imageCount > 0 || audioCount > 0
             if (hasFooter) {
                 Spacer(Modifier.height(Space.sm))
-                Footer(note, labels, secondary, tinted)
+                Footer(note, labels, secondary, tinted, imageCount, audioCount)
             }
         }
     }
@@ -217,7 +221,9 @@ private fun Footer(
     note: NoteEntity,
     labels: List<NoteLabelEntity>,
     secondary: Color,
-    tinted: Boolean
+    tinted: Boolean,
+    imageCount: Int,
+    audioCount: Int
 ) {
     val c = LocalCwColors.current
     Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
@@ -273,6 +279,21 @@ private fun Footer(
                         style = CwText.codeSmall,
                         color = secondary
                     )
+                }
+            }
+        }
+        if (imageCount > 0 || audioCount > 0) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
+                if (imageCount > 0) {
+                    Icon(Icons.Filled.Image, "$imageCount صورة أو رسم", tint = secondary, modifier = Modifier.size(IconSize.sm))
+                    Text("$imageCount", style = CwText.codeSmall, color = secondary)
+                }
+                if (audioCount > 0) {
+                    Icon(Icons.Filled.Mic, "$audioCount تسجيل صوتي", tint = secondary, modifier = Modifier.size(IconSize.sm))
+                    Text("$audioCount", style = CwText.codeSmall, color = secondary)
                 }
             }
         }

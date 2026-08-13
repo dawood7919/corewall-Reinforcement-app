@@ -50,11 +50,13 @@ sealed interface NoteBlock {
     data class Callout(val kind: CalloutKind, val title: String, val body: List<String>) : NoteBlock
     data class Image(val caption: String, val path: String) : NoteBlock
     data class FileCard(val path: String) : NoteBlock
+    data class Audio(val path: String) : NoteBlock
     data class Table(val header: List<String>, val rows: List<List<String>>) : NoteBlock
 }
 
 private val imageRegex = Regex("""^!\[(.*?)]\((.+?)\)\s*$""")
 private val fileRegex = Regex("""^\[\[file:(.+?)]]\s*$""")
+private val audioRegex = Regex("""^\[\[audio:(.+?)]]\s*$""")
 private val calloutRegex = Regex("""^>\s*\[!(\w+)]\s*(.*)$""")
 private val checkRegex = Regex("""^[-*]\s+\[( |x|X)]\s+(.*)$""")
 
@@ -110,6 +112,10 @@ fun parseNote(markdown: String): List<NoteBlock> {
 
             fileRegex.matches(line) -> {
                 blocks.add(NoteBlock.FileCard(fileRegex.find(line)!!.groupValues[1])); i++
+            }
+
+            audioRegex.matches(line) -> {
+                blocks.add(NoteBlock.Audio(audioRegex.find(line)!!.groupValues[1])); i++
             }
 
             trimmed == "---" || trimmed == "***" -> { blocks.add(NoteBlock.Divider); i++ }
@@ -224,7 +230,7 @@ fun notePreview(markdown: String): String {
     for (raw in markdown.split("\n")) {
         val l = raw.trim()
         if (l.isEmpty()) continue
-        if (imageRegex.matches(l) || fileRegex.matches(l) || l == "---") continue
+        if (imageRegex.matches(l) || fileRegex.matches(l) || audioRegex.matches(l) || l == "---") continue
         return l.replace(Regex("""[#>*_`~=\[\]]"""), "").trim().take(120)
     }
     return ""
@@ -232,3 +238,4 @@ fun notePreview(markdown: String): String {
 
 fun countImages(markdown: String) = markdown.split("\n").count { imageRegex.matches(it.trim()) }
 fun countFiles(markdown: String) = markdown.split("\n").count { fileRegex.matches(it.trim()) }
+fun countAudio(markdown: String) = markdown.split("\n").count { audioRegex.matches(it.trim()) }
