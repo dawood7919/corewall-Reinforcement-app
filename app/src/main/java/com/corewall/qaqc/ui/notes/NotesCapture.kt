@@ -92,7 +92,7 @@ fun NotesDrawingSheet(file: File, onDismiss: () -> Unit, onSaved: (File) -> Unit
     var saving by remember { mutableStateOf(false) }
     val colors = remember { listOf(c.textPrimary, c.accent, c.danger.fg, c.warning.fg, c.success.fg, Color(0xFF4D70FF)) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface, sheetGesturesEnabled = false) {
         Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") }
@@ -116,7 +116,7 @@ fun NotesDrawingSheet(file: File, onDismiss: () -> Unit, onSaved: (File) -> Unit
                     .border(1.dp, c.outline, Radius.shapeLg)
                     .pointerInteropFilter { event ->
                         val kind = pointerKindOf(event.getToolType(event.actionIndex.coerceAtLeast(0)))
-                        if (stylusOnly && !kind.isPen) return@pointerInteropFilter false
+                        if (stylusOnly && !kind.isPen) return@pointerInteropFilter true
                         when (event.actionMasked) {
                             MotionEvent.ACTION_DOWN -> {
                                 val base = if (tool == InkTool.ERASER) Color.White else color

@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.BottomAppBar
@@ -76,6 +79,9 @@ import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.debounce
 import java.io.File
 
@@ -94,6 +100,8 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
     var drawingFile by remember(note.id) { mutableStateOf<File?>(null) }
     var audioFile by remember(note.id) { mutableStateOf<File?>(null) }
     var pendingCamera by remember { mutableStateOf<File?>(null) }
+    var exporting by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val undo = remember(note.id) { ArrayDeque<NotesDocument>() }
     val redo = remember(note.id) { ArrayDeque<NotesDocument>() }
 
@@ -117,6 +125,14 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
         apply(document.copy(blocks = rows))
     }
     fun persist() = store.saveDocument(liveNote.copy(title = title), document)
+    fun focusedOrFirst(): NotesBlock? = document.blocks.firstOrNull { it.id == focusedBlock }
+        ?: document.blocks.firstOrNull { it.type in setOf(NotesBlock.TEXT, NotesBlock.HEADING, NotesBlock.QUOTE, NotesBlock.CHECKLIST) }
+    fun styleFocused(transform: (NotesBlock) -> NotesBlock) = focusedOrFirst()?.let { replace(transform(it)); focusedBlock = it.id }
+    fun mutateSpan(transform: (TextSpan) -> TextSpan) = styleFocused { block ->
+        val current = block.spans.firstOrNull { it.start == 0 && it.end == block.text.length }
+            ?: TextSpan(0, block.text.length)
+        block.copy(spans = listOf(transform(current)))
+    }
 
     LaunchedEffect(note.id) {
         snapshotFlow { title to document }.debounce(650).collect { persist() }
@@ -143,9 +159,20 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
             Surface(color = c.surface, shadowElevation = 1.dp) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { persist(); onClose() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") }
-                    Spacer(Modifier.weight(1f))
+                    Text(title.ifBlank { "ملاحظة جديدة" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
                     IconButton(onClick = { undo.removeLastOrNull()?.let { redo.addLast(document); document = it } }, enabled = undo.isNotEmpty()) { Icon(Icons.Filled.Undo, "تراجع") }
                     IconButton(onClick = { redo.removeLastOrNull()?.let { undo.addLast(document); document = it } }, enabled = redo.isNotEmpty()) { Icon(Icons.Filled.Redo, "إعادة") }
+                    IconButton(onClick = {
+                        if (exporting) return@IconButton
+                        exporting = true
+                        val frozen = document
+                        val name = title
+                        scope.launch(Dispatchers.IO) {
+                            val pdf = vm.files.newNotePdfFile(note.level, note.elementId)
+                            val ok = NotesPdfExporter.export(pdf, name, frozen)
+                            withContext(Dispatchers.Main) { exporting = false; if (ok) vm.files.share(pdf) }
+                        }
+                    }) { Icon(Icons.Filled.Share, if (exporting) "يُنشئ PDF" else "مشاركة PDF") }
                     IconButton(onClick = { showMore = true }) { Icon(Icons.Filled.MoreVert, "المزيد") }
                 }
             }
@@ -179,40 +206,27 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
                         onOpenImage = { vm.openImage(block.mediaPath) }
                     )
                 }
-                item("append") {
-                    Surface(onClick = { add(NotesBlock.text()) }, color = c.surfaceAlt, shape = Radius.pill) {
-                        Row(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Add, null, tint = c.accent); Spacer(Modifier.width(Space.xs)); Text("إضافة فقرة", color = c.accent, style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
-                }
+                item("append") { Spacer(Modifier.height(80.dp)) }
             }
 
             BottomAppBar(Modifier.imePadding(), containerColor = c.surface) {
-                IconButton(onClick = { gallery.launch(arrayOf("image/*")) }) { Icon(Icons.Filled.Image, "إضافة صورة") }
-                IconButton(onClick = {
-                    val f = vm.files.newImageFile(note.level, note.elementId)
-                    pendingCamera = f
-                    camera.launch(vm.files.uriFor(f))
-                }) { Icon(Icons.Filled.CameraAlt, "التقاط صورة") }
-                IconButton(onClick = { drawingFile = vm.files.newNoteSketchFile(note.level, note.elementId) }) { Icon(Icons.Filled.Draw, "رسم") }
-                IconButton(onClick = { audioFile = vm.files.newNoteAudioFile(note.level, note.elementId) }) { Icon(Icons.Filled.Mic, "تسجيل صوت") }
-                IconButton(onClick = { add(NotesBlock.checklist()) }) { Icon(Icons.Filled.CheckBox, "إضافة قائمة") }
-                IconButton(onClick = { showFormat = true }) { Icon(Icons.Filled.FormatBold, "تنسيق") }
-                IconButton(onClick = { showMore = true }) { Icon(Icons.Filled.MoreVert, "المزيد") }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    listOf(1, 2, 3).forEach { level -> EditorTextTool("H$level", active = focusedOrFirst()?.style?.headingLevel == level) { styleFocused { it.copy(style = it.style.copy(headingLevel = level)) } } }
+                    EditorIconTool(Icons.Filled.FormatBold, "غامق") { mutateSpan { it.copy(bold = !it.bold) } }
+                    EditorTextTool("مائل") { mutateSpan { it.copy(italic = !it.italic) } }
+                    listOf(c.textPrimary, c.accent, c.danger.fg).forEach { swatch -> EditorColorTool(swatch) { mutateSpan { it.copy(foregroundArgb = swatch.value.toLong()) } } }
+                    EditorIconTool(Icons.AutoMirrored.Filled.FormatListBulleted, "قائمة نقطية") { styleFocused { it.copy(style = it.style.copy(bullet = !it.style.bullet, numbered = false)) } }
+                    EditorIconTool(Icons.Filled.Image, "إضافة صورة") { gallery.launch(arrayOf("image/*")) }
+                    EditorIconTool(Icons.Filled.CameraAlt, "التقاط صورة") { val f = vm.files.newImageFile(note.level, note.elementId); pendingCamera = f; camera.launch(vm.files.uriFor(f)) }
+                    EditorIconTool(Icons.Filled.Draw, "رسم") { drawingFile = vm.files.newNoteSketchFile(note.level, note.elementId) }
+                    EditorIconTool(Icons.Filled.Mic, "تسجيل صوت") { audioFile = vm.files.newNoteAudioFile(note.level, note.elementId) }
+                    EditorIconTool(Icons.Filled.CheckBox, "قائمة تحقق") { add(NotesBlock.checklist()); focusedBlock = document.blocks.lastOrNull()?.id }
+                    EditorIconTool(Icons.Filled.Add, "فقرة") { add(NotesBlock.text()); focusedBlock = document.blocks.lastOrNull()?.id }
+                }
             }
         }
     }
 
-    if (showFormat) {
-        DocumentFormatSheet(
-            block = document.blocks.firstOrNull { it.id == focusedBlock },
-            onDismiss = { showFormat = false },
-            onStyle = { style, spans ->
-                document.blocks.firstOrNull { it.id == focusedBlock }?.let { replace(it.copy(style = style, spans = spans)) }
-            }
-        )
-    }
     if (showMore) {
         NoteActionsSheet(
             note = liveNote.copy(title = title),
@@ -254,11 +268,20 @@ private fun DocumentEditorBlock(
     onOpenImage: () -> Unit
 ) {
     val c = LocalCwColors.current
-    val textStyle = when (block.type) {
-        NotesBlock.HEADING -> MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+    val allTextSpan = block.spans.firstOrNull { it.start == 0 && it.end == block.text.length }
+    val baseTextStyle = when {
+        block.style.headingLevel == 1 -> MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
+        block.style.headingLevel == 2 -> MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+        block.style.headingLevel == 3 -> MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+        block.type == NotesBlock.HEADING -> MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
         NotesBlock.QUOTE -> MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)
         else -> MaterialTheme.typography.bodyLarge
     }
+    val textStyle = baseTextStyle.copy(
+        fontWeight = if (allTextSpan?.bold == true) FontWeight.Bold else baseTextStyle.fontWeight,
+        fontStyle = if (allTextSpan?.italic == true) FontStyle.Italic else baseTextStyle.fontStyle,
+        color = allTextSpan?.foregroundArgb?.let { Color(it) } ?: c.textPrimary
+    )
     Surface(color = if (focused) c.surfaceAlt else Color.Transparent, shape = Radius.shapeMd, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(if (focused) Space.sm else 0.dp), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
             when (block.type) {

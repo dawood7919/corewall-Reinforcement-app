@@ -204,6 +204,10 @@ class FilesManager(private val context: Context) {
     fun newNoteAudioFile(level: String, elementId: String): File =
         File(noteMediaDir(level, elementId), "VOICE_${System.currentTimeMillis()}.m4a")
 
+    /** ملف PDF مُصدّر من وثيقة ملاحظة، في نفس نطاق مرفقات الملاحظة. */
+    fun newNotePdfFile(level: String, elementId: String): File =
+        File(noteMediaDir(level, elementId), "NOTE_${System.currentTimeMillis()}.pdf")
+
     /** ملف صورة جديد لالتقاط صورة موقع (Site Photos) — داخل المجلد الحالي. */
     fun newSitePhotoFile(level: String, folder: String = ""): File {
         val dir = sitePhotosDir(level, folder)
