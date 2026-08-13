@@ -440,6 +440,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun createNoteForCapture(action: NotesStore.CaptureAction, elementId: String = FLOOR_NOTE_ID) {
+        notesStore.requestCapture(action)
+        createNote(NoteEntity.KIND_TEXT, elementId)
+    }
+
     private val _editingNote = MutableStateFlow<NoteEntity?>(null)
     val editingNote: StateFlow<NoteEntity?> = _editingNote
 

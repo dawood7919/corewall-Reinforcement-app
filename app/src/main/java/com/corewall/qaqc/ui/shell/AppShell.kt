@@ -93,7 +93,7 @@ import com.corewall.qaqc.ui.home.UnifiedSheet
 import com.corewall.qaqc.ui.manpower.AttendanceFileDetailScreen
 import com.corewall.qaqc.ui.manpower.ManpowerScreen
 import com.corewall.qaqc.ui.nav.Dest
-import com.corewall.qaqc.ui.notes.ImageViewerScreen
+import com.corewall.qaqc.ui.media.ImageViewerScreen
 import com.corewall.qaqc.ui.notes.NoteEditorScreen
 import com.corewall.qaqc.ui.notes.NotesScreen
 import com.corewall.qaqc.ui.takeoff.TakeoffDrawingsScreen

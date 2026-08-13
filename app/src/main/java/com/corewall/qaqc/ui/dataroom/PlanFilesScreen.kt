@@ -150,10 +150,13 @@ fun DataSheetContent(vm: MainViewModel, element: PlanElement) {
 
 @Composable
 private fun NoteCard(note: com.corewall.qaqc.data.db.NoteEntity, onClick: () -> Unit) {
-    val preview = com.corewall.qaqc.ui.notes.notePreview(note.body)
-    val imgs = com.corewall.qaqc.ui.notes.countImages(note.body)
-    val fls = com.corewall.qaqc.ui.notes.countFiles(note.body)
-    val (done, total) = com.corewall.qaqc.ui.notes.checklistProgress(note.body)
+    val document = com.corewall.qaqc.notes.NotesDocumentCodec.decode(note)
+    val preview = com.corewall.qaqc.notes.NotesDocumentCodec.summary(document).lineSequence().firstOrNull().orEmpty()
+    val imgs = document.blocks.count { it.type == com.corewall.qaqc.notes.NotesBlock.IMAGE || it.type == com.corewall.qaqc.notes.NotesBlock.DRAWING }
+    val fls = document.blocks.count { it.type == com.corewall.qaqc.notes.NotesBlock.LINK }
+    val checklist = document.blocks.filter { it.type == com.corewall.qaqc.notes.NotesBlock.CHECKLIST }
+    val done = checklist.count { it.checked }
+    val total = checklist.size
     val dateFmt = remember { java.text.SimpleDateFormat("dd/MM · HH:mm", java.util.Locale.ENGLISH) }
 
     androidx.compose.material3.Surface(

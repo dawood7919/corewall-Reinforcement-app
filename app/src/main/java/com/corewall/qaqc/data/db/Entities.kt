@@ -143,6 +143,8 @@ data class NoteEntity(
     val title: String = "",
     val body: String = "",
     val imagePathsJson: String = "[]",
+    /** وثيقة الملاحظة متعددة الكتل؛ body ملخص نصي متوافق مع البيانات القديمة. */
+    val documentJson: String = "",
     val createdAt: Long,
     val updatedAt: Long,
 
