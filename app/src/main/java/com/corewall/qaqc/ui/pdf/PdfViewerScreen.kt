@@ -66,7 +66,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.corewall.qaqc.BuildConfig
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.PdfMeasurementEntity
@@ -162,12 +161,12 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     val engine = remember(active) { TileEngine(active, TileEngine.budgetFor(context)) }
     val thumbs = remember(active) { ThumbnailCache(active) }
     var perfSnapshot by remember(active) { mutableStateOf(engine.performanceSnapshot()) }
-    if (BuildConfig.DEBUG) {
-        LaunchedEffect(engine) {
-            while (isActive) {
-                delay(PERF_SAMPLE_INTERVAL_MS)
-                perfSnapshot = engine.performanceSnapshot()
-            }
+    var perfVisible by remember(path) { mutableStateOf(true) }
+    LaunchedEffect(engine, perfVisible) {
+        if (!perfVisible) return@LaunchedEffect
+        while (isActive) {
+            delay(PERF_SAMPLE_INTERVAL_MS)
+            perfSnapshot = engine.performanceSnapshot()
         }
     }
     DisposableEffect(active) {
@@ -673,7 +672,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 }
             )
 
-            if (BuildConfig.DEBUG) {
+            if (perfVisible) {
                 PdfPerfHud(
                     snapshot = perfSnapshot,
                     modifier = Modifier
@@ -728,6 +727,8 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     onWatermark = { watermarkOpen = true },
                     onMerge = { mergeOpen = true },
                     onSplit = { splitOpen = true },
+                    perfVisible = perfVisible,
+                    onTogglePerf = { perfVisible = !perfVisible },
                     onToggleRail = { railVisible = !railVisible },
                     onToggleMode = {
                         state.setMode(
@@ -1296,6 +1297,8 @@ private fun TopChrome(
     onWatermark: () -> Unit,
     onMerge: () -> Unit,
     onSplit: () -> Unit,
+    perfVisible: Boolean,
+    onTogglePerf: () -> Unit,
     onToggleRail: () -> Unit,
     onToggleMode: () -> Unit,
     onExport: () -> Unit
@@ -1361,6 +1364,10 @@ private fun TopChrome(
                             )
                         },
                         onClick = { menuOpen = false; onToggleMode() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (perfVisible) "إخفاء مؤشرات الأداء" else "إظهار مؤشرات الأداء") },
+                        onClick = { menuOpen = false; onTogglePerf() }
                     )
                     DropdownMenuItem(
                         text = { Text("تنظيم الصفحات") },
