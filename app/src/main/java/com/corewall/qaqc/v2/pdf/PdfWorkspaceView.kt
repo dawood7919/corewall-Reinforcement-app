@@ -116,8 +116,8 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
         val scale = scaleFor(level)
         val step = TILE_PX / scale
         val visible = viewport.visiblePageRect()
-        val maxCol = ((ceil(pageSize.width * scale).toInt() - 1) / TILE_PX).coerceAtLeast(0)
-        val maxRow = ((ceil(pageSize.height * scale).toInt() - 1) / TILE_PX).coerceAtLeast(0)
+        val maxCol = ((ceil(pageSize.width * scale).toInt() - 1) / TILE_PX.toInt()).coerceAtLeast(0)
+        val maxRow = ((ceil(pageSize.height * scale).toInt() - 1) / TILE_PX.toInt()).coerceAtLeast(0)
         val fromCol = floor(visible.left / step).toInt().coerceIn(0, maxCol)
         val toCol = floor(visible.right / step).toInt().coerceIn(0, maxCol)
         val fromRow = floor(visible.top / step).toInt().coerceIn(0, maxRow)
