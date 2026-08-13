@@ -4,8 +4,22 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import com.corewall.qaqc.takeoff.TakeoffTool
 import java.util.Locale
 import kotlin.math.max
+
+/** نسخة خفيفة من بند Room تصل إلى Canvas فقط عند تغيّر البيانات المحفوظة. */
+internal data class V2PersistedTakeoffItem(
+    val id: Long,
+    val page: Int,
+    val tool: TakeoffTool,
+    val points: List<V2DocumentPoint>,
+    val extraRings: List<List<V2DocumentPoint>>,
+    val extraSegments: List<List<V2DocumentPoint>>,
+    val colorArgb: Long,
+    val visible: Boolean,
+    val calibration: V2PageCalibration
+)
 
 /** طبقة Canvas مستقلة فوق PDF: لا تطلب رندر مستند ولا تنشئ Bitmap. */
 internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
@@ -28,6 +42,11 @@ internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
         textAlign = Paint.Align.CENTER
     }
     private val labelRect = RectF()
+    private var activeMeasurementColor = 0xFF37D89B.toInt()
+
+    fun setActiveMeasurementColor(colorArgb: Long) {
+        activeMeasurementColor = colorArgb.toInt()
+    }
 
     fun draw(canvas: Canvas, page: Int, pageWidthPt: Float, pageHeightPt: Float, zoom: Float) {
         state.measurements.forEach { record ->
@@ -44,6 +63,62 @@ internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
         }
     }
 
+    /** يرسم نسخة البنود القادمة من Room من دون إنشاء Bitmap أو Compose state. */
+    fun drawPersisted(
+        canvas: Canvas,
+        items: List<V2PersistedTakeoffItem>,
+        page: Int,
+        pageWidthPt: Float,
+        pageHeightPt: Float,
+        zoom: Float
+    ) {
+        items.forEach { item ->
+            if (!item.visible || item.page != page || item.points.isEmpty()) return@forEach
+            val kind = item.tool.toMeasurementKind() ?: return@forEach
+            val paths = buildList {
+                add(item.points)
+                addAll(item.extraRings)
+                addAll(item.extraSegments)
+            }
+            paths.forEach { points ->
+                drawShape(
+                    canvas = canvas,
+                    kind = kind,
+                    points = points,
+                    pageWidthPt = pageWidthPt,
+                    pageHeightPt = pageHeightPt,
+                    zoom = zoom,
+                    color = item.colorArgb.toInt(),
+                    preview = false
+                )
+            }
+            if (item.tool.isQuantity) {
+                val quantities = paths.map { points ->
+                    V2MeasurementMath.quantity(
+                        V2MeasurementRecord(
+                            id = item.id,
+                            page = item.page,
+                            kind = kind,
+                            points = points,
+                            calibration = item.calibration
+                        ),
+                        pageWidthPt,
+                        pageHeightPt
+                    )
+                }
+                drawLabel(
+                    canvas = canvas,
+                    kind = kind,
+                    points = item.points,
+                    value = if (quantities.any { it == null }) null else quantities.filterNotNull().sum(),
+                    pageWidthPt = pageWidthPt,
+                    pageHeightPt = pageHeightPt,
+                    zoom = zoom
+                )
+            }
+        }
+    }
+
     private fun drawMeasurement(
         canvas: Canvas,
         record: V2MeasurementRecord,
@@ -52,8 +127,7 @@ internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
         zoom: Float,
         preview: Boolean
     ) {
-        val color = colorFor(record.kind)
-        drawShape(canvas, record.kind, record.points, pageWidthPt, pageHeightPt, zoom, color, preview)
+        drawShape(canvas, record.kind, record.points, pageWidthPt, pageHeightPt, zoom, activeMeasurementColor, preview)
         if (!preview) {
             val value = V2MeasurementMath.quantity(record, pageWidthPt, pageHeightPt)
             drawLabel(canvas, record.kind, record.points, value, pageWidthPt, pageHeightPt, zoom)
@@ -67,7 +141,7 @@ internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
         pageHeightPt: Float,
         zoom: Float
     ) {
-        drawShape(canvas, draft.kind, draft.points, pageWidthPt, pageHeightPt, zoom, colorFor(draft.kind), preview = true)
+        drawShape(canvas, draft.kind, draft.points, pageWidthPt, pageHeightPt, zoom, activeMeasurementColor, preview = true)
     }
 
     private fun drawShape(
@@ -161,10 +235,10 @@ internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
         if (close) path.close()
     }
 
-    private fun colorFor(kind: V2MeasurementKind): Int = when (kind) {
-        V2MeasurementKind.AREA -> 0xFF37D89B.toInt()
-        V2MeasurementKind.LENGTH -> 0xFF4FC3F7.toInt()
-        V2MeasurementKind.COUNT -> 0xFFFFC857.toInt()
-        V2MeasurementKind.VOLUME -> 0xFFB487FF.toInt()
+    private fun TakeoffTool.toMeasurementKind(): V2MeasurementKind? = when (this) {
+        TakeoffTool.AREA, TakeoffTool.DEDUCT -> V2MeasurementKind.AREA
+        TakeoffTool.LENGTH, TakeoffTool.DIMENSION -> V2MeasurementKind.LENGTH
+        TakeoffTool.COUNT, TakeoffTool.COLUMN -> V2MeasurementKind.COUNT
+        TakeoffTool.VOLUME -> V2MeasurementKind.VOLUME
     }
 }

@@ -85,6 +85,7 @@ internal class V2MeasurementLayer {
     private var activeDraft: V2MeasurementDraft? = null
     private var activeInk: MutableInkStroke? = null
     private var nextMeasurementId = 1L
+    private var commitCountsImmediately = true
 
     val tool: V2WorkspaceTool get() = selectedTool
     val capturesStylus: Boolean get() = selectedTool != V2WorkspaceTool.NAVIGATE || activeInk != null
@@ -99,6 +100,11 @@ internal class V2MeasurementLayer {
 
     fun setCalibration(value: V2PageCalibration) {
         calibration = value
+    }
+
+    /** يتيح للمحرر تجميع علامات العد في بند واحد حتى يضغط المستخدم «إنهاء». */
+    fun setCommitCountsImmediately(value: Boolean) {
+        commitCountsImmediately = value
     }
 
     fun onStylusDown(point: V2DocumentPoint, page: Int, pressure: Float, isEraser: Boolean) {
@@ -181,9 +187,14 @@ internal class V2MeasurementLayer {
         if (activeInk?.page == page) activeInk = null
     }
 
+    /** يزيل سجلًا سُلِّم بنجاح إلى Room كي لا يظهر مرتين فوق الرسم. */
+    fun discardCompletedMeasurement(id: Long) {
+        completedMeasurements.removeAll { it.id == id }
+    }
+
     private fun beginMeasurementPoint(point: V2DocumentPoint, page: Int) {
         val kind = selectedTool.measurementKind ?: return
-        if (kind == V2MeasurementKind.COUNT) {
+        if (kind == V2MeasurementKind.COUNT && commitCountsImmediately) {
             completedMeasurements += V2MeasurementRecord(
                 id = nextMeasurementId++,
                 page = page,

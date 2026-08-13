@@ -45,6 +45,7 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
     private var scheduler: V2TileScheduler? = null
     private var pageIndex = 0
     private var pageSize = SizePt.A4
+    private var persistedItems: List<V2PersistedTakeoffItem> = emptyList()
 
     /** يستدعى مرة واحدة بعد فتح جلسة، ولا يملك إغلاق الجلسة نفسها. */
     fun bind(document: PdfDocumentSession, page: Int) {
@@ -92,6 +93,37 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
         invalidate()
     }
 
+    fun setCountCommitImmediately(value: Boolean) {
+        measurements.setCommitCountsImmediately(value)
+    }
+
+    fun setMeasurementColor(colorArgb: Long) {
+        overlay.setActiveMeasurementColor(colorArgb)
+        invalidate()
+    }
+
+    fun setPersistedItems(items: List<V2PersistedTakeoffItem>) {
+        persistedItems = items
+        invalidate()
+    }
+
+    fun acknowledgeMeasurementPersisted(id: Long) {
+        measurements.discardCompletedMeasurement(id)
+        invalidate()
+    }
+
+    fun zoomBy(factor: Float) {
+        viewport.zoomAbout(factor, viewport.width / 2f, viewport.height / 2f)
+        schedule()
+        invalidate()
+    }
+
+    fun fitPage() {
+        viewport.fitWidth()
+        schedule()
+        invalidate()
+    }
+
     fun finishMeasurement(): V2MeasurementFinishResult {
         val result = measurements.finishMeasurement()
         invalidate()
@@ -126,6 +158,7 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
         val sharpLevel = levelFor(viewport.zoom)
         drawLayer(canvas, current, (sharpLevel - 1).coerceAtLeast(0))
         drawLayer(canvas, current, sharpLevel)
+        overlay.drawPersisted(canvas, persistedItems, pageIndex, pageSize.width, pageSize.height, viewport.zoom)
         overlay.draw(canvas, pageIndex, pageSize.width, pageSize.height, viewport.zoom)
         canvas.drawRect(0f, 0f, pageSize.width, pageSize.height, borderPaint)
         canvas.restore()

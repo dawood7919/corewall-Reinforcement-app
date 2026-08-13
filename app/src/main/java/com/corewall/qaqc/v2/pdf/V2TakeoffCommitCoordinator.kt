@@ -13,7 +13,8 @@ internal class V2TakeoffCommitCoordinator(
     suspend fun persist(
         finish: V2MeasurementFinishResult,
         name: String,
-        colorArgb: Long
+        colorArgb: Long,
+        categoryId: Long? = null
     ): V2TakeoffCommitResult = when (finish) {
         V2MeasurementFinishResult.NoDraft -> V2TakeoffCommitResult.NothingToSave
         is V2MeasurementFinishResult.Incomplete -> V2TakeoffCommitResult.Incomplete(finish.message)
@@ -23,7 +24,7 @@ internal class V2TakeoffCommitCoordinator(
                 name = name,
                 colorArgb = colorArgb,
                 encodePoints = store::encodeRing
-            )
+            ).copy(categoryId = categoryId)
             V2TakeoffCommitResult.Persisted(store.saveItem(entity))
         }
     }

@@ -23,6 +23,26 @@ internal class V2WorkspaceController {
         workspace?.setMeasurementCalibration(calibration)
     }
 
+    fun setCountCommitImmediately(value: Boolean) {
+        workspace?.setCountCommitImmediately(value)
+    }
+
+    fun setMeasurementColor(colorArgb: Long) {
+        workspace?.setMeasurementColor(colorArgb)
+    }
+
+    fun acknowledgeMeasurementPersisted(id: Long) {
+        workspace?.acknowledgeMeasurementPersisted(id)
+    }
+
+    fun zoomBy(factor: Float) {
+        workspace?.zoomBy(factor)
+    }
+
+    fun fitPage() {
+        workspace?.fitPage()
+    }
+
     fun finishMeasurement(): V2MeasurementFinishResult =
         workspace?.finishMeasurement() ?: V2MeasurementFinishResult.NoDraft
 

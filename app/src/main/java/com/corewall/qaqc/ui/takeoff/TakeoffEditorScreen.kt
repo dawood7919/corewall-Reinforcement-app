@@ -111,6 +111,15 @@ import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Sizes
 import com.corewall.qaqc.ui.design.Space
 import com.corewall.qaqc.ui.design.Stroke as DesignStroke
+import com.corewall.qaqc.v2.pdf.V2DocumentPoint
+import com.corewall.qaqc.v2.pdf.V2MeasurementFinishResult
+import com.corewall.qaqc.v2.pdf.V2PageCalibration
+import com.corewall.qaqc.v2.pdf.V2PdfWorkspaceHost
+import com.corewall.qaqc.v2.pdf.V2PersistedTakeoffItem
+import com.corewall.qaqc.v2.pdf.V2TakeoffCommitCoordinator
+import com.corewall.qaqc.v2.pdf.V2TakeoffCommitResult
+import com.corewall.qaqc.v2.pdf.V2WorkspaceController
+import com.corewall.qaqc.v2.pdf.toV2WorkspaceTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -152,6 +161,15 @@ private enum class EditorMode { POINTER, DRAW, RECT, VERTEX, BOXSELECT }
  * تحرير مختلف ([EditorMode.RECT] بدل [EditorMode.DRAW]).
  */
 private data class PendingNaming(val tool: TakeoffTool, val viaRect: Boolean = false)
+
+/** بيانات البند المحجوزة لقياس V2 قبل حفظ هندسته النهائية في Room. */
+private data class PendingV2Measurement(
+    val tool: TakeoffTool,
+    val name: String,
+    val categoryId: Long?,
+    val colorArgb: Long,
+    val thicknessMetres: Double?
+)
 
 /** لون ثابت لخطوط القياس المرجعية — مميّز عن باليت البنود وعن رمادي الخصم. */
 private const val DIMENSION_COLOR = 0xFF42A5F5L
@@ -207,6 +225,8 @@ fun TakeoffEditorScreen(
     DisposableEffect(active) { onDispose { engine.clear() } }
 
     val state = remember(active) { PdfViewerState(active.pageCount) }
+    val v2Controller = remember { V2WorkspaceController() }
+    val v2CommitCoordinator = remember(drawingId) { V2TakeoffCommitCoordinator(drawingId, vm.takeoff) }
     val measured by active.measuredCount.collectAsStateWithLifecycle()
 
     LaunchedEffect(measured, state.mode) {
@@ -281,6 +301,7 @@ fun TakeoffEditorScreen(
     var pendingNaming by remember { mutableStateOf<PendingNaming?>(null) }
     /** بند اتسمّى واتحجز ID له بس لسه ماترسمش — بيتحدّث بالهندسة عند الحفظ. */
     var pendingDrawItemId by remember { mutableStateOf<Long?>(null) }
+    var pendingV2Measurement by remember { mutableStateOf<PendingV2Measurement?>(null) }
     var editingItem by remember { mutableStateOf<TakeoffItem?>(null) }
     var snapEnabled by remember { mutableStateOf(true) }
     /** رسالة جلسة القياس؛ تمنع الإنهاء الناقص من الظهور كفقدان صامت للرسم. */
@@ -332,6 +353,8 @@ fun TakeoffEditorScreen(
     var vertexFocusTarget by remember { mutableStateOf<TakeoffVertexTarget?>(null) }
 
     fun clearDrafts() {
+        v2Controller.cancelMeasurement()
+        pendingV2Measurement = null
         draft.clear()
         draftPage.intValue = -1
         dimDragPoint = null
@@ -683,6 +706,50 @@ fun TakeoffEditorScreen(
     val calibrationColour = c.accent
     val draftPoints = draft.toList()
     val activeDraftTool = if (deductFor != null) TakeoffTool.DEDUCT else tool
+    val selectedV2Tool = tool.toV2WorkspaceTool()
+    val usesV2Workspace = mode == EditorMode.DRAW &&
+        !calibrating &&
+        annotationTool == null &&
+        deductFor == null &&
+        addToShapeFor == null &&
+        selectedV2Tool != null &&
+        pendingV2Measurement?.tool == tool
+    val v2PersistedItems = remember(pageItems, pageGeometry) {
+        pageItems.mapNotNull { item ->
+            item.tool.toV2WorkspaceTool()?.let {
+                V2PersistedTakeoffItem(
+                    id = item.id.toLongOrNull() ?: Long.MIN_VALUE,
+                    page = item.page,
+                    tool = item.tool,
+                    points = item.verts.map { point -> V2DocumentPoint(point.x.toFloat(), point.y.toFloat()) },
+                    extraRings = item.extraRings.map { ring ->
+                        ring.map { point -> V2DocumentPoint(point.x.toFloat(), point.y.toFloat()) }
+                    },
+                    extraSegments = item.extraSegments.map { segment ->
+                        segment.map { point -> V2DocumentPoint(point.x.toFloat(), point.y.toFloat()) }
+                    },
+                    colorArgb = item.colorArgb,
+                    visible = item.visible,
+                    calibration = V2PageCalibration(
+                        metresPerPoint = pageGeometry.metresPerPoint,
+                        thicknessMetres = item.thickness
+                    )
+                )
+            }
+        }
+    }
+    LaunchedEffect(usesV2Workspace, selectedV2Tool, pageGeometry, pendingV2Measurement) {
+        if (usesV2Workspace && selectedV2Tool != null) {
+            v2Controller.selectTool(selectedV2Tool)
+            v2Controller.setCountCommitImmediately(false)
+            v2Controller.setCalibration(
+                V2PageCalibration(
+                    metresPerPoint = pageGeometry.metresPerPoint,
+                    thicknessMetres = pendingV2Measurement?.thicknessMetres
+                )
+            )
+        }
+    }
     val liveReadout = measurementNotice ?: when {
         draftPoints.isEmpty() -> null
         activeDraftTool == TakeoffTool.COUNT || activeDraftTool == TakeoffTool.COLUMN ->
@@ -695,10 +762,48 @@ fun TakeoffEditorScreen(
             "مساحة حية: ${formatQuantity(TakeoffTool.AREA, TakeoffMath.area(draftPoints, pageGeometry))}"
         else -> "ضع النقطة التالية (${draftPoints.size})"
     }
+    val displayedReadout = if (usesV2Workspace) {
+        measurementNotice ?: "ارسم بالقلم ثم اضغط إنهاء للحفظ"
+    } else {
+        liveReadout
+    }
+
+    fun finishV2Measurement() {
+        val pending = pendingV2Measurement ?: return
+        val finished = v2Controller.finishMeasurement()
+        val finishedRecordId = (finished as? V2MeasurementFinishResult.Saved)?.record?.id
+        scope.launch {
+            when (val result = v2CommitCoordinator.persist(
+                finish = finished,
+                name = pending.name,
+                colorArgb = pending.colorArgb,
+                categoryId = pending.categoryId
+            )) {
+                is V2TakeoffCommitResult.Persisted -> {
+                    finishedRecordId?.let(v2Controller::acknowledgeMeasurementPersisted)
+                    pendingV2Measurement = null
+                    measurementNotice = null
+                    mode = EditorMode.POINTER
+                }
+                is V2TakeoffCommitResult.Incomplete -> measurementNotice = result.message
+                V2TakeoffCommitResult.NothingToSave -> measurementNotice = "ارسم بالقلم أولاً قبل الحفظ"
+            }
+        }
+    }
 
     Surface(Modifier.fillMaxSize(), color = c.background) {
         Box(Modifier.fillMaxSize()) {
-            PdfCanvas(
+            if (usesV2Workspace) {
+                V2PdfWorkspaceHost(
+                    session = active,
+                    page = state.currentPage,
+                    modifier = Modifier.fillMaxSize(),
+                    controller = v2Controller,
+                    persistedItems = v2PersistedItems,
+                    activeMeasurementColorArgb = pendingV2Measurement?.colorArgb ?: TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size],
+                    commitCountsImmediately = false
+                )
+            } else PdfCanvas(
                 state = state,
                 engine = engine,
                 session = active,
@@ -982,6 +1087,14 @@ fun TakeoffEditorScreen(
                 page = state.currentPage + 1,
                 pageCount = active.pageCount,
                 onBack = onClose,
+                onPreviousPage = {
+                    endSession()
+                    state.goToPage(state.currentPage - 1)
+                },
+                onNextPage = {
+                    endSession()
+                    state.goToPage(state.currentPage + 1)
+                },
                 onTotals = { totalsOpen = true },
                 onCalibrate = { endSession(); calibrating = true },
                 onSettings = { settingsOpen = true },
@@ -989,9 +1102,17 @@ fun TakeoffEditorScreen(
             )
 
             TakeoffFloatingZoomControls(
-                onZoomIn = { state.zoomBy(1.25f, Offset(state.viewport.width / 2f, state.viewport.height / 2f)) },
-                onZoomOut = { state.zoomBy(0.8f, Offset(state.viewport.width / 2f, state.viewport.height / 2f)) },
-                onFit = { state.fitPage() },
+                onZoomIn = {
+                    if (usesV2Workspace) v2Controller.zoomBy(1.25f)
+                    else state.zoomBy(1.25f, Offset(state.viewport.width / 2f, state.viewport.height / 2f))
+                },
+                onZoomOut = {
+                    if (usesV2Workspace) v2Controller.zoomBy(0.8f)
+                    else state.zoomBy(0.8f, Offset(state.viewport.width / 2f, state.viewport.height / 2f))
+                },
+                onFit = {
+                    if (usesV2Workspace) v2Controller.fitPage() else state.fitPage()
+                },
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(Space.md)
@@ -1040,8 +1161,8 @@ fun TakeoffEditorScreen(
                         deducting = deductFor != null,
                         calibrated = pageGeometry.calibrated,
                         snapEnabled = snapEnabled,
-                        liveReadout = liveReadout,
-                        hasDraft = draft.isNotEmpty() || annotationDraft.isNotEmpty(),
+                        liveReadout = displayedReadout,
+                        hasDraft = if (usesV2Workspace) pendingV2Measurement != null else draft.isNotEmpty() || annotationDraft.isNotEmpty(),
                         selected = selectedId != null,
                         canAddToShape = selectedItem?.tool.let {
                             it == TakeoffTool.AREA || it == TakeoffTool.VOLUME || it == TakeoffTool.LENGTH
@@ -1052,11 +1173,21 @@ fun TakeoffEditorScreen(
                             focusedVertices.size > minVertsFor(selectedItem.tool),
                         multiCount = multiSelectedIds.size,
                         onPointer = { endSession() },
-                        onUndo = { undoLastDraftPoint() },
+                        onUndo = {
+                            if (usesV2Workspace) {
+                                if (!v2Controller.undoMeasurementPoint()) measurementNotice = "لا توجد نقطة للتراجع"
+                            } else undoLastDraftPoint()
+                        },
                         onToggleSnap = { snapEnabled = !snapEnabled },
                         onPick = { picked -> pickTool(picked) },
                         onMore = { toolsSheetOpen = true },
-                        onDone = { if (annotationTool != null) finishAnnotation() else commit() },
+                        onDone = {
+                            when {
+                                usesV2Workspace -> finishV2Measurement()
+                                annotationTool != null -> finishAnnotation()
+                                else -> commit()
+                            }
+                        },
                         onAddToShape = {
                             val target = selectedItem
                             if (target != null) {
@@ -1168,6 +1299,22 @@ fun TakeoffEditorScreen(
             },
             onConfirm = { name, categoryId, colorArgb, thickness, colLength, colWidth, colHeight ->
                 pendingNaming = null
+                if (!naming.viaRect && naming.tool.toV2WorkspaceTool() != null) {
+                    // أدوات V2 تحفظ مرة واحدة عند «إنهاء»؛ لا ننشئ صفاً فارغاً
+                    // حتى لا يبقى بند شبح عند إلغاء مسودة القلم.
+                    pendingV2Measurement = PendingV2Measurement(
+                        tool = naming.tool,
+                        name = name,
+                        categoryId = categoryId,
+                        colorArgb = colorArgb,
+                        thicknessMetres = thickness
+                    )
+                    mode = EditorMode.DRAW
+                    tool = naming.tool
+                    measurementNotice = null
+                    colourIndex++
+                    return@TakeoffNameSheet
+                }
                 // البند بيتحجز في القاعدة دلوقتي، من غير هندسة لسه — عشان
                 // الـID يبقى موجود من الأول للصيغ. وضع الرسم مايتفعّلش إلا
                 // لما الـID يرجع فعلاً، عشان مفيش سباق بين اللمسة الأولى
@@ -1294,6 +1441,8 @@ private fun TakeoffTopBar(
     page: Int,
     pageCount: Int,
     onBack: () -> Unit,
+    onPreviousPage: () -> Unit,
+    onNextPage: () -> Unit,
     onTotals: () -> Unit,
     onCalibrate: () -> Unit,
     onSettings: () -> Unit,
@@ -1323,6 +1472,20 @@ private fun TakeoffTopBar(
                 )
             }
             CwIconButton(Icons.Filled.Straighten, "معايرة المقياس", onCalibrate)
+            if (pageCount > 1) {
+                CwIconButton(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    "الصفحة السابقة",
+                    onPreviousPage,
+                    enabled = page > 1
+                )
+                CwIconButton(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    "الصفحة التالية",
+                    onNextPage,
+                    enabled = page < pageCount
+                )
+            }
             CwIconButton(Icons.Filled.Functions, "الإجماليات", onTotals)
             CwIconButton(Icons.Filled.Settings, "إعدادات الرسم", onSettings)
         }

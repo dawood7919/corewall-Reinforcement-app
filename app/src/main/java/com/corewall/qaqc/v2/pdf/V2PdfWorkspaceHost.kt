@@ -12,14 +12,27 @@ internal fun V2PdfWorkspaceHost(
     session: PdfDocumentSession,
     page: Int,
     modifier: Modifier = Modifier,
-    controller: V2WorkspaceController = remember { V2WorkspaceController() }
+    controller: V2WorkspaceController = remember { V2WorkspaceController() },
+    persistedItems: List<V2PersistedTakeoffItem> = emptyList(),
+    activeMeasurementColorArgb: Long = 0xFF37D89B,
+    commitCountsImmediately: Boolean = true
 ) {
     AndroidView(
         modifier = modifier,
-        factory = { context -> PdfWorkspaceView(context).also(controller::attach) },
+        factory = { context ->
+            PdfWorkspaceView(context).also {
+                controller.attach(it)
+                it.setPersistedItems(persistedItems)
+                it.setMeasurementColor(activeMeasurementColorArgb)
+                it.setCountCommitImmediately(commitCountsImmediately)
+            }
+        },
         update = { view ->
             controller.attach(view)
             view.bind(session, page)
+            view.setPersistedItems(persistedItems)
+            view.setMeasurementColor(activeMeasurementColorArgb)
+            view.setCountCommitImmediately(commitCountsImmediately)
         },
         onRelease = { view ->
             controller.detach(view)
