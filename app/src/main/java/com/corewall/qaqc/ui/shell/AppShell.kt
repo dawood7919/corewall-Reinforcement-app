@@ -83,6 +83,7 @@ import com.corewall.qaqc.ui.counting.CountingReportScreen
 import com.corewall.qaqc.ui.dataroom.DataScreen
 import com.corewall.qaqc.ui.design.IconSize
 import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.Elevation
 import com.corewall.qaqc.ui.design.Motion
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Sizes
@@ -361,18 +362,12 @@ private val Tabs = listOf(
 @Composable
 private fun BottomNav(current: Dest.Root, onSelect: (Dest.Root) -> Unit) {
     val c = LocalCwColors.current
-    Surface(color = c.surface) {
-        Column {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(Stroke.hair)
-                    .background(c.divider)
-            )
+    Surface(color = c.background) {
+        Column(Modifier.navigationBarsPadding().padding(horizontal = Space.screen, vertical = Space.sm)) {
+            Surface(color = c.surface, shape = Radius.shapeXl, shadowElevation = Elevation.raised) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
                     .padding(horizontal = Space.sm, vertical = Space.sm),
                 horizontalArrangement = Arrangement.spacedBy(Space.xs)
             ) {
@@ -384,6 +379,7 @@ private fun BottomNav(current: Dest.Root, onSelect: (Dest.Root) -> Unit) {
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
             }
         }
     }
@@ -448,7 +444,7 @@ private fun NavTab(
 
     Column(
         modifier
-            .clip(Radius.shapeMd)
+            .clip(Radius.shapeLg)
             .heightIn(min = Sizes.touch)
             .clickable(
                 interactionSource = interaction,
@@ -466,7 +462,7 @@ private fun NavTab(
         Box(
             Modifier
                 .scale(pillScale)
-                .clip(RoundedCornerShape(percent = 50))
+                .clip(Radius.shapeMd)
                 .background(pill)
                 .padding(horizontal = Space.lg, vertical = Space.xs)
         ) {

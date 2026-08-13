@@ -38,7 +38,9 @@ import com.corewall.qaqc.ui.design.CwCard
 import com.corewall.qaqc.ui.design.CwEmptyState
 import com.corewall.qaqc.ui.design.CwField
 import com.corewall.qaqc.ui.design.CwIconButton
+import com.corewall.qaqc.ui.design.CwLeadingIcon
 import com.corewall.qaqc.ui.design.CwText
+import com.corewall.qaqc.ui.design.CwTone
 import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Space
 import kotlinx.coroutines.launch
@@ -80,6 +82,13 @@ fun TakeoffProjectsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 ),
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
+                item(key = "overview") {
+                    CwCard(style = com.corewall.qaqc.ui.design.CwCardStyle.Accent, accent = c.accent) {
+                        Text("حصر الكميات", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(Space.xs))
+                        Text("أنشئ مساحة عمل مستقلة لكل مشروع، ثم أضف الرسمات وابدأ قياس المساحة والطول والعدد والحجم.", style = MaterialTheme.typography.bodyMedium, color = c.textSecondary)
+                    }
+                }
                 if (creating) {
                     item(key = "new") {
                         CwCard {
@@ -156,6 +165,8 @@ private fun ProjectRow(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            CwLeadingIcon(Icons.Filled.Straighten, tone = CwTone.Info)
+            Spacer(Modifier.width(Space.md))
             Column(Modifier.weight(1f)) {
                 Text(
                     project.name,

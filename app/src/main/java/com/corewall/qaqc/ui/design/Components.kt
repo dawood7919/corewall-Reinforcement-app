@@ -87,7 +87,7 @@ fun CwCard(
     style: CwCardStyle = CwCardStyle.Plain,
     accent: Color? = null,
     onClick: (() -> Unit)? = null,
-    contentPadding: PaddingValues = PaddingValues(Space.lg),
+    contentPadding: PaddingValues = PaddingValues(Space.xl),
     content: @Composable ColumnScope.() -> Unit
 ) {
     val c = LocalCwColors.current
@@ -95,7 +95,7 @@ fun CwCard(
         CwCardStyle.Plain, CwCardStyle.Accent -> c.surface
         CwCardStyle.Inset -> c.surfaceAlt
     }
-    val border = if (style == CwCardStyle.Inset) null else BorderStroke(Stroke.hair, c.outline)
+    val border = if (style == CwCardStyle.Inset) null else BorderStroke(Stroke.hair, c.outline.copy(alpha = 0.78f))
     val edge = accent.takeIf { style == CwCardStyle.Accent }
 
     // الشريط الجانبي بيترسم بدل ما يكون Box بـfillMaxHeight — عشان الكارت
@@ -133,7 +133,7 @@ fun CwCard(
             modifier = modifier
                 .fillMaxWidth()
                 .scale(press),
-            shape = Radius.shapeLg,
+            shape = Radius.shapeXl,
             color = container,
             border = border,
             shadowElevation = elevation,
@@ -143,7 +143,7 @@ fun CwCard(
     } else {
         Surface(
             modifier = modifier.fillMaxWidth(),
-            shape = Radius.shapeLg,
+            shape = Radius.shapeXl,
             color = container,
             border = border,
             content = body
@@ -170,7 +170,7 @@ fun CwSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm)
     ) {
-        Text(title, style = CwText.sectionLabel, color = c.textTertiary)
+        Text(title, style = MaterialTheme.typography.titleSmall, color = c.textPrimary)
         if (count != null) CwCountPill(count)
         Spacer(Modifier.weight(1f))
         action?.invoke()

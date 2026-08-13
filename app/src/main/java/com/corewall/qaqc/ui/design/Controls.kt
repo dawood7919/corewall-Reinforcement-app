@@ -92,7 +92,7 @@ fun CwButton(
         modifier = modifier
             .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .scale(press),
-        shape = Radius.shapeMd,
+        shape = Radius.shapeLg,
         color = fill,
         border = border,
         interactionSource = interaction
@@ -146,7 +146,7 @@ fun CwIconButton(
     Box(
         modifier
             .size(Sizes.touch)
-            .clip(Radius.pill)
+            .clip(Radius.shapeMd)
             .then(
                 if (active) Modifier.background(c.accentContainer) else Modifier
             )
@@ -181,7 +181,7 @@ fun CwChip(
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = Radius.pill,
+        shape = Radius.shapeMd,
         color = container,
         border = BorderStroke(Stroke.hair, if (selected) c.accent else c.outline)
     ) {
@@ -255,7 +255,7 @@ fun <T> CwSegmented(
     Row(
         modifier
             .fillMaxWidth()
-            .clip(Radius.shapeMd)
+            .clip(Radius.shapeLg)
             .background(c.surfaceAlt)
             .padding(Space.xs),
         horizontalArrangement = Arrangement.spacedBy(Space.xs)
@@ -270,7 +270,7 @@ fun <T> CwSegmented(
                 Modifier
                     .weight(1f)
                     .heightIn(min = Sizes.control)
-                    .clip(Radius.shapeSm)
+                    .clip(Radius.shapeMd)
                     .background(bg)
                     .clickable(role = Role.Tab) { onSelect(i) },
                 contentAlignment = Alignment.Center
@@ -362,7 +362,7 @@ fun CwField(
             isError = error != null,
             leadingIcon = leading,
             trailingIcon = trailing,
-            shape = Radius.shapeMd,
+            shape = Radius.shapeLg,
             keyboardOptions = keyboardOptions,
             visualTransformation = visualTransformation
                 ?: androidx.compose.ui.text.input.VisualTransformation.None,

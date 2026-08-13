@@ -91,13 +91,13 @@ fun S25MeasurementDock(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = Space.sm, vertical = Space.xs),
-        shape = Radius.shapeLg,
-        color = c.surface,
+            .padding(horizontal = Space.md, vertical = Space.sm),
+        shape = Radius.shapeXl,
+        color = c.surfaceRaised,
         shadowElevation = Elevation.floating,
-        border = BorderStroke(1.dp, c.outline)
+        border = BorderStroke(1.dp, c.outline.copy(alpha = 0.82f))
     ) {
-        Column(Modifier.padding(horizontal = Space.sm, vertical = Space.sm)) {
+        Column(Modifier.padding(horizontal = Space.md, vertical = Space.md)) {
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -189,7 +189,7 @@ private fun DockTool(
     Surface(
         onClick = onClick,
         modifier = modifier.heightIn(min = 64.dp),
-        shape = Radius.shapeMd,
+        shape = Radius.shapeLg,
         color = if (active) c.accentContainer else c.surfaceAlt,
         border = if (active) BorderStroke(1.dp, c.accent) else null
     ) {
@@ -209,7 +209,7 @@ private fun DockAction(icon: ImageVector, label: String, tint: Color, onClick: (
     val c = LocalCwColors.current
     Surface(
         onClick = onClick,
-        shape = Radius.pill,
+        shape = Radius.shapeMd,
         color = c.surfaceAlt
     ) {
         Row(
@@ -226,7 +226,7 @@ private fun DockAction(icon: ImageVector, label: String, tint: Color, onClick: (
 @Composable
 private fun DockCompactAction(icon: ImageVector, label: String, tint: Color, onClick: () -> Unit) {
     val c = LocalCwColors.current
-    Surface(onClick = onClick, shape = Radius.pill, color = c.success.container) {
+    Surface(onClick = onClick, shape = Radius.shapeMd, color = c.success.container) {
         Row(
             Modifier.padding(horizontal = Space.sm, vertical = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
@@ -241,7 +241,7 @@ private fun DockCompactAction(icon: ImageVector, label: String, tint: Color, onC
 @Composable
 private fun MeasurementStatePill(label: String, tone: Color) {
     val c = LocalCwColors.current
-    Surface(shape = Radius.pill, color = c.surfaceAlt) {
+    Surface(shape = Radius.shapeMd, color = c.surfaceAlt) {
         Text(
             label,
             style = CwText.codeSmall,
