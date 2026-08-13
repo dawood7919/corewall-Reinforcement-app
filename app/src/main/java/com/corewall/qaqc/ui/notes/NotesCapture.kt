@@ -5,12 +5,12 @@ import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Paint
 import android.media.MediaRecorder
 import android.os.SystemClock
+import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,12 +58,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.input.pointer.type
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.corewall.qaqc.stylus.pressureWidthFactor
-import com.corewall.qaqc.stylus.toKind
+import com.corewall.qaqc.stylus.pointerKindOf
 import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
@@ -114,23 +113,28 @@ fun NotesDrawingSheet(file: File, onDismiss: () -> Unit, onSaved: (File) -> Unit
                     .height(470.dp)
                     .background(Color.White, Radius.shapeLg)
                     .border(1.dp, c.outline, Radius.shapeLg)
-                    .pointerInput(tool, color, thickness, stylusOnly) {
-                        detectDragGestures(
-                            onDragStart = { activeStroke = null },
-                            onDrag = { change, _ ->
-                                if (stylusOnly && !change.type.toKind().isPen) return@detectDragGestures
-                                val current = activeStroke
-                                if (current == null) {
-                                    val base = if (tool == InkTool.ERASER) Color.White else color
-                                    val created = InkStroke(mutableStateListOf(change.previousPosition, change.position), base, thickness * pressureWidthFactor(change.pressure), tool)
-                                    strokes.add(created)
-                                    activeStroke = created
-                                    redo.clear()
-                                } else current.points.add(change.position)
-                            },
-                            onDragEnd = { activeStroke = null },
-                            onDragCancel = { activeStroke = null }
-                        )
+                    .pointerInteropFilter { event ->
+                        val kind = pointerKindOf(event.getToolType(event.actionIndex.coerceAtLeast(0)))
+                        if (stylusOnly && !kind.isPen) return@pointerInteropFilter false
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                val base = if (tool == InkTool.ERASER) Color.White else color
+                                val created = InkStroke(mutableStateListOf(Offset(event.x, event.y)), base, thickness * pressureWidthFactor(event.pressure), tool)
+                                strokes.add(created)
+                                activeStroke = created
+                                redo.clear()
+                                true
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                activeStroke?.points?.add(Offset(event.x, event.y))
+                                activeStroke != null
+                            }
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                activeStroke = null
+                                true
+                            }
+                            else -> false
+                        }
                     }
             ) {
                 canvasSize = IntSize(size.width.toInt(), size.height.toInt())
