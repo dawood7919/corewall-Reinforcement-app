@@ -63,6 +63,17 @@ class TakeoffMathTest {
         TakeoffPoint(origin, origin + side)
     )
 
+    @Test
+    fun `measurement completion requires the minimum number of points without clearing valid drafts`() {
+        assertTrue(!TakeoffMath.canCommitMeasurement(TakeoffTool.AREA, 2))
+        assertTrue(TakeoffMath.canCommitMeasurement(TakeoffTool.AREA, 3))
+        assertTrue(!TakeoffMath.canCommitMeasurement(TakeoffTool.LENGTH, 1))
+        assertTrue(TakeoffMath.canCommitMeasurement(TakeoffTool.LENGTH, 2))
+        assertTrue(!TakeoffMath.canCommitMeasurement(TakeoffTool.DIMENSION, 2))
+        assertTrue(TakeoffMath.canCommitMeasurement(TakeoffTool.DIMENSION, 3))
+        assertTrue(TakeoffMath.canCommitMeasurement(TakeoffTool.COUNT, 1))
+    }
+
     // ═════════════════════════════ ١) ثبات القيمة مع التكبير
 
     @Test

@@ -283,6 +283,8 @@ fun TakeoffEditorScreen(
     var pendingDrawItemId by remember { mutableStateOf<Long?>(null) }
     var editingItem by remember { mutableStateOf<TakeoffItem?>(null) }
     var snapEnabled by remember { mutableStateOf(true) }
+    /** رسالة جلسة القياس؛ تمنع الإنهاء الناقص من الظهور كفقدان صامت للرسم. */
+    var measurementNotice by remember { mutableStateOf<String?>(null) }
 
     // ── حالة التعليقات — طبقة مستقلة عن أدوات الحصر تمامًا.
     var annotationTool by remember { mutableStateOf<TakeoffAnnotationType?>(null) }
@@ -354,6 +356,7 @@ fun TakeoffEditorScreen(
         annotationDraftPage = -1
         textPromptPoint = null
         textPromptPage = -1
+        measurementNotice = null
     }
 
     fun endSession() {
@@ -408,16 +411,22 @@ fun TakeoffEditorScreen(
 
     fun commit() {
         val page = draftPage.intValue
-        if (page < 0 || draft.isEmpty()) { draft.clear(); draftPage.intValue = -1; return }
+        if (page < 0 || draft.isEmpty()) {
+            measurementNotice = "ضع نقاط القياس أولاً"
+            return
+        }
 
         val points = draft.toList()
-        val enough = when (tool) {
-            TakeoffTool.COUNT, TakeoffTool.COLUMN -> points.isNotEmpty()
-            TakeoffTool.LENGTH -> points.size >= 2
-            TakeoffTool.DIMENSION -> points.size == 3
-            else -> points.size >= 3
+        val enough = TakeoffMath.canCommitMeasurement(tool, points.size)
+        if (!enough) {
+            measurementNotice = when (tool) {
+                TakeoffTool.LENGTH -> "الطول يحتاج نقطتين على الأقل"
+                TakeoffTool.DIMENSION -> "البُعد يحتاج طرفين وإزاحة"
+                else -> "المساحة تحتاج ثلاث نقاط على الأقل"
+            }
+            return
         }
-        if (!enough) { draft.clear(); draftPage.intValue = -1; return }
+        measurementNotice = null
 
         // البُعد مرجع بصري — زي الخصم بالظبط، بدون اسم ولا فئة ولون ثابت،
         // ومستبعد من الإجماليات والـBOQ ومراجع الصيغ بحكم [TakeoffTool.isQuantity].
@@ -481,10 +490,31 @@ fun TakeoffEditorScreen(
         val placeholderId = pendingDrawItemId
         if (placeholderId != null) {
             scope.launch {
-                vm.takeoff.itemById(placeholderId)?.let { row ->
+                val row = vm.takeoff.itemById(placeholderId)
+                if (row != null) {
                     vm.takeoff.saveItem(row.copy(page = page, pointsJson = vm.takeoff.encodeRing(points)))
+                } else {
+                    saveNewItem(
+                        toolToSave = tool,
+                        page = page,
+                        points = points,
+                        name = defaultName(tool, rows.size + 1),
+                        categoryId = null,
+                        colorArgb = TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size]
+                    )
                 }
             }
+        } else {
+            // لا يجوز أن تختفي كمية صحيحة لو أُلغي حجز البند بسبب انتقال
+            // حالة سريع؛ ننشئ بنداً آمناً باسم افتراضي ونحفظ هندسته فوراً.
+            saveNewItem(
+                toolToSave = tool,
+                page = page,
+                points = points,
+                name = defaultName(tool, rows.size + 1),
+                categoryId = null,
+                colorArgb = TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size]
+            )
         }
         pendingDrawItemId = null
         draft.clear(); draftPage.intValue = -1
@@ -530,6 +560,7 @@ fun TakeoffEditorScreen(
         // واحدة، وشكل بيعدّي بين صفحتين مالوش معنى في الحصر.
         if (hit.page != draftPage.intValue) return
         draft += snapPoint(TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble()), hit.page)
+        measurementNotice = null
     }
 
     fun finishRect(a: TakeoffPoint, b: TakeoffPoint, page: Int) {
@@ -652,7 +683,7 @@ fun TakeoffEditorScreen(
     val calibrationColour = c.accent
     val draftPoints = draft.toList()
     val activeDraftTool = if (deductFor != null) TakeoffTool.DEDUCT else tool
-    val liveReadout = when {
+    val liveReadout = measurementNotice ?: when {
         draftPoints.isEmpty() -> null
         activeDraftTool == TakeoffTool.COUNT || activeDraftTool == TakeoffTool.COLUMN ->
             "${if (activeDraftTool == TakeoffTool.COUNT) "عد" else "أعمدة"}: ${draftPoints.size}"

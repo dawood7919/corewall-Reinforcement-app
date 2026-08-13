@@ -19,6 +19,14 @@ import kotlin.math.hypot
  * وظيفتهم العرض واللمس، مش الحساب.
  */
 object TakeoffMath {
+    /** أقل عدد نقاط صالح لإنهاء أداة قياس؛ يمنع واجهة المحرر من مسح قياس ناقص. */
+    fun canCommitMeasurement(tool: TakeoffTool, pointCount: Int): Boolean = when (tool) {
+        TakeoffTool.COUNT, TakeoffTool.COLUMN -> pointCount >= 1
+        TakeoffTool.LENGTH -> pointCount >= 2
+        TakeoffTool.DIMENSION -> pointCount == 3
+        TakeoffTool.AREA, TakeoffTool.DEDUCT, TakeoffTool.VOLUME -> pointCount >= 3
+    }
+
 
     // ═══════════════════════════════════════════════ التحويل (وبس)
 
