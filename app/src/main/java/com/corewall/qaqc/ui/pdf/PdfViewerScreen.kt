@@ -66,6 +66,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.corewall.qaqc.BuildConfig
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.data.db.PdfMeasurementEntity
@@ -89,6 +90,7 @@ import com.corewall.qaqc.pdfengine.PdfSearchState
 import com.corewall.qaqc.pdfengine.PdfSelectionState
 import com.corewall.qaqc.pdfengine.PdfSessionStore
 import com.corewall.qaqc.pdfengine.PdfViewerState
+import com.corewall.qaqc.pdfengine.PdfPerfMetrics
 import com.corewall.qaqc.pdfengine.Scale
 import com.corewall.qaqc.pdfengine.SearchHit
 import com.corewall.qaqc.pdfengine.TextQuad
@@ -105,7 +107,9 @@ import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -157,6 +161,15 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     // ── المحرّك والحالة
     val engine = remember(active) { TileEngine(active, TileEngine.budgetFor(context)) }
     val thumbs = remember(active) { ThumbnailCache(active) }
+    var perfSnapshot by remember(active) { mutableStateOf(engine.performanceSnapshot()) }
+    if (BuildConfig.DEBUG) {
+        LaunchedEffect(engine) {
+            while (isActive) {
+                delay(PERF_SAMPLE_INTERVAL_MS)
+                perfSnapshot = engine.performanceSnapshot()
+            }
+        }
+    }
     DisposableEffect(active) {
         onDispose { engine.clear(); thumbs.clear() }
     }
@@ -660,6 +673,16 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 }
             )
 
+            if (BuildConfig.DEBUG) {
+                PdfPerfHud(
+                    snapshot = perfSnapshot,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(Space.md)
+                )
+            }
+
             SelectionHandles(
                 state = state,
                 selection = selection,
@@ -1150,6 +1173,30 @@ private const val OCR_MAX_PIXELS = 40_000_000L
 
 /** الخريطة بتظهر لما تبقى شايف جزء صغير من الصفحة فعلاً. */
 private const val MINIMAP_FROM_ZOOM = 2.5f
+private const val PERF_SAMPLE_INTERVAL_MS = 1_000L
+
+@Composable
+private fun PdfPerfHud(snapshot: PdfPerfMetrics.Snapshot, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = Color(0xE6101216),
+        shape = Radius.shapeMd
+    ) {
+        Column(Modifier.padding(horizontal = Space.sm, vertical = Space.xs)) {
+            Text("PDF PERF", style = CwText.codeSmall, color = Color(0xFF6BE4B5))
+            Text(
+                "Tile ${snapshot.averageTileMs}/${snapshot.p95TileMs}ms · hit ${(snapshot.cacheHitRate * 100).toInt()}%",
+                style = CwText.codeSmall,
+                color = Color.White
+            )
+            Text(
+                "${snapshot.cachedTiles} cache · ${snapshot.queuedTiles} queue · ${(snapshot.bitmapBytes / 1_048_576)}MB",
+                style = CwText.codeSmall,
+                color = Color(0xFFBAC3CE)
+            )
+        }
+    }
+}
 
 /** تحت الشريط العلوي — عشان ماتغطّيهوش. */
 private val MINIMAP_TOP_PAD = Space.huge + Space.xl
