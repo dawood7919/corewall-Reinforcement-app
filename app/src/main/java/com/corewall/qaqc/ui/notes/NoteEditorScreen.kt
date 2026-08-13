@@ -274,7 +274,7 @@ private fun DocumentEditorBlock(
         block.style.headingLevel == 2 -> MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
         block.style.headingLevel == 3 -> MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
         block.type == NotesBlock.HEADING -> MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
-        NotesBlock.QUOTE -> MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)
+        block.type == NotesBlock.QUOTE -> MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)
         else -> MaterialTheme.typography.bodyLarge
     }
     val textStyle = baseTextStyle.copy(

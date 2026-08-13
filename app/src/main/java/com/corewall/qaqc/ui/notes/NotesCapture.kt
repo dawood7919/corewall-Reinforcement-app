@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -35,11 +36,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -62,6 +61,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.corewall.qaqc.stylus.pressureWidthFactor
 import com.corewall.qaqc.stylus.pointerKindOf
 import com.corewall.qaqc.ui.design.LocalCwColors
@@ -76,7 +77,7 @@ import java.io.File
 private enum class InkTool { PEN, MARKER, HIGHLIGHTER, ERASER }
 private data class InkStroke(val points: MutableList<Offset>, val color: Color, val width: Float, val tool: InkTool)
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun NotesDrawingSheet(file: File, onDismiss: () -> Unit, onSaved: (File) -> Unit) {
     val c = LocalCwColors.current
@@ -92,8 +93,9 @@ fun NotesDrawingSheet(file: File, onDismiss: () -> Unit, onSaved: (File) -> Unit
     var saving by remember { mutableStateOf(false) }
     val colors = remember { listOf(c.textPrimary, c.accent, c.danger.fg, c.warning.fg, c.success.fg, Color(0xFF4D70FF)) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface, sheetGesturesEnabled = false) {
-        Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxSize(), color = c.surface) {
+            Column(Modifier.fillMaxSize().padding(horizontal = Space.md, vertical = Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") }
                 Column(Modifier.weight(1f)) {
@@ -175,6 +177,7 @@ fun NotesDrawingSheet(file: File, onDismiss: () -> Unit, onSaved: (File) -> Unit
                 shape = Radius.pill,
                 modifier = Modifier.fillMaxWidth()
             ) { Row(Modifier.padding(Space.md), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Filled.Done, null); Spacer(Modifier.width(Space.xs)); Text(if (saving) "يحفظ الرسم…" else "إضافة الرسم إلى الملاحظة", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) } }
+            }
         }
     }
 }
