@@ -33,7 +33,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,6 +52,8 @@ import com.corewall.qaqc.ui.design.Space
 import com.corewall.qaqc.ui.design.Stroke as CwStroke
 import com.corewall.qaqc.ui.design.animatedElevation
 import com.corewall.qaqc.ui.design.rememberPressScale
+import coil3.compose.AsyncImage
+import java.io.File
 
 /**
  * كارت ملاحظة.
@@ -87,9 +91,10 @@ fun NoteCard(
         else emptyList()
     }
     val preview = remember(note.body, note.kind) {
-        if (note.kind == NoteEntity.KIND_CHECKLIST) ""
-        else note.body.lineSequence().filter { it.isNotBlank() }.take(PREVIEW_LINES)
-            .joinToString("\n")
+        if (note.kind == NoteEntity.KIND_CHECKLIST) "" else notePreview(note.body)
+    }
+    val coverImage = remember(note.body) {
+        parseNote(note.body).filterIsInstance<NoteBlock.Image>().firstOrNull()?.path
     }
 
     // الضغطة الطويلة بتفتح الخيارات — ده اللي المستخدم بيتوقّعه من كارت
@@ -112,6 +117,21 @@ fun NoteCard(
         border = if (tinted) null else BorderStroke(CwStroke.hair, c.outline)
     ) {
         Column(Modifier.padding(Space.md)) {
+
+            // أول صورة أو رسم يصبح غلافاً بصرياً للكارت، فلا يظهر مسار التخزين
+            // كنص للمستخدم في شاشة الملاحظات.
+            if (!coverImage.isNullOrBlank()) {
+                AsyncImage(
+                    model = File(coverImage),
+                    contentDescription = "صورة مرفقة بالملاحظة",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (compact) 112.dp else 160.dp)
+                        .clip(Radius.shapeMd)
+                )
+                Spacer(Modifier.height(Space.sm))
+            }
 
             if (note.title.isNotBlank()) {
                 Row(verticalAlignment = Alignment.Top) {

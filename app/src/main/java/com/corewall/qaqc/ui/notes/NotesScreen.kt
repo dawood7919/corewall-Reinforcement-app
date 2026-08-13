@@ -24,13 +24,13 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
@@ -54,6 +54,7 @@ import com.corewall.qaqc.ui.design.CwEmptyState
 import com.corewall.qaqc.ui.design.CwText
 import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Motion
+import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
 
 /**
@@ -80,7 +81,6 @@ fun NotesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     var searchOpen by remember { mutableStateOf(false) }
     var labelsOpen by remember { mutableStateOf(false) }
-    var fabExpanded by remember { mutableStateOf(false) }
     var optionsFor by remember { mutableStateOf<NoteEntity?>(null) }
 
     // في المهملات الضغطة العادية بتفتح الخيارات مش المحرّر: تعديل ملاحظة
@@ -218,13 +218,12 @@ fun NotesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         // زرار الإنشاء — في المهملات والأرشيف مالوش معنى.
         if (view == NotesView.ACTIVE) {
             QuickCreate(
-                expanded = fabExpanded,
-                onToggle = { fabExpanded = !fabExpanded },
-                onText = { fabExpanded = false; vm.createNote(NoteEntity.KIND_TEXT) },
-                onChecklist = { fabExpanded = false; vm.createNote(NoteEntity.KIND_CHECKLIST) },
+                onText = { vm.createNote(NoteEntity.KIND_TEXT) },
+                onChecklist = { vm.createNote(NoteEntity.KIND_CHECKLIST) },
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(Space.lg)
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = Space.lg, vertical = Space.md)
             )
         }
     }
@@ -262,57 +261,34 @@ private fun SectionLabel(text: String) {
 }
 
 /**
- * إنشاء سريع.
- *
- * ضغطة على "+" بتفتح خيارين بس فوقه، والضغطة التانية بتفتح المحرّر على
- * ملاحظة موجودة فعلاً. مفيش حوار ولا شاشة وسيطة — من اللمسة للكتابة
- * لمستين.
+ * مدخل تدوين سريع ثابت في منطقة الإبهام. الدخول على النص مباشر، وقائمة
+ * التحقق لها زر مستقل كي لا يختفي عمل الإنشاء الشائع داخل قائمة عائمة.
  */
 @Composable
 private fun QuickCreate(
-    expanded: Boolean,
-    onToggle: () -> Unit,
     onText: () -> Unit,
     onChecklist: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
-    Column(
-        modifier,
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(Space.sm)
+    androidx.compose.material3.Surface(
+        onClick = onText,
+        color = c.surface,
+        contentColor = c.textPrimary,
+        shape = Radius.pill,
+        shadowElevation = 8.dp,
+        modifier = modifier
     ) {
-        AnimatedVisibility(
-            visible = expanded,
-            enter = fadeIn(Motion.enter()) + scaleIn(Motion.enter(), initialScale = 0.8f),
-            exit = fadeOut(Motion.exit()) + scaleOut(Motion.exit(), targetScale = 0.8f)
+        Row(
+            Modifier.padding(start = Space.md, end = Space.xs, top = Space.xs, bottom = Space.xs),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(Space.sm)
-            ) {
-                SmallFloatingActionButton(
-                    onClick = onChecklist,
-                    containerColor = c.surface,
-                    contentColor = c.accent
-                ) {
-                    Icon(Icons.Filled.Checklist, contentDescription = "قايمة مهام جديدة")
-                }
-                SmallFloatingActionButton(
-                    onClick = onText,
-                    containerColor = c.surface,
-                    contentColor = c.accent
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = "ملاحظة نصّية جديدة")
-                }
+            Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = "ملاحظة جديدة", tint = c.accent)
+            Spacer(Modifier.width(Space.md))
+            Text("دوّن ملاحظة…", style = MaterialTheme.typography.bodyLarge, color = c.textSecondary, modifier = Modifier.weight(1f))
+            IconButton(onClick = onChecklist) {
+                Icon(Icons.Filled.Checklist, contentDescription = "قائمة تحقق جديدة", tint = c.accent)
             }
-        }
-        FloatingActionButton(
-            onClick = onToggle,
-            containerColor = c.accent,
-            contentColor = c.onAccent
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "ملاحظة جديدة")
         }
     }
 }

@@ -115,7 +115,9 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
     var title by remember(note.id) { mutableStateOf(note.title) }
     var body by remember(note.id) { mutableStateOf(TextFieldValue(note.body)) }
     var savedNoteId by remember(note.id) { mutableIntStateOf(note.id.toInt()) }
-    var mode by remember { mutableStateOf(Mode.EDIT) }
+    // المعاينة هي الوضع الافتراضي: المرفقات تظهر كبطاقات وصور مباشرة،
+    // بينما يظل "تحرير" متاحاً عند الحاجة لكتابة Markdown.
+    var mode by remember { mutableStateOf(Mode.PREVIEW) }
     var savedState by remember { mutableStateOf("محفوظ") }
     var showSearch by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -197,12 +199,16 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
         if (uris.isNotEmpty()) {
             vm.files.importNoteImages(uris, note.level, note.elementId).also { vm.registerFiles(it, note.level) }.forEach {
                 insert("\n![](${it.absolutePath})\n")
+                mode = Mode.PREVIEW
             }
         }
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val f = pendingCamera
-        if (ok && f != null && f.exists()) insert("\n![](${f.absolutePath})\n") else f?.delete()
+        if (ok && f != null && f.exists()) {
+            insert("\n![](${f.absolutePath})\n")
+            mode = Mode.PREVIEW
+        } else f?.delete()
         pendingCamera = null
     }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
@@ -492,6 +498,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
             onDismiss = { file.delete(); sketchFile = null },
             onSaved = { saved ->
                 insert("\n![رسم ميداني](${saved.absolutePath})\n")
+                mode = Mode.PREVIEW
                 sketchFile = null
             }
         )
@@ -502,6 +509,7 @@ fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
             onDismiss = { file.delete(); audioFile = null },
             onSaved = { saved ->
                 insert("\n[[audio:${saved.absolutePath}]]\n")
+                mode = Mode.PREVIEW
                 audioFile = null
             }
         )
