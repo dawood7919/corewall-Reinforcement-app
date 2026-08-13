@@ -263,12 +263,16 @@ internal class V2MeasurementLayer {
 
 /** حسابات V2 الخالصة؛ لا تستقبل تكبير المنظر أو إزاحته إطلاقاً. */
 internal object V2MeasurementMath {
-    fun quantity(record: V2MeasurementRecord, pageWidthPt: Float, pageHeightPt: Float): Double? = when (record.kind) {
-        V2MeasurementKind.COUNT -> record.points.size.toDouble()
-        V2MeasurementKind.LENGTH -> length(record.points, pageWidthPt, pageHeightPt, record.calibration)
-        V2MeasurementKind.AREA -> area(record.points, pageWidthPt, pageHeightPt, record.calibration)
-        V2MeasurementKind.VOLUME -> area(record.points, pageWidthPt, pageHeightPt, record.calibration)
-            ?.times(record.calibration.thicknessMetres ?: return null)
+    fun quantity(record: V2MeasurementRecord, pageWidthPt: Float, pageHeightPt: Float): Double? {
+        return when (record.kind) {
+            V2MeasurementKind.COUNT -> record.points.size.toDouble()
+            V2MeasurementKind.LENGTH -> length(record.points, pageWidthPt, pageHeightPt, record.calibration)
+            V2MeasurementKind.AREA -> area(record.points, pageWidthPt, pageHeightPt, record.calibration)
+            V2MeasurementKind.VOLUME -> {
+                val thickness = record.calibration.thicknessMetres ?: return null
+                area(record.points, pageWidthPt, pageHeightPt, record.calibration)?.times(thickness)
+            }
+        }
     }
 
     private fun length(
