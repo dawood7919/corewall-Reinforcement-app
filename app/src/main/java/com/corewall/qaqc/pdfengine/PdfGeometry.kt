@@ -326,4 +326,4 @@ class PageLayout(
     }
 }
 
-private enum class PageFlow { VERTICAL, HORIZONTAL }
+enum class PageFlow { VERTICAL, HORIZONTAL }
