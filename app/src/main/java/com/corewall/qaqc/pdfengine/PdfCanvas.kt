@@ -107,17 +107,22 @@ fun PdfCanvas(
      */
     LaunchedEffect(engine, session, measured) {
         var settledViewportRevision = -1
+        var lastInteractiveSyncMs = Long.MIN_VALUE
         snapshotFlow { PdfRenderDemand(state.revision, state.mode, state.interacting, engine.renderRevision) }
             .conflate()
             .collectLatest { demand ->
-                // المعاينة الأول في الطابور: صفحة طرية أحسن من صفحة بيضا
-                val previews = previewTilesFor(state, session)
                 if (demand.interacting) {
-                    // أثناء القرص أو السحب لا نطارد كل مستوى تكبير جديد. المعاينة الموجودة تتحول فوراً
-                    // وتكفي للحركة؛ طلب الدقة العالية هنا هو مصدر الطابور والتهتهة في المخططات الكبيرة.
-                    engine.sync(previews, maxQueued = MAX_QUEUED_PREVIEW)
+                    // الحركة تصل 60–120 مرة في الثانية. حساب grids + Set + إلغاء طابور في كل مرة
+                    // يزاحم Compose على خيط الواجهة؛ نحدّث المعاينة عند بدء اللمس ثم دورياً فقط.
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (now - lastInteractiveSyncMs >= PREVIEW_SYNC_INTERVAL_MS) {
+                        engine.sync(previewTilesFor(state, session), maxQueued = MAX_QUEUED_PREVIEW)
+                        lastInteractiveSyncMs = now
+                    }
                     settledViewportRevision = -1
                 } else {
+                    // المعاينة الأول في الطابور: صفحة طرية أحسن من صفحة بيضا.
+                    val previews = previewTilesFor(state, session)
                     // يترك الإيماءة تنتهي فعلاً قبل طلب البلاطات الحادة. وصول بلاطة لاحقة لا يعيد التأخير.
                     if (demand.viewportRevision != settledViewportRevision) {
                         kotlinx.coroutines.delay(SHARP_RENDER_SETTLE_MS)
@@ -233,6 +238,7 @@ private suspend fun fling(state: PdfViewerState, vx: Float, vy: Float) = corouti
 private const val MIN_FLING = 80f
 private const val SHARP_RENDER_SETTLE_MS = 90L
 private const val MAX_QUEUED_PREVIEW = 4
+private const val PREVIEW_SYNC_INTERVAL_MS = 72L
 
 private data class PdfRenderDemand(
     val viewportRevision: Int,
@@ -322,7 +328,18 @@ private fun DrawScope.drawPages(
             pageLeft, pageTop, state.zoom, FilterQuality.Low
         )
 
-        // ٢) الحادّة فوقها (لو مستوى مختلف)
+        // ٢) مستوى وسيط: عند عبور حد تكبير، بلاطات المستوى السابق تكون غالباً
+        // جاهزة في الكاش. رسمها فوق المعاينة يعطي وضوحاً فورياً بدلاً من انتظار
+        // المستوى الجديد، ثم يستبدله المستوى الحاد عند وصوله.
+        val transitionalLevel = (sharpLevel - 1).coerceAtLeast(previewLevel)
+        if (transitionalLevel != previewLevel && transitionalLevel != sharpLevel) {
+            drawTileLayer(
+                engine, slot.index, transitionalLevel, size,
+                pageLeft, pageTop, state.zoom, FilterQuality.Low
+            )
+        }
+
+        // ٣) الحادّة فوقها (لو مستوى مختلف)
         if (sharpLevel != previewLevel) {
             drawTileLayer(
                 engine, slot.index, sharpLevel, size,

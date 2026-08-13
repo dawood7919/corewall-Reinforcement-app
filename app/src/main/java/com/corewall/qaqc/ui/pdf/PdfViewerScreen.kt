@@ -308,6 +308,22 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     val fileAnnotations by remember(path) { vm.pdfAnnotationsFor(path) }
         .collectAsStateWithLifecycle(emptyList())
 
+    // فك نقاط التعليقات والقياسات كان يحصل من JSON داخل Canvas في كل إطار
+    // تكبير. مستند فيه عشرات العناصر يحول السحب إلى مئات عمليات parsing في
+    // الثانية؛ نخزنها هنا ولا نعيدها إلا عند تغير بيانات Room فعلاً.
+    val annotationPoints = remember(fileAnnotations) {
+        fileAnnotations.associate { item ->
+            item.id to runCatching { json.decodeFromString<List<Float>>(item.pointsJson) }.getOrDefault(emptyList())
+        }
+    }
+    val annotationsByPage = remember(fileAnnotations) { fileAnnotations.groupBy { it.page } }
+    val measurementPoints = remember(fileMeasurements) {
+        fileMeasurements.associate { item ->
+            item.id to runCatching { json.decodeFromString<List<Float>>(item.pointsJson) }.getOrDefault(emptyList())
+        }
+    }
+    val measurementsByPage = remember(fileMeasurements) { fileMeasurements.groupBy { it.page } }
+
     val settings by vm.settings.collectAsStateWithLifecycle()
 
     var tool by remember { mutableStateOf(PdfTool.PAN) }
@@ -621,7 +637,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     if (searchOpen) {
                         drawSearchLayer(s, hitsByPage, search.activeHit, c.warning.solid, c.accent)
                     }
-                    drawAnnotations(s, fileAnnotations)
+                    drawAnnotations(s, annotationsByPage, annotationPoints)
                     if (draft.size >= 2) {
                         drawAnnotation(
                             tool, Color(style.colorArgb), draft,
@@ -634,11 +650,8 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     // ولو تعليق غطّاه بيبقى الرقم موجود ومش مقروء.
                     drawMeasurements(
                         state = s,
-                        items = fileMeasurements,
-                        pointsOf = { m ->
-                            runCatching { json.decodeFromString<List<Float>>(m.pointsJson) }
-                                .getOrDefault(emptyList())
-                        },
+                        itemsByPage = measurementsByPage,
+                        pointsOf = { m -> measurementPoints[m.id].orEmpty() },
                         scaleOf = { page -> scaleFor(page) }
                     )
                     if (measure.enabled) {
@@ -756,7 +769,9 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
 
             // ── الخريطة المصغّرة: عند التكبير العالي بس
             AnimatedVisibility(
-                visible = chromeVisible && state.zoom > MINIMAP_FROM_ZOOM,
+                // رسم المصغرة يمر عبر نفس خيط PDFium المستخدم للبلاطات؛ لا
+                // نسمح له بمنافسة التكبير الحي ثم نعيده بمجرد رفع الأصابع.
+                visible = chromeVisible && !state.interacting && state.zoom > MINIMAP_FROM_ZOOM,
                 enter = fadeIn(), exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -1171,18 +1186,15 @@ private fun DrawScope.drawSearchLayer(
 /** بيرسم تعليقات كل صفحة مرئية في مكانها الصح. */
 private fun DrawScope.drawAnnotations(
     state: PdfViewerState,
-    annotations: List<PdfAnnotationEntity>
+    annotationsByPage: Map<Int, List<PdfAnnotationEntity>>,
+    pointsById: Map<Long, List<Float>>
 ) {
-    if (annotations.isEmpty()) return
+    if (annotationsByPage.isEmpty()) return
     val rect = state.visibleDocRect()
-    val visiblePages = state.layout
-        .visible(rect.left, rect.top, rect.right, rect.bottom)
-        .map { it.index }
-        .toSet()
-
-    for (a in annotations) {
-        if (a.page !in visiblePages) continue
-        val flat = runCatching { json.decodeFromString<List<Float>>(a.pointsJson) }.getOrNull() ?: continue
+    for (slot in state.layout.visible(rect.left, rect.top, rect.right, rect.bottom)) {
+        for (a in annotationsByPage[slot.index].orEmpty()) {
+        val flat = pointsById[a.id].orEmpty()
+        if (flat.isEmpty()) continue
         val points = (flat.indices step 2).mapNotNull { i ->
             if (i + 1 >= flat.size) null
             else state.pagePointToScreen(a.page, flat[i], flat[i + 1])
@@ -1191,6 +1203,7 @@ private fun DrawScope.drawAnnotations(
             PdfTool.fromId(a.tool), Color(a.color), points,
             a.strokeWidth, a.opacity, state.zoom
         )
+        }
     }
 }
 

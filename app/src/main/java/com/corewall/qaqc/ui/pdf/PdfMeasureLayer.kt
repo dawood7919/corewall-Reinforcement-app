@@ -122,19 +122,14 @@ fun measurementText(
 /** بيرسم القياسات المحفوظة للصفحات الظاهرة. */
 fun DrawScope.drawMeasurements(
     state: PdfViewerState,
-    items: List<PdfMeasurementEntity>,
+    itemsByPage: Map<Int, List<PdfMeasurementEntity>>,
     pointsOf: (PdfMeasurementEntity) -> List<Float>,
     scaleOf: (page: Int) -> Scale?
 ) {
-    if (items.isEmpty()) return
+    if (itemsByPage.isEmpty()) return
     val rect = state.visibleDocRect()
-    val visible = state.layout
-        .visible(rect.left, rect.top, rect.right, rect.bottom)
-        .map { it.index }
-        .toSet()
-
-    for (item in items) {
-        if (item.page !in visible) continue
+    for (visibleSlot in state.layout.visible(rect.left, rect.top, rect.right, rect.bottom)) {
+        for (item in itemsByPage[visibleSlot.index].orEmpty()) {
         val slot = state.layout.slotAt(item.page) ?: continue
         val flat = pointsOf(item)
         if (flat.size < 2) continue
@@ -152,6 +147,7 @@ fun DrawScope.drawMeasurements(
             )
         }
         drawMeasureShape(kind, screen, Color(item.colorArgb), label)
+        }
     }
 }
 
