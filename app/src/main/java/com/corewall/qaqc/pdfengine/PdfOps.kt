@@ -113,6 +113,29 @@ object PdfOps {
         applyPagePlan(src, dest, pages.sorted().map { PagePlan(it) })
 
     /**
+     * تقسيم المستند إلى ملفات صفحة-بصفحة.
+     *
+     * كل ملف يتكتب مستقلاً؛ لو صفحة واحدة تالفة أو التخزين امتلأ، الأصل
+     * وباقي الصفحات التي كُتبت قبلها يظلون سالمين ولا تتأثر نسخة المستخدم.
+     */
+    suspend fun splitIntoPages(src: File, outputDir: File, baseName: String): Result<List<File>> = io {
+        require(outputDir.exists() || outputDir.mkdirs()) { "مقدرناش ننشئ مجلد التقسيم" }
+        PDDocument.load(src).use { source ->
+            val outputs = ArrayList<File>(source.numberOfPages)
+            for (index in 0 until source.numberOfPages) {
+                val out = File(outputDir, "$baseName — صفحة ${index + 1}.pdf")
+                PDDocument().use { single ->
+                    single.importPage(source.getPage(index))
+                    single.save(out)
+                }
+                check(out.exists() && out.length() > MIN_PDF_BYTES) { "فشل حفظ الصفحة ${index + 1}" }
+                outputs += out
+            }
+            outputs
+        }
+    }
+
+    /**
      * دمج ملفات.
      *
      * `PDFMergerUtility` مش رفاهية هنا: نسخ صفحة من مستند لمستند تاني
@@ -510,6 +533,7 @@ object PdfOps {
 
     private const val STAMP_TEXT_PX = 96f
     private const val STAMP_PAD = 24
+    private const val MIN_PDF_BYTES = 200L
     private const val CLOUD_INTENSITY = 2f
     private const val CLOUD_MARGIN_PT = 6f
 

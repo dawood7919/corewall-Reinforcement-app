@@ -2,7 +2,11 @@ package com.corewall.qaqc.pdfengine
 
 import android.app.ActivityManager
 import android.content.Context
+import android.graphics.Bitmap
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -33,6 +37,13 @@ class TileEngine(
 ) {
     /** المربّعات الجاهزة. Compose بيراقبها. */
     val tiles: SnapshotStateMap<Long, ImageBitmap> = mutableStateMapOf()
+
+    /** الـImageBitmap لا يحرر الـBitmap الأصلي تلقائياً عند إخلاء الكاش. */
+    private val bitmaps = HashMap<Long, Bitmap>()
+
+    /** نبضة لوصول أو إخراج بلاطة؛ تتيح ملء طابور محدود تدريجياً. */
+    var renderRevision by mutableIntStateOf(0)
+        private set
 
     /** أقصى عدد مربّعات في الذاكرة. ARGB_8888 512×512 = ١ ميجا للمربّع. */
     private val maxTiles: Int = (maxBytes / BYTES_PER_TILE).toInt().coerceIn(24, 320)
@@ -66,7 +77,7 @@ class TileEngine(
      * بيتنده من الواجهة عند كل تغيّر في المنطقة المرئية. رخيص للاستدعاء
      * المتكرر — بيلغي القديم وبيطلب الناقص بس.
      */
-    fun sync(requested: List<TileKey>) {
+    fun sync(requested: List<TileKey>, maxQueued: Int = MAX_QUEUED_SHARP) {
         val wanted = LinkedHashSet<Long>(requested.size)
         requested.forEach { wanted += it.packed }
         pinned = wanted
@@ -82,6 +93,7 @@ class TileEngine(
             val packed = key.packed
             if (tiles.containsKey(packed)) { touch(packed); continue }
             if (inFlight.containsKey(packed)) continue
+            if (inFlight.size >= maxQueued) break
             schedule(key)
         }
 
@@ -118,10 +130,15 @@ class TileEngine(
                 tileHeight = grid.tileHeight(key.row)
             )
             inFlight.remove(key.packed)
-            if (bmp != null) {
+            if (bmp != null && key.packed in pinned) {
+                bitmaps[key.packed]?.takeIf { it !== bmp && !it.isRecycled }?.recycle()
+                bitmaps[key.packed] = bmp
                 tiles[key.packed] = bmp.asImageBitmap()
                 touch(key.packed)
                 evict()
+                renderRevision++
+            } else {
+                bmp?.recycle()
             }
         }
         inFlight[key.packed] = job
@@ -140,7 +157,7 @@ class TileEngine(
             // المربّعات المرئية محميّة — إخلاؤها معناه فراغ أبيض في الشاشة
             if (candidate in pinned) continue
             it.remove()
-            tiles.remove(candidate)
+            release(candidate)
         }
     }
 
@@ -155,21 +172,30 @@ class TileEngine(
             val level = TileKey(packed).level
             kotlin.math.abs(level - currentLevel) > keep && packed !in pinned
         }
-        doomed.forEach { tiles.remove(it); lru.remove(it) }
+        doomed.forEach(::release)
     }
 
     /** بيتنده لما الشاشة تتقفل — بيلغي الطابور ويفضّي الذاكرة. */
     fun clear() {
         scope.cancel()
         inFlight.clear()
-        tiles.clear()
+        tiles.keys.toList().forEach(::release)
         lru.clear()
         pinned = emptySet()
         measuring.clear()
     }
 
+    private fun release(packed: Long) {
+        tiles.remove(packed)
+        bitmaps.remove(packed)?.takeIf { !it.isRecycled }?.recycle()
+        lru.remove(packed)
+        renderRevision++
+    }
+
     companion object {
         private const val BYTES_PER_TILE = TILE_SIZE.toLong() * TILE_SIZE * 4
+        /** PDFium يتعامل مع المستند بخيط واحد؛ صف قصير يمنع المربعات القديمة من حجب موضع المستخدم. */
+        private const val MAX_QUEUED_SHARP = 14
 
         /**
          * ميزانية الذاكرة — ربع اللي التطبيق مسموح له بيه، بين ٣٢ و١٩٢ ميجا.

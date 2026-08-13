@@ -2,6 +2,7 @@ package com.corewall.qaqc.ui.pdf
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,7 @@ class ThumbnailCache(
     private val maxPx: Int = 260
 ) {
     val thumbs: SnapshotStateMap<Int, ImageBitmap> = mutableStateMapOf()
+    private val bitmaps = HashMap<Int, Bitmap>()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val pending = HashSet<Int>()
@@ -71,13 +73,19 @@ class ThumbnailCache(
             val h = (size.height * scale).toInt().coerceAtLeast(1)
             val bmp = session.renderTile(page, w, h, 0, 0, w, h)
             pending.remove(page)
-            if (bmp != null) thumbs[page] = bmp.asImageBitmap()
+            if (bmp != null) {
+                bitmaps.remove(page)?.takeIf { !it.isRecycled }?.recycle()
+                bitmaps[page] = bmp
+                thumbs[page] = bmp.asImageBitmap()
+            }
         }
     }
 
     fun clear() {
         scope.cancel()
         thumbs.clear()
+        bitmaps.values.forEach { bitmap -> if (!bitmap.isRecycled) bitmap.recycle() }
+        bitmaps.clear()
         pending.clear()
     }
 }

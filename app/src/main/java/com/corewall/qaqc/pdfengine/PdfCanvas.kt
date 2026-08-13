@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -105,16 +106,29 @@ fun PdfCanvas(
      * لازم نعيد الحساب من الأول بمقاسات حقيقية.
      */
     LaunchedEffect(engine, session, measured) {
-        snapshotFlow { state.revision to state.mode }
+        var settledViewportRevision = -1
+        snapshotFlow { PdfRenderDemand(state.revision, state.mode, state.interacting, engine.renderRevision) }
             .conflate()
-            .collect {
+            .collectLatest { demand ->
                 // المعاينة الأول في الطابور: صفحة طرية أحسن من صفحة بيضا
                 val previews = previewTilesFor(state, session)
-                val required = state.requiredTiles(session)
-                val all = ArrayList<TileKey>(previews.size + required.size)
-                all.addAll(previews)
-                all.addAll(required)
-                engine.sync(all)
+                if (demand.interacting) {
+                    // أثناء القرص أو السحب لا نطارد كل مستوى تكبير جديد. المعاينة الموجودة تتحول فوراً
+                    // وتكفي للحركة؛ طلب الدقة العالية هنا هو مصدر الطابور والتهتهة في المخططات الكبيرة.
+                    engine.sync(previews, maxQueued = MAX_QUEUED_PREVIEW)
+                    settledViewportRevision = -1
+                } else {
+                    // يترك الإيماءة تنتهي فعلاً قبل طلب البلاطات الحادة. وصول بلاطة لاحقة لا يعيد التأخير.
+                    if (demand.viewportRevision != settledViewportRevision) {
+                        kotlinx.coroutines.delay(SHARP_RENDER_SETTLE_MS)
+                        settledViewportRevision = demand.viewportRevision
+                    }
+                    val required = state.requiredTiles(session)
+                    val all = ArrayList<TileKey>(previews.size + required.size)
+                    all.addAll(previews)
+                    all.addAll(required)
+                    engine.sync(all)
+                }
             }
     }
 
@@ -217,6 +231,15 @@ private suspend fun fling(state: PdfViewerState, vx: Float, vy: Float) = corouti
 }
 
 private const val MIN_FLING = 80f
+private const val SHARP_RENDER_SETTLE_MS = 90L
+private const val MAX_QUEUED_PREVIEW = 4
+
+private data class PdfRenderDemand(
+    val viewportRevision: Int,
+    val mode: ViewMode,
+    val interacting: Boolean,
+    val tileRevision: Int
+)
 
 /**
  * نقرتين = دورة تكبير: ملء العرض ← ١٠٠٪ ← ٢٠٠٪ ← ملء العرض.

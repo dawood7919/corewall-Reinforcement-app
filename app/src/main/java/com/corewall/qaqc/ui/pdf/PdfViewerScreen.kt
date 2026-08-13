@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.CallMerge
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Reorder
@@ -252,6 +253,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     var imagesOpen by remember(path) { mutableStateOf(false) }
     var watermarkOpen by remember(path) { mutableStateOf(false) }
     var mergeOpen by remember(path) { mutableStateOf(false) }
+    var splitOpen by remember(path) { mutableStateOf(false) }
     var opRunning by remember(path) { mutableStateOf(false) }
     var opProgress by remember(path) { mutableStateOf<Pair<Int, Int>?>(null) }
 
@@ -689,6 +691,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     onImages = { imagesOpen = true },
                     onWatermark = { watermarkOpen = true },
                     onMerge = { mergeOpen = true },
+                    onSplit = { splitOpen = true },
                     onToggleRail = { railVisible = !railVisible },
                     onToggleMode = {
                         state.setMode(
@@ -945,6 +948,28 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         }
                     },
                     onDismiss = { if (!opRunning) mergeOpen = false }
+                )
+            }
+
+            if (splitOpen) {
+                SplitPdfSheet(
+                    pageCount = active.pageCount,
+                    running = opRunning,
+                    onSplit = {
+                        splitOpen = false
+                        opRunning = true
+                        scope.launch {
+                            val outDir = File(file.parentFile, "${file.nameWithoutExtension} — صفحات")
+                            val result = PdfOps.splitIntoPages(file, outDir, file.nameWithoutExtension)
+                            opRunning = false
+                            result.onSuccess { pages ->
+                                Toast.makeText(context, "اتقسم الملف إلى ${pages.size} صفحة في ${outDir.name}", Toast.LENGTH_LONG).show()
+                            }.onFailure { error ->
+                                Toast.makeText(context, "فشل التقسيم: ${error.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    onDismiss = { if (!opRunning) splitOpen = false }
                 )
             }
 
@@ -1210,6 +1235,7 @@ private fun TopChrome(
     onImages: () -> Unit,
     onWatermark: () -> Unit,
     onMerge: () -> Unit,
+    onSplit: () -> Unit,
     onToggleRail: () -> Unit,
     onToggleMode: () -> Unit,
     onExport: () -> Unit
@@ -1300,6 +1326,11 @@ private fun TopChrome(
                         text = { Text("دمج مع ملفات تانية") },
                         leadingIcon = { Icon(Icons.Filled.CallMerge, contentDescription = null) },
                         onClick = { menuOpen = false; onMerge() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("تقسيم إلى صفحات") },
+                        leadingIcon = { Icon(Icons.Filled.CallSplit, contentDescription = null) },
+                        onClick = { menuOpen = false; onSplit() }
                     )
                     DropdownMenuItem(
                         text = { Text("صدّر نسخة معلّقة") },
