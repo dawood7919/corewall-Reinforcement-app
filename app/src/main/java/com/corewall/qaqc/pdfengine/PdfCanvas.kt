@@ -108,7 +108,9 @@ fun PdfCanvas(
     LaunchedEffect(engine, session, measured) {
         var settledViewportRevision = -1
         var lastInteractiveSyncMs = Long.MIN_VALUE
-        snapshotFlow { PdfRenderDemand(state.revision, state.mode, state.interacting, engine.renderRevision) }
+        // وصول بلاطة يرسم نفسه من SnapshotStateMap داخل Canvas، لكنه لا
+        // يغير viewport ولا يحتاج إعادة جدولة حساب الطلبات.
+        snapshotFlow { PdfRenderDemand(state.revision, state.mode, state.interacting) }
             .conflate()
             .collectLatest { demand ->
                 if (demand.interacting) {
@@ -243,8 +245,7 @@ private const val PREVIEW_SYNC_INTERVAL_MS = 72L
 private data class PdfRenderDemand(
     val viewportRevision: Int,
     val mode: ViewMode,
-    val interacting: Boolean,
-    val tileRevision: Int
+    val interacting: Boolean
 )
 
 /**

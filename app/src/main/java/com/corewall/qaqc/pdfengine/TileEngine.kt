@@ -16,132 +16,156 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.util.PriorityQueue
 
 /**
- * كاش المربّعات وطابور الرندر.
+ * ذاكرة بلاطات + مجدول رندر أحادي المستهلك.
  *
- * ثلاث مسؤوليات، وكلها لازم تشتغل من غير ما تلمس خيط الواجهة:
- *
- * 1. **الكاش** — `SnapshotStateMap` عشان Compose يعيد التركيب لما مربّع
- *    يوصل. المهم إن وصول مربّع بيعيد تركيب **المربّع ده بس**، مش الصفحة
- *    كلها ولا الشاشة — علشان كده المفتاح `Long` مضغوط والخريطة مراقَبة.
- * 2. **الطابور** — كل مربّع مطلوب بياخد `Job`. المربّع اللي خرج من المنطقة
- *    المرئية **بيتلغي فوراً**؛ من غير كده، تمريرة سريعة في مستند كبير
- *    بتسيب طابور بمئات المربّعات اللي محدش هيشوفها، والمربّع اللي انت
- *    باصص عليه بيستنى وراهم.
- * 3. **الإخلاء** — LRU بسقف محسوب من ذاكرة الجهاز.
+ * PDFium يرسم مستنداً واحداً على خيط أصلي واحد، لذلك إطلاق 14 coroutine لا
+ * يعطي توازياً حقيقياً؛ بل يضع 14 رسمة قديمة أمام ما يراه المستخدم الآن.
+ * هذا المجدول يحتفظ بطابور صغير مرتب بالأولوية ويترك مهمة native جارية واحدة
+ * فقط. عند تحرك المنظر تُرمى الطلبات المنتظرة فوراً، وبعد انتهاء البلاطة
+ * الجارية يبدأ أحدث موضع مرئي. بهذه الطريقة لا يلاحق التكبير طابوراً قديماً.
  */
 class TileEngine(
     private val session: PdfDocumentSession,
     maxBytes: Long
 ) {
-    /** المربّعات الجاهزة. Compose بيراقبها. */
+    /** البلاطات الجاهزة فقط؛ Canvas يراقب هذه الخريطة ولا يراقب طابور الرندر. */
     val tiles: SnapshotStateMap<Long, ImageBitmap> = mutableStateMapOf()
+    val metrics = PdfPerfMetrics()
 
-    /** الـImageBitmap لا يحرر الـBitmap الأصلي تلقائياً عند إخلاء الكاش. */
     private val bitmaps = HashMap<Long, Bitmap>()
+    private val maxTiles: Int = (maxBytes / BYTES_PER_TILE).toInt().coerceIn(MIN_TILES, MAX_TILES)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val lru = LinkedHashSet<Long>()
+    private val measuring = HashSet<Int>()
 
-    /** نبضة لوصول أو إخراج بلاطة؛ تتيح ملء طابور محدود تدريجياً. */
+    /** كل تغيير حقيقي للمنظر يصدر جيلاً جديداً؛ نتائج الجيل القديم لا تعرض. */
+    private var generation = 0L
+    private var lastRequest: List<Long> = emptyList()
+    private var lastKeys: List<TileKey> = emptyList()
+    private var queueLimit = MAX_QUEUED_SHARP
+    private var pinned: Set<Long> = emptySet()
+    private var activeKey: Long? = null
+    private var worker: Job? = null
+
+    private val pending = PriorityQueue<TileRequest>(
+        compareBy<TileRequest> { it.rank }.thenBy { it.key.packed }
+    )
+    private val queued = HashSet<Long>()
+
+    /** نبضة وصول/إخلاء، تستخدمها طبقة الطلب لإكمال دفعة محدودة من البلاطات. */
     var renderRevision by mutableIntStateOf(0)
         private set
 
-    /** أقصى عدد مربّعات في الذاكرة. ARGB_8888 512×512 = ١ ميجا للمربّع. */
-    private val maxTiles: Int = (maxBytes / BYTES_PER_TILE).toInt().coerceIn(24, 320)
-
     /**
-     * كل الدفاتر (الطابور والـLRU والخريطة) بتتعدّل على **خيط الواجهة بس**.
+     * يقدم بلاطات مطلوبة مرتبة من مركز المنظر إلى حوافه.
      *
-     * ده مش تفضيل: `sync` بتتنده من التركيب على الخيط الرئيسي، والرندر
-     * بيخلص على خيط PDFium. لو الاتنين كتبوا في نفس الـHashMap، ده تلف
-     * ذاكرة صامت — بيظهر كمربّعات بتختفي أو حلقة لا نهائية جوّه HashMap
-     * وقت التمرير، وبيبقى مستحيل تلاقيه بعدين.
-     *
-     * الرندر نفسه بيقفز لخيط PDFium جوّه [PdfDocumentSession.renderTile]
-     * ويرجع، فالخيط الرئيسي مابيتحبسش ولا لحظة.
-     */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-
-    private val inFlight = HashMap<Long, Job>()
-
-    /** ترتيب الاستخدام — الأقدم في الأول. */
-    private val lru = LinkedHashSet<Long>()
-
-    /** المربّعات المرئية دلوقتي — ممنوع تتخلص خالص. */
-    private var pinned: Set<Long> = emptySet()
-
-    private val measuring = HashSet<Int>()
-
-    /**
-     * بيقول للمحرّك: دي المربّعات المطلوبة دلوقتي، بالترتيب (الأهم الأول).
-     *
-     * بيتنده من الواجهة عند كل تغيّر في المنطقة المرئية. رخيص للاستدعاء
-     * المتكرر — بيلغي القديم وبيطلب الناقص بس.
+     * القائمة الأولى هي المنطقة المرئية، وما يليها prefetch. لا نلغي الرندر
+     * الأصلي الجاري لأنه لا يمكن قطعه بأمان وسط PDFium؛ بدلاً من ذلك نلغي
+     * **كل ما ينتظره** ونرفض نتيجته إن أصبحت قديمة.
      */
     fun sync(requested: List<TileKey>, maxQueued: Int = MAX_QUEUED_SHARP) {
-        val wanted = LinkedHashSet<Long>(requested.size)
-        requested.forEach { wanted += it.packed }
-        pinned = wanted
-
-        // ١) إلغاء اللي خرج من المشهد
-        val stale = inFlight.keys.filter { it !in wanted }
-        stale.forEach { key ->
-            inFlight.remove(key)?.cancel()
+        val packedRequest = requested.map { it.packed }
+        val viewportChanged = packedRequest != lastRequest
+        if (viewportChanged) {
+            metrics.cancelled(pending.size)
+            generation++
+            lastRequest = packedRequest
+            lastKeys = requested
+            pending.clear()
+            queued.clear()
         }
+        queueLimit = maxQueued
+        pinned = packedRequest.toSet()
 
-        // ٢) طلب الناقص، بالترتيب المطلوب (المركز الأول)
-        for (key in requested) {
-            val packed = key.packed
-            if (tiles.containsKey(packed)) { touch(packed); continue }
-            if (inFlight.containsKey(packed)) continue
-            if (inFlight.size >= maxQueued) break
-            schedule(key)
-        }
-
+        refillQueue()
         evict()
+        ensureWorker()
     }
 
-    private fun schedule(key: TileKey) {
-        val page = key.page
+    /** يملأ الدفعة التالية من آخر منظر معروف من غير إعادة حساب Compose للمنظر. */
+    private fun refillQueue() {
+        lastKeys.forEachIndexed { rank, key ->
+            val packed = key.packed
+            if (tiles.containsKey(packed)) {
+                metrics.hit()
+                touch(packed)
+                return@forEachIndexed
+            }
+            if (packed == activeKey || packed in queued) return@forEachIndexed
+            if (queued.size >= queueLimit) return@forEachIndexed
+            enqueue(key, rank)
+        }
+    }
 
-        // الصفحة اللي مقاسها لسه تقدير مابنرسمهاش: هنرسم بمقاس غلط وبعدين
-        // نرمي الشغل. بنقيسها الأول، والواجهة بتعيد الطلب لما المقاس يوصل.
-        val size = session.knownSize(page)
+    private fun enqueue(key: TileKey, rank: Int) {
+        val size = session.knownSize(key.page)
         if (size == null) {
-            if (measuring.add(page)) {
+            if (measuring.add(key.page)) {
                 scope.launch {
-                    session.measure(page)
-                    measuring.remove(page)
+                    session.measure(key.page)
+                    measuring.remove(key.page)
                 }
             }
             return
         }
+        val grid = TileGrid(key.page, key.level, size)
+        if (key.row !in 0 until grid.rows || key.col !in 0 until grid.cols) return
+        queued += key.packed
+        metrics.miss()
+        pending += TileRequest(key, rank, generation)
+    }
 
-        val grid = TileGrid(page, key.level, size)
-        if (key.row >= grid.rows || key.col >= grid.cols) return
+    private fun ensureWorker() {
+        if (worker?.isActive == true) return
+        worker = scope.launch {
+            while (true) {
+                val next = pending.poll() ?: break
+                queued.remove(next.key.packed)
+                if (next.generation != generation || next.key.packed in tiles) continue
 
-        val job = scope.launch {
-            val bmp = session.renderTile(
-                page = page,
-                gridWidth = grid.pixelWidth,
-                gridHeight = grid.pixelHeight,
-                originX = key.col * TILE_SIZE,
-                originY = key.row * TILE_SIZE,
-                tileWidth = grid.tileWidth(key.col),
-                tileHeight = grid.tileHeight(key.row)
-            )
-            inFlight.remove(key.packed)
-            if (bmp != null && key.packed in pinned) {
-                bitmaps[key.packed]?.takeIf { it !== bmp && !it.isRecycled }?.recycle()
-                bitmaps[key.packed] = bmp
-                tiles[key.packed] = bmp.asImageBitmap()
-                touch(key.packed)
-                evict()
-                renderRevision++
-            } else {
-                bmp?.recycle()
+                val key = next.key
+                val size = session.knownSize(key.page) ?: continue
+                val grid = TileGrid(key.page, key.level, size)
+                activeKey = key.packed
+                val startedAt = android.os.SystemClock.elapsedRealtime()
+                val bitmap = session.renderTile(
+                    page = key.page,
+                    gridWidth = grid.pixelWidth,
+                    gridHeight = grid.pixelHeight,
+                    originX = key.col * TILE_SIZE,
+                    originY = key.row * TILE_SIZE,
+                    tileWidth = grid.tileWidth(key.col),
+                    tileHeight = grid.tileHeight(key.row)
+                )
+                activeKey = null
+                metrics.rendered(android.os.SystemClock.elapsedRealtime() - startedAt)
+
+                val stillCurrent = next.generation == generation && key.packed in pinned
+                if (bitmap != null && stillCurrent) {
+                    put(key.packed, bitmap)
+                } else {
+                    bitmap?.takeIf { !it.isRecycled }?.recycle()
+                }
             }
+            worker = null
+            // لو وصل طلب جديد بين آخر poll وخروج coroutine، لا نتركه معلقاً.
+            if (pending.isNotEmpty()) ensureWorker()
         }
-        inFlight[key.packed] = job
+    }
+
+    private fun put(packed: Long, bitmap: Bitmap) {
+        bitmaps[packed]?.takeIf { it !== bitmap && !it.isRecycled }?.recycle()
+        bitmaps[packed] = bitmap
+        tiles[packed] = bitmap.asImageBitmap()
+        touch(packed)
+        // وصول بلاطة لا يغيّر المنظر؛ نكمل الطابور داخلياً بدلاً من إيقاظ
+        // snapshotFlow في Canvas وإعادة تكوين قوائم البلاطات والصفحات.
+        refillQueue()
+        evict()
+        renderRevision++
     }
 
     private fun touch(packed: Long) {
@@ -151,23 +175,17 @@ class TileEngine(
 
     private fun evict() {
         if (tiles.size <= maxTiles) return
-        val it = lru.iterator()
-        while (tiles.size > maxTiles && it.hasNext()) {
-            val candidate = it.next()
-            // المربّعات المرئية محميّة — إخلاؤها معناه فراغ أبيض في الشاشة
+        val iterator = lru.iterator()
+        while (tiles.size > maxTiles && iterator.hasNext()) {
+            val candidate = iterator.next()
             if (candidate in pinned) continue
-            it.remove()
+            iterator.remove()
             release(candidate)
         }
     }
 
-    /**
-     * بيرمي كل مستويات التكبير البعيدة عن المستوى الحالي.
-     *
-     * بيتنده بعد ما التكبير يستقر. من غيره، رحلة من ١× لـ٦٤× ورجوع بتسيب
-     * ٩ مستويات كاملة في الذاكرة — وأول ٨ منهم محدش هيشوفهم تاني.
-     */
-    fun dropDistantLevels(currentLevel: Int, keep: Int = 2) {
+    /** يحتفظ بالمستوى الحالي والسابق للتحميل الانتقالي، ويرمي ما عداه. */
+    fun dropDistantLevels(currentLevel: Int, keep: Int = 1) {
         val doomed = tiles.keys.filter { packed ->
             val level = TileKey(packed).level
             kotlin.math.abs(level - currentLevel) > keep && packed !in pinned
@@ -175,15 +193,25 @@ class TileEngine(
         doomed.forEach(::release)
     }
 
-    /** بيتنده لما الشاشة تتقفل — بيلغي الطابور ويفضّي الذاكرة. */
     fun clear() {
         scope.cancel()
-        inFlight.clear()
+        worker = null
+        pending.clear()
+        queued.clear()
         tiles.keys.toList().forEach(::release)
         lru.clear()
         pinned = emptySet()
+        activeKey = null
         measuring.clear()
     }
+
+    /** لقطة تشخيصية تستخدم في debug فقط؛ لا تُندَه من Canvas لكل إطار. */
+    fun performanceSnapshot(): PdfPerfMetrics.Snapshot = metrics.snapshot(
+        cachedTiles = tiles.size,
+        queuedTiles = pending.size,
+        active = activeKey != null,
+        bitmapBytes = bitmaps.values.sumOf { it.byteCount.toLong() }
+    )
 
     private fun release(packed: Long) {
         tiles.remove(packed)
@@ -192,20 +220,22 @@ class TileEngine(
         renderRevision++
     }
 
+    private data class TileRequest(
+        val key: TileKey,
+        val rank: Int,
+        val generation: Long
+    )
+
     companion object {
         private const val BYTES_PER_TILE = TILE_SIZE.toLong() * TILE_SIZE * 4
-        /** PDFium يتعامل مع المستند بخيط واحد؛ صف قصير يمنع المربعات القديمة من حجب موضع المستخدم. */
-        private const val MAX_QUEUED_SHARP = 14
+        private const val MIN_TILES = 24
+        private const val MAX_TILES = 320
+        private const val MAX_QUEUED_SHARP = 18
 
-        /**
-         * ميزانية الذاكرة — ربع اللي التطبيق مسموح له بيه، بين ٣٢ و١٩٢ ميجا.
-         *
-         * الربع مش رقم عشوائي: التطبيق ده شايل كمان مسقط تفاعلي وصور موقع
-         * وقاعدة بيانات. عارض PDF بياخد نص الذاكرة بيقتل باقي التطبيق.
-         */
+        /** ميزانية محددة للمستند، لا تتجاوز ربع heap التطبيق ولا 192MB. */
         fun budgetFor(context: Context): Long {
-            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-            val heapMb = am?.memoryClass ?: 128
+            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val heapMb = manager?.memoryClass ?: 128
             val quarter = heapMb.toLong() * 1024 * 1024 / 4
             return quarter.coerceIn(32L * 1024 * 1024, 192L * 1024 * 1024)
         }
