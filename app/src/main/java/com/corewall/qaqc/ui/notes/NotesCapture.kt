@@ -55,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -75,7 +76,7 @@ import java.io.File
 private enum class InkTool { PEN, MARKER, HIGHLIGHTER, ERASER }
 private data class InkStroke(val points: MutableList<Offset>, val color: Color, val width: Float, val tool: InkTool)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun NotesDrawingSheet(file: File, onDismiss: () -> Unit, onSaved: (File) -> Unit) {
     val c = LocalCwColors.current

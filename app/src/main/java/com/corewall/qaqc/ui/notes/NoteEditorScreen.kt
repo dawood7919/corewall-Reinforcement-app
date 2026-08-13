@@ -272,11 +272,10 @@ private fun DocumentEditorBlock(
                 else -> OutlinedTextField(
                     value = block.text,
                     onValueChange = { onChange(block.copy(text = it)) },
-                    onFocusChanged = { if (it.isFocused) onFocus() },
                     placeholder = { Text("ملاحظة") },
                     textStyle = textStyle,
                     shape = Radius.shapeMd,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) onFocus() }
                 )
             }
             if (focused) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
