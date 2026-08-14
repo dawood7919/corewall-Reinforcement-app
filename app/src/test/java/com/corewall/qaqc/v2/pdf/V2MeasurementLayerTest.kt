@@ -48,6 +48,23 @@ class V2MeasurementLayerTest {
     }
 
     @Test
+    fun inkPreservesStyleAndSupportsUndoWithoutMeasurementState() {
+        val layer = V2MeasurementLayer()
+        layer.selectTool(V2WorkspaceTool.INK)
+        layer.setInkStyle(V2InkStyle(colorArgb = 0xFFD32F2FL, baseWidthPx = 8f))
+
+        layer.onStylusDown(V2DocumentPoint(0.10f, 0.10f), page = 2, pressure = 0.25f, isEraser = false)
+        layer.onStylusMove(V2DocumentPoint(0.18f, 0.16f), page = 2, pressure = 0.90f)
+        val saved = layer.onStylusUp(V2DocumentPoint(0.30f, 0.20f), page = 2, pressure = 0.60f)
+
+        assertEquals(0xFFD32F2FL, saved?.colorArgb)
+        assertEquals(2, saved?.page)
+        assertTrue((saved?.widthPx ?: 0f) in 1.2f..16f)
+        assertEquals(saved, layer.undoLastInk())
+        assertTrue(layer.inkStrokes.isEmpty())
+    }
+
+    @Test
     fun geometricQuantityUsesDocumentPointsAndNeverNeedsViewportZoom() {
         val record = V2MeasurementRecord(
             id = 1,

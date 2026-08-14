@@ -34,6 +34,15 @@ internal class V2StylusInput(
             MotionEvent.ACTION_MOVE -> {
                 val index = event.findPointerIndex(activePointerId)
                 if (index < 0) return false
+                // Android يدمج أحياناً عدة عينات قلم في Event واحد. استهلاكها
+                // بالترتيب يمنع الفجوات في التوقيع والكتابة السريعة على 120Hz.
+                for (sample in 0 until event.historySize) {
+                    onMove(
+                        event.getHistoricalX(index, sample),
+                        event.getHistoricalY(index, sample),
+                        event.getHistoricalPressure(index, sample)
+                    )
+                }
                 onMove(event.getX(index), event.getY(index), event.getPressure(index))
                 return true
             }

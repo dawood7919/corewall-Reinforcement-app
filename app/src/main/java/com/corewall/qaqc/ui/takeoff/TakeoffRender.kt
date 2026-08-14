@@ -528,8 +528,32 @@ fun DrawScope.drawTakeoffAnnotations(
             TakeoffAnnotationType.ARROW ->
                 if (a.verts.size >= 2) drawAnnotationArrow(state, page, a.verts[0], a.verts[1], color, width)
             TakeoffAnnotationType.TEXT -> drawAnnotationText(state, page, a.verts.firstOrNull(), a.text, color)
+            TakeoffAnnotationType.INK -> drawAnnotationInk(
+                state = state,
+                page = page,
+                points = a.verts,
+                color = color,
+                width = a.text.toFloatOrNull()?.coerceIn(1.2f, 16f) ?: width
+            )
         }
     }
+}
+
+/** خط حر بسيط للمسار القديم؛ سطح V2 يستخدم منحنيات ملساء أثناء الكتابة. */
+private fun DrawScope.drawAnnotationInk(
+    state: PdfViewerState,
+    page: Int,
+    points: List<TakeoffPoint>,
+    color: Color,
+    width: Float
+) {
+    val screen = points.mapNotNull { state.pagePointToScreen(page, it.x.toFloat(), it.y.toFloat()) }
+    if (screen.size < 2) return
+    val path = Path().apply {
+        moveTo(screen.first().x, screen.first().y)
+        screen.drop(1).forEach { lineTo(it.x, it.y) }
+    }
+    drawPath(path, color, style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
 private const val CLOUD_BUMP_SPACING = 26f

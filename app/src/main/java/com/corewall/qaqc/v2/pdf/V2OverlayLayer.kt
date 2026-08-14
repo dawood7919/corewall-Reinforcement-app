@@ -21,6 +21,16 @@ internal data class V2PersistedTakeoffItem(
     val calibration: V2PageCalibration
 )
 
+/** خط محفوظ في طبقة التعليقات الحالية؛ `annotationId` هو مفتاح Room للحذف والتراجع. */
+internal data class V2PersistedInkStroke(
+    val annotationId: Long,
+    val page: Int,
+    val points: List<V2DocumentPoint>,
+    val widthPx: Float,
+    val colorArgb: Long,
+    val visible: Boolean
+)
+
 /** طبقة Canvas مستقلة فوق PDF: لا تطلب رندر مستند ولا تنشئ Bitmap. */
 internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
     private val path = Path()
@@ -56,10 +66,12 @@ internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
             drawDraft(canvas, draft, pageWidthPt, pageHeightPt, zoom)
         }
         state.inkStrokes.forEach { stroke ->
-            if (stroke.page == page) drawInk(canvas, stroke.points, stroke.widthPx, pageWidthPt, pageHeightPt, zoom)
+            if (stroke.page == page) {
+                drawInk(canvas, stroke.points, stroke.widthPx, stroke.colorArgb, pageWidthPt, pageHeightPt, zoom)
+            }
         }
         state.liveInk?.takeIf { it.page == page }?.let { stroke ->
-            drawInk(canvas, stroke.points, stroke.widthPx, pageWidthPt, pageHeightPt, zoom)
+            drawInk(canvas, stroke.points, stroke.widthPx, stroke.colorArgb, pageWidthPt, pageHeightPt, zoom)
         }
     }
 
@@ -115,6 +127,21 @@ internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
                     pageHeightPt = pageHeightPt,
                     zoom = zoom
                 )
+            }
+        }
+    }
+
+    fun drawPersistedInk(
+        canvas: Canvas,
+        strokes: List<V2PersistedInkStroke>,
+        page: Int,
+        pageWidthPt: Float,
+        pageHeightPt: Float,
+        zoom: Float
+    ) {
+        strokes.forEach { stroke ->
+            if (stroke.visible && stroke.page == page) {
+                drawInk(canvas, stroke.points, stroke.widthPx, stroke.colorArgb, pageWidthPt, pageHeightPt, zoom)
             }
         }
     }
@@ -192,13 +219,15 @@ internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
         canvas: Canvas,
         points: List<V2DocumentPoint>,
         widthPx: Float,
+        colorArgb: Long,
         pageWidthPt: Float,
         pageHeightPt: Float,
         zoom: Float
     ) {
         if (points.size < 2) return
+        inkPaint.color = colorArgb.toInt()
         inkPaint.strokeWidth = widthPx / zoom.coerceAtLeast(0.1f)
-        trace(points, pageWidthPt, pageHeightPt, close = false)
+        traceInk(points, pageWidthPt, pageHeightPt)
         canvas.drawPath(path, inkPaint)
     }
 
@@ -233,6 +262,27 @@ internal class V2OverlayLayer(private val state: V2MeasurementLayer) {
         path.moveTo(first.x * pageWidthPt, first.y * pageHeightPt)
         points.drop(1).forEach { point -> path.lineTo(point.x * pageWidthPt, point.y * pageHeightPt) }
         if (close) path.close()
+    }
+
+    /** منحنيات وسطية خفيفة تقلل تكسّر الخط من دون إنشاء نقاط أو Bitmap جديدة. */
+    private fun traceInk(points: List<V2DocumentPoint>, pageWidthPt: Float, pageHeightPt: Float) {
+        path.reset()
+        val first = points.first()
+        path.moveTo(first.x * pageWidthPt, first.y * pageHeightPt)
+        if (points.size == 2) {
+            val last = points.last()
+            path.lineTo(last.x * pageWidthPt, last.y * pageHeightPt)
+            return
+        }
+        for (index in 1 until points.lastIndex) {
+            val point = points[index]
+            val next = points[index + 1]
+            val midX = (point.x + next.x) * pageWidthPt * 0.5f
+            val midY = (point.y + next.y) * pageHeightPt * 0.5f
+            path.quadTo(point.x * pageWidthPt, point.y * pageHeightPt, midX, midY)
+        }
+        val last = points.last()
+        path.lineTo(last.x * pageWidthPt, last.y * pageHeightPt)
     }
 
     private fun TakeoffTool.toMeasurementKind(): V2MeasurementKind? = when (this) {

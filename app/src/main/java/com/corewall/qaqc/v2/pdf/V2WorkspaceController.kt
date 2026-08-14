@@ -31,6 +31,16 @@ internal class V2WorkspaceController {
         workspace?.setMeasurementColor(colorArgb)
     }
 
+    fun setInkStyle(style: V2InkStyle) {
+        workspace?.setInkStyle(style)
+    }
+
+    fun acknowledgeInkPersisted(id: Long) {
+        workspace?.acknowledgeInkPersisted(id)
+    }
+
+    fun undoLastInk(): V2InkUndoResult? = workspace?.undoLastInk()
+
     fun acknowledgeMeasurementPersisted(id: Long) {
         workspace?.acknowledgeMeasurementPersisted(id)
     }

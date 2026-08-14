@@ -46,6 +46,9 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
     private var pageIndex = 0
     private var pageSize = SizePt.A4
     private var persistedItems: List<V2PersistedTakeoffItem> = emptyList()
+    private var persistedInk: List<V2PersistedInkStroke> = emptyList()
+    private var onInkCommitted: ((V2InkStroke) -> Unit)? = null
+    private var onPersistedInkErased: ((Long) -> Unit)? = null
 
     /** يستدعى مرة واحدة بعد فتح جلسة، ولا يملك إغلاق الجلسة نفسها. */
     fun bind(document: PdfDocumentSession, page: Int) {
@@ -107,9 +110,36 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
         invalidate()
     }
 
+    fun setPersistedInk(strokes: List<V2PersistedInkStroke>) {
+        persistedInk = strokes
+        invalidate()
+    }
+
+    fun setOnInkCommitted(listener: ((V2InkStroke) -> Unit)?) {
+        onInkCommitted = listener
+    }
+
+    fun setOnPersistedInkErased(listener: ((Long) -> Unit)?) {
+        onPersistedInkErased = listener
+    }
+
+    fun setInkStyle(style: V2InkStyle) {
+        measurements.setInkStyle(style)
+    }
+
     fun acknowledgeMeasurementPersisted(id: Long) {
         measurements.discardCompletedMeasurement(id)
         invalidate()
+    }
+
+    fun acknowledgeInkPersisted(id: Long) {
+        measurements.discardCompletedInk(id)
+        invalidate()
+    }
+
+    fun undoLastInk(): V2InkUndoResult? {
+        measurements.undoLastInk()?.let { return V2InkUndoResult.Local(it) }
+        return persistedInk.lastOrNull()?.let { V2InkUndoResult.Persisted(it.annotationId) }
     }
 
     fun zoomBy(factor: Float) {
@@ -159,6 +189,7 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
         drawLayer(canvas, current, (sharpLevel - 1).coerceAtLeast(0))
         drawLayer(canvas, current, sharpLevel)
         overlay.drawPersisted(canvas, persistedItems, pageIndex, pageSize.width, pageSize.height, viewport.zoom)
+        overlay.drawPersistedInk(canvas, persistedInk, pageIndex, pageSize.width, pageSize.height, viewport.zoom)
         overlay.draw(canvas, pageIndex, pageSize.width, pageSize.height, viewport.zoom)
         canvas.drawRect(0f, 0f, pageSize.width, pageSize.height, borderPaint)
         canvas.restore()
@@ -185,6 +216,10 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
 
     private fun dispatchStylusDown(x: Float, y: Float, pressure: Float, eraser: Boolean) {
         viewport.screenToDocument(x, y)?.let { point ->
+            if (eraser && erasePersistedInk(point, pageIndex) != null) {
+                invalidate()
+                return@let
+            }
             measurements.onStylusDown(point, pageIndex, pressure, eraser)
             invalidate()
         }
@@ -199,7 +234,26 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
 
     private fun dispatchStylusUp(x: Float, y: Float, pressure: Float) {
         measurements.onStylusUp(viewport.screenToDocument(x, y), pageIndex, pressure)
+            ?.let { onInkCommitted?.invoke(it) }
         invalidate()
+    }
+
+    private fun erasePersistedInk(point: V2DocumentPoint, page: Int): Long? {
+        val candidate = persistedInk
+            .asSequence()
+            .filter { it.visible && it.page == page }
+            .map { stroke -> stroke to (stroke.points.minOfOrNull { distance(it, point) } ?: Double.MAX_VALUE) }
+            .minByOrNull { it.second }
+            ?: return null
+        if (candidate.second > PERSISTED_INK_ERASE_RADIUS) return null
+        onPersistedInkErased?.invoke(candidate.first.annotationId)
+        return candidate.first.annotationId
+    }
+
+    private fun distance(a: V2DocumentPoint, b: V2DocumentPoint): Double {
+        val dx = (a.x - b.x).toDouble()
+        val dy = (a.y - b.y).toDouble()
+        return kotlin.math.hypot(dx, dy)
     }
 
     private fun drawLayer(canvas: Canvas, tiles: V2TileScheduler, level: Int) {
@@ -279,5 +333,6 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
     private companion object {
         const val TILE_PX = 384f
         const val BACKGROUND = 0xFF101317.toInt()
+        const val PERSISTED_INK_ERASE_RADIUS = 0.020
     }
 }

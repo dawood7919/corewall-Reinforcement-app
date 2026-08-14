@@ -60,11 +60,26 @@ internal data class V2MeasurementRecord(
 )
 
 internal data class V2InkStroke(
+    val id: Long,
     val page: Int,
     val points: List<V2DocumentPoint>,
     /** عرض القلم بالبكسل المنطقي قبل تحويل المنظر. */
-    val widthPx: Float
+    val widthPx: Float,
+    val colorArgb: Long
 )
+
+/** إعدادات ثابتة للخط الواحد؛ الضغط يعدّل السمك النهائي داخل حدود آمنة. */
+internal data class V2InkStyle(
+    val colorArgb: Long = 0xFF1976D2L,
+    val baseWidthPx: Float = 3.4f
+) {
+    val normalizedWidthPx: Float get() = baseWidthPx.coerceIn(1.4f, 14f)
+}
+
+internal sealed interface V2InkUndoResult {
+    data class Local(val stroke: V2InkStroke) : V2InkUndoResult
+    data class Persisted(val annotationId: Long) : V2InkUndoResult
+}
 
 internal sealed interface V2MeasurementFinishResult {
     data object NoDraft : V2MeasurementFinishResult
@@ -86,6 +101,7 @@ internal class V2MeasurementLayer {
     private var activeInk: MutableInkStroke? = null
     private var nextMeasurementId = 1L
     private var commitCountsImmediately = true
+    private var inkStyle = V2InkStyle()
 
     val tool: V2WorkspaceTool get() = selectedTool
     val capturesStylus: Boolean get() = selectedTool != V2WorkspaceTool.NAVIGATE || activeInk != null
@@ -107,13 +123,23 @@ internal class V2MeasurementLayer {
         commitCountsImmediately = value
     }
 
+    fun setInkStyle(value: V2InkStyle) {
+        inkStyle = value
+    }
+
     fun onStylusDown(point: V2DocumentPoint, page: Int, pressure: Float, isEraser: Boolean) {
         if (isEraser) {
             eraseNearestInk(point, page)
             return
         }
         when (selectedTool) {
-            V2WorkspaceTool.INK -> activeInk = MutableInkStroke(page, point, pressure)
+            V2WorkspaceTool.INK -> activeInk = MutableInkStroke(
+                id = nextMeasurementId++,
+                page = page,
+                point = point,
+                pressure = pressure,
+                style = inkStyle
+            )
             V2WorkspaceTool.NAVIGATE -> Unit
             else -> beginMeasurementPoint(point, page)
         }
@@ -124,13 +150,18 @@ internal class V2MeasurementLayer {
         activeDraft?.takeIf { it.page == page }?.append(point)
     }
 
-    fun onStylusUp(point: V2DocumentPoint?, page: Int, pressure: Float) {
+    fun onStylusUp(point: V2DocumentPoint?, page: Int, pressure: Float): V2InkStroke? {
+        var committedInk: V2InkStroke? = null
         activeInk?.takeIf { it.page == page }?.let { stroke ->
             point?.let { stroke.append(it, pressure) }
-            if (stroke.points.size >= 2) completedInk += stroke.freeze()
+            if (stroke.points.size >= 2) {
+                committedInk = stroke.freeze()
+                completedInk += committedInk!!
+            }
             activeInk = null
         }
         point?.let { activeDraft?.takeIf { draft -> draft.page == page }?.append(it) }
+        return committedInk
     }
 
     /**
@@ -180,6 +211,13 @@ internal class V2MeasurementLayer {
         activeInk = null
     }
 
+    /** يتراجع عن آخر خط حبر لم يُرحّل بعد إلى التخزين الدائم. */
+    fun undoLastInk(): V2InkStroke? = completedInk.removeLastOrNull()
+
+    fun discardCompletedInk(id: Long) {
+        completedInk.removeAll { it.id == id }
+    }
+
     fun clearPage(page: Int) {
         completedMeasurements.removeAll { it.page == page }
         completedInk.removeAll { it.page == page }
@@ -214,14 +252,14 @@ internal class V2MeasurementLayer {
         // لا نستبدل مسودة نوع/صفحة أخرى صامتاً؛ المستخدم ينهيها أو يلغيها صراحةً.
     }
 
-    private fun eraseNearestInk(point: V2DocumentPoint, page: Int) {
+    private fun eraseNearestInk(point: V2DocumentPoint, page: Int): V2InkStroke? {
         val candidate = completedInk
             .withIndex()
             .filter { it.value.page == page }
             .minByOrNull { (_, stroke) -> stroke.points.minOfOrNull { distance(it, point) } ?: Double.MAX_VALUE }
-            ?: return
-        val nearest = candidate.value.points.minOfOrNull { distance(it, point) } ?: return
-        if (nearest <= INK_ERASE_RADIUS) completedInk.removeAt(candidate.index)
+            ?: return null
+        val nearest = candidate.value.points.minOfOrNull { distance(it, point) } ?: return null
+        return if (nearest <= INK_ERASE_RADIUS) completedInk.removeAt(candidate.index) else null
     }
 
     private fun distance(a: V2DocumentPoint, b: V2DocumentPoint): Double =
@@ -240,9 +278,16 @@ internal class V2MeasurementLayer {
         }
     }
 
-    internal class MutableInkStroke(page: Int, point: V2DocumentPoint, pressure: Float) {
+    internal class MutableInkStroke(
+        private val id: Long,
+        page: Int,
+        point: V2DocumentPoint,
+        pressure: Float,
+        private val style: V2InkStyle
+    ) {
         val page = page
         val points = mutableListOf(point)
+        val colorArgb: Long get() = style.colorArgb
         private var pressureTotal = normalizedPressure(pressure)
         private var pressureSamples = 1
 
@@ -258,10 +303,17 @@ internal class V2MeasurementLayer {
         val widthPx: Float
             get() {
                 val average = pressureTotal / pressureSamples.coerceAtLeast(1)
-                return (1.7f + average * 2.1f).coerceIn(1.7f, 3.8f)
+                return (style.normalizedWidthPx * (0.62f + average * 0.76f))
+                    .coerceIn(1.2f, 16f)
             }
 
-        fun freeze(): V2InkStroke = V2InkStroke(page, points.toList(), widthPx)
+        fun freeze(): V2InkStroke = V2InkStroke(
+            id = id,
+            page = page,
+            points = points.toList(),
+            widthPx = widthPx,
+            colorArgb = style.colorArgb
+        )
     }
 
     private companion object {

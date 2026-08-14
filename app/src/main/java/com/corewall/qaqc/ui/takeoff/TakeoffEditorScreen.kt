@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.SquareFoot
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +56,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -112,13 +114,17 @@ import com.corewall.qaqc.ui.design.Sizes
 import com.corewall.qaqc.ui.design.Space
 import com.corewall.qaqc.ui.design.Stroke as DesignStroke
 import com.corewall.qaqc.v2.pdf.V2DocumentPoint
+import com.corewall.qaqc.v2.pdf.V2InkStyle
+import com.corewall.qaqc.v2.pdf.V2InkUndoResult
 import com.corewall.qaqc.v2.pdf.V2MeasurementFinishResult
 import com.corewall.qaqc.v2.pdf.V2PageCalibration
 import com.corewall.qaqc.v2.pdf.V2PdfWorkspaceHost
+import com.corewall.qaqc.v2.pdf.V2PersistedInkStroke
 import com.corewall.qaqc.v2.pdf.V2PersistedTakeoffItem
 import com.corewall.qaqc.v2.pdf.V2TakeoffCommitCoordinator
 import com.corewall.qaqc.v2.pdf.V2TakeoffCommitResult
 import com.corewall.qaqc.v2.pdf.V2WorkspaceController
+import com.corewall.qaqc.v2.pdf.V2WorkspaceTool
 import com.corewall.qaqc.v2.pdf.toV2WorkspaceTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -302,6 +308,9 @@ fun TakeoffEditorScreen(
     /** بند اتسمّى واتحجز ID له بس لسه ماترسمش — بيتحدّث بالهندسة عند الحفظ. */
     var pendingDrawItemId by remember { mutableStateOf<Long?>(null) }
     var pendingV2Measurement by remember { mutableStateOf<PendingV2Measurement?>(null) }
+    var inkMode by remember { mutableStateOf(false) }
+    var inkColorArgb by remember { mutableStateOf(0xFF1976D2L) }
+    var inkWidthPx by remember { mutableStateOf(3.4f) }
     var editingItem by remember { mutableStateOf<TakeoffItem?>(null) }
     var snapEnabled by remember { mutableStateOf(true) }
     /** رسالة جلسة القياس؛ تمنع الإنهاء الناقص من الظهور كفقدان صامت للرسم. */
@@ -355,6 +364,7 @@ fun TakeoffEditorScreen(
     fun clearDrafts() {
         v2Controller.cancelMeasurement()
         pendingV2Measurement = null
+        inkMode = false
         draft.clear()
         draftPage.intValue = -1
         dimDragPoint = null
@@ -655,6 +665,7 @@ fun TakeoffEditorScreen(
                 TakeoffAnnotationType.CLOUD -> points.size >= 3
                 TakeoffAnnotationType.ARROW -> points.size >= 2
                 TakeoffAnnotationType.TEXT -> false // بتتحفظ من نافذة النص مباشرة، مش من هنا
+                TakeoffAnnotationType.INK -> false // قلم V2 يحفظ كل خط مباشرة عند رفع S Pen
             }
             if (enough) saveAnnotation(type, page, points)
         }
@@ -678,6 +689,7 @@ fun TakeoffEditorScreen(
                 if (annotationDraft.size == 2) finishAnnotation()
             }
             TakeoffAnnotationType.CLOUD -> annotationDraft += p
+            TakeoffAnnotationType.INK -> Unit
         }
     }
 
@@ -707,13 +719,15 @@ fun TakeoffEditorScreen(
     val draftPoints = draft.toList()
     val activeDraftTool = if (deductFor != null) TakeoffTool.DEDUCT else tool
     val selectedV2Tool = tool.toV2WorkspaceTool()
-    val usesV2Workspace = mode == EditorMode.DRAW &&
+    val usesV2Measurement = mode == EditorMode.DRAW &&
         !calibrating &&
         annotationTool == null &&
         deductFor == null &&
         addToShapeFor == null &&
         selectedV2Tool != null &&
         pendingV2Measurement?.tool == tool
+    val usesV2Workspace = usesV2Measurement || inkMode
+    val activeV2Tool = if (inkMode) V2WorkspaceTool.INK else selectedV2Tool
     val v2PersistedItems = remember(pageItems, pageGeometry) {
         pageItems.mapNotNull { item ->
             item.tool.toV2WorkspaceTool()?.let {
@@ -738,9 +752,23 @@ fun TakeoffEditorScreen(
             }
         }
     }
-    LaunchedEffect(usesV2Workspace, selectedV2Tool, pageGeometry, pendingV2Measurement) {
-        if (usesV2Workspace && selectedV2Tool != null) {
-            v2Controller.selectTool(selectedV2Tool)
+    val v2PersistedInk = remember(pageAnnotations) {
+        pageAnnotations.filter { it.type == TakeoffAnnotationType.INK }.mapNotNull { annotation ->
+            annotation.id.toLongOrNull()?.let { annotationId ->
+                V2PersistedInkStroke(
+                    annotationId = annotationId,
+                    page = annotation.page,
+                    points = annotation.verts.map { point -> V2DocumentPoint(point.x.toFloat(), point.y.toFloat()) },
+                    widthPx = annotation.text.toFloatOrNull()?.coerceIn(1.2f, 16f) ?: 3.4f,
+                    colorArgb = annotation.colorArgb,
+                    visible = annotation.visible
+                )
+            }
+        }
+    }
+    LaunchedEffect(usesV2Workspace, activeV2Tool, pageGeometry, pendingV2Measurement, inkColorArgb, inkWidthPx) {
+        if (usesV2Workspace && activeV2Tool != null) {
+            v2Controller.selectTool(activeV2Tool)
             v2Controller.setCountCommitImmediately(false)
             v2Controller.setCalibration(
                 V2PageCalibration(
@@ -748,6 +776,7 @@ fun TakeoffEditorScreen(
                     thicknessMetres = pendingV2Measurement?.thicknessMetres
                 )
             )
+            v2Controller.setInkStyle(V2InkStyle(inkColorArgb, inkWidthPx))
         }
     }
     val liveReadout = measurementNotice ?: when {
@@ -762,7 +791,9 @@ fun TakeoffEditorScreen(
             "مساحة حية: ${formatQuantity(TakeoffTool.AREA, TakeoffMath.area(draftPoints, pageGeometry))}"
         else -> "ضع النقطة التالية (${draftPoints.size})"
     }
-    val displayedReadout = if (usesV2Workspace) {
+    val displayedReadout = if (inkMode) {
+        "قلم S Pen — الإصبع للتنقل، وطرف الممحاة يحذف الخطوط"
+    } else if (usesV2Workspace) {
         measurementNotice ?: "ارسم بالقلم ثم اضغط إنهاء للحفظ"
     } else {
         liveReadout
@@ -800,8 +831,31 @@ fun TakeoffEditorScreen(
                     modifier = Modifier.fillMaxSize(),
                     controller = v2Controller,
                     persistedItems = v2PersistedItems,
+                    persistedInk = v2PersistedInk,
                     activeMeasurementColorArgb = pendingV2Measurement?.colorArgb ?: TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size],
-                    commitCountsImmediately = false
+                    commitCountsImmediately = false,
+                    inkStyle = V2InkStyle(inkColorArgb, inkWidthPx),
+                    onInkCommitted = { stroke ->
+                        scope.launch {
+                            vm.takeoff.saveAnnotation(
+                                TakeoffAnnotationEntity(
+                                    drawingId = drawingId,
+                                    page = stroke.page,
+                                    type = TakeoffAnnotationType.INK.name,
+                                    pointsJson = vm.takeoff.encodeRing(
+                                        stroke.points.map { point -> TakeoffPoint(point.x.toDouble(), point.y.toDouble()) }
+                                    ),
+                                    colorArgb = stroke.colorArgb,
+                                    text = stroke.widthPx.toString(),
+                                    createdAt = System.currentTimeMillis()
+                                )
+                            )
+                            v2Controller.acknowledgeInkPersisted(stroke.id)
+                        }
+                    },
+                    onPersistedInkErased = { annotationId ->
+                        scope.launch { vm.takeoff.deleteAnnotation(annotationId) }
+                    }
                 )
             } else PdfCanvas(
                 state = state,
@@ -1150,6 +1204,21 @@ fun TakeoffEditorScreen(
                         onClearPoints = { calibPoints.clear() },
                         onCancel = { endSession() }
                     )
+                } else if (inkMode) {
+                    S25InkDock(
+                        colorArgb = inkColorArgb,
+                        widthPx = inkWidthPx,
+                        onColorChange = { inkColorArgb = it },
+                        onWidthChange = { inkWidthPx = it },
+                        onUndo = {
+                            when (val undo = v2Controller.undoLastInk()) {
+                                is V2InkUndoResult.Persisted -> scope.launch { vm.takeoff.deleteAnnotation(undo.annotationId) }
+                                is V2InkUndoResult.Local -> measurementNotice = "تم التراجع عن آخر خط"
+                                null -> measurementNotice = "لا يوجد خط للتراجع"
+                            }
+                        },
+                        onExit = { endSession() }
+                    )
                 } else {
                     val selectedItem = pageItems.firstOrNull { it.id == selectedId }
                     val focusedVertices = selectedItem?.let { selected ->
@@ -1254,6 +1323,7 @@ fun TakeoffEditorScreen(
             onRect = { pickTool(TakeoffTool.AREA, viaRect = true) },
             onVertexEdit = { clearDrafts(); mode = EditorMode.VERTEX },
             onBoxSelect = { clearDrafts(); mode = EditorMode.BOXSELECT; selectedId = null },
+            onInk = { clearDrafts(); inkMode = true; toolsSheetOpen = false },
             onDeduct = {
                 val parent = pageItems.firstOrNull { it.id == selectedId }
                 if (parent != null) {
@@ -1415,6 +1485,8 @@ private fun annotationHit(a: TakeoffAnnotation, p: TakeoffPoint, page: PageGeome
         a.verts.isNotEmpty() && hypot(
             (p.x - a.verts[0].x) * page.widthPt, (p.y - a.verts[0].y) * page.heightPt
         ) <= 28.0
+    TakeoffAnnotationType.INK ->
+        a.verts.size >= 2 && TakeoffMath.distanceToPolylinePt(p, a.verts, page) <= 16.0
 }
 
 private fun defaultName(tool: TakeoffTool, index: Int): String = when (tool) {
@@ -1523,6 +1595,71 @@ private fun TakeoffFloatingZoomControls(
  * شريط الحالة — صفحة/مقياس/تكبير/وحدة وحالة الالتقاط، زي أي أداة CAD
  * احترافية. الوحدة ثابتة "م" دلوقتي — تبديلها للإمبراطوري مش مطلوب لسه.
  */
+/** شريط قلم ميداني: لون سريع، سماكة واضحة، تراجع وخروج بلا حجب لمس الرسم. */
+@Composable
+private fun S25InkDock(
+    colorArgb: Long,
+    widthPx: Float,
+    onColorChange: (Long) -> Unit,
+    onWidthChange: (Float) -> Unit,
+    onUndo: () -> Unit,
+    onExit: () -> Unit
+) {
+    val c = LocalCwColors.current
+    val colors = listOf(0xFF1976D2L, 0xFF111827L, 0xFFD32F2FL, 0xFF7B1FA2L, 0xFF00796BL)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Space.md, vertical = Space.sm),
+        shape = Radius.shapeXl,
+        color = c.surfaceRaised,
+        shadowElevation = Elevation.floating,
+        border = BorderStroke(1.dp, c.outline.copy(alpha = 0.82f))
+    ) {
+        Column(Modifier.padding(horizontal = Space.md, vertical = Space.md)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Edit, null, tint = Color(colorArgb.toInt()), modifier = Modifier.size(IconSize.md))
+                Text(
+                    "كتابة بالقلم",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = c.textPrimary,
+                    modifier = Modifier.padding(start = Space.sm).weight(1f)
+                )
+                CwIconButton(Icons.Filled.Undo, "تراجع عن آخر خط", onUndo)
+                CwIconButton(Icons.Filled.Close, "إنهاء الكتابة", onExit)
+            }
+            Row(
+                Modifier.padding(top = Space.sm),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                colors.forEach { swatch ->
+                    Surface(
+                        onClick = { onColorChange(swatch) },
+                        modifier = Modifier.size(Sizes.touch),
+                        shape = Radius.pill,
+                        color = Color(swatch.toInt()),
+                        border = if (swatch == colorArgb) BorderStroke(2.dp, c.textPrimary) else null
+                    ) {}
+                }
+                Text("السماكة", style = CwText.codeSmall, color = c.textSecondary)
+                Slider(
+                    value = widthPx,
+                    onValueChange = onWidthChange,
+                    valueRange = 1.4f..12f,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Text(
+                "اكتب بقلم S Pen. الإصبع يبقى للتكبير والتحريك، وطرف الممحاة يحذف الخط القريب.",
+                style = CwText.codeSmall,
+                color = c.textSecondary,
+                modifier = Modifier.padding(top = Space.sm)
+            )
+        }
+    }
+}
+
 @Composable
 private fun TakeoffStatusBar(
     page: Int,
@@ -1711,6 +1848,7 @@ private fun TakeoffToolsSheet(
     onRect: () -> Unit,
     onVertexEdit: () -> Unit,
     onBoxSelect: () -> Unit,
+    onInk: () -> Unit,
     onDeduct: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1767,6 +1905,9 @@ private fun TakeoffToolsSheet(
 
             Text("التحرير", style = CwText.sectionLabel, color = c.textTertiary)
             ToolGrid {
+                ToolGridItem(Icons.Filled.Edit, "قلم وكتابة", false) {
+                    onInk(); onDismiss()
+                }
                 ToolGridItem(Icons.Filled.OpenWith, "تعديل الرؤوس", mode == EditorMode.VERTEX) {
                     onVertexEdit(); onDismiss()
                 }
