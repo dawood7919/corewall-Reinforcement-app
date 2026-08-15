@@ -716,12 +716,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!cfg.isConfigured) { onDone("ضيف مفتاح API من إعدادات المساعد الذكي الأول."); return }
         viewModelScope.launch {
             _analyzing.value = _analyzing.value + 1
-            val id = runCatching { aiEngine.register(file, _currentLevel.value) }.getOrNull()
+            // التحليل اليدوي قرار صريح: النتيجة تبقى في ذاكرة الدور المفتوح
+            // حتى لو ملف PDF نفسه يذكر دوراً آخر في عنوانه أو محتواه.
+            val id = runCatching { aiEngine.register(file, _currentLevel.value, forceLevel = true) }.getOrNull()
             if (id == null) { _analyzing.value = 0; onDone("تعذّر تسجيل الملف."); return@launch }
             // موجود قبل كده؟ رجّعه لقائمة الانتظار عشان يتحلّل من أول وجديد
             runCatching { aiEngine.reset(id) }
             val choice = resolvePrompt(promptId)
-            val result = runCatching { aiEngine.analyze(cfg, id, levels, choice) }.getOrNull()
+            val result = runCatching { aiEngine.analyze(cfg, id, levels, choice, preserveLevel = true) }.getOrNull()
             _analyzing.value = 0
             loadKnowledge()
             loadProjectKnowledge()
@@ -861,7 +863,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val choice = if (promptId != null) resolvePrompt(promptId)
             else aiEngine.promptFor(remembered)
             runCatching { aiEngine.reset(docId) }
-            runCatching { aiEngine.analyze(cfg, docId, levels, choice) }
+            runCatching { aiEngine.analyze(cfg, docId, levels, choice, preserveLevel = true) }
             _analyzing.value = 0
             loadKnowledge()
         }

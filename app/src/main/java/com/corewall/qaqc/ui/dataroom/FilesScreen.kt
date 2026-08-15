@@ -44,6 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -114,6 +115,7 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val tags by vm.fileTags.collectAsStateWithLifecycle()
     val favourites by vm.fileFavourites.collectAsStateWithLifecycle()
     val recent by vm.fileRecent.collectAsStateWithLifecycle()
+    val documents by vm.documents.collectAsStateWithLifecycle()
 
     var subPath by rememberSaveable(level) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
@@ -125,12 +127,15 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     var confirmDelete by remember { mutableStateOf(false) }
     /** الملف اللي مستني اختيار برومبت قبل ما يتحلّل. */
     var analyzeTarget by remember { mutableStateOf<File?>(null) }
+    var analyzingPath by remember { mutableStateOf<String?>(null) }
     val prompts by vm.prompts.collectAsStateWithLifecycle()
 
     val currentDir = remember(level, subPath, refresh) {
         val base = vm.files.levelDir(level)
         if (subPath.isEmpty()) base else File(base, subPath)
     }
+    LaunchedEffect(level) { vm.loadKnowledge() }
+    val analysisByPath = remember(documents) { documents.associateBy { it.filePath } }
     /**
      * قايمة المجلد — **بتتقري من القرص في الخلفية**.
      *
@@ -356,7 +361,12 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         selected = f.absolutePath in selection,
                         selectionMode = selectionMode,
                         onOpen = { open(f) },
-                        onToggleSelect = { if (!f.isDirectory) toggleSelect(f.absolutePath) }
+                        onToggleSelect = { if (!f.isDirectory) toggleSelect(f.absolutePath) },
+                        analysisLabel = pdfAnalysisLabel(
+                            analysisByPath[f.absolutePath]?.status,
+                            analyzingPath == f.absolutePath
+                        ),
+                        onAnalyze = if (isPdfFile(f)) ({ analyzeTarget = f }) else null
                     )
                 }
             }
@@ -377,7 +387,12 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         selected = f.absolutePath in selection,
                         selectionMode = selectionMode,
                         onOpen = { open(f) },
-                        onToggleSelect = { if (!f.isDirectory) toggleSelect(f.absolutePath) }
+                        onToggleSelect = { if (!f.isDirectory) toggleSelect(f.absolutePath) },
+                        analysisLabel = pdfAnalysisLabel(
+                            analysisByPath[f.absolutePath]?.status,
+                            analyzingPath == f.absolutePath
+                        ),
+                        onAnalyze = if (isPdfFile(f)) ({ analyzeTarget = f }) else null
                     )
                 }
             }
@@ -461,7 +476,9 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             onPick = { promptId ->
                 analyzeTarget = null
                 selection = emptySet()
+                analyzingPath = target.absolutePath
                 vm.analyzeFile(target, promptId) { msg ->
+                    analyzingPath = null
                     Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                 }
             },
@@ -469,6 +486,15 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             onDismiss = { analyzeTarget = null }
         )
     }
+}
+
+private fun pdfAnalysisLabel(status: String?, activelyAnalyzing: Boolean): String? = when {
+    activelyAnalyzing || status == "ANALYZING" -> "جاري التحليل…"
+    status == "DONE" -> "محلّل ومحفوظ في ذاكرة الدور"
+    status == "PENDING" -> "جاهز للتحليل"
+    status == "FAILED" -> "تعذّر التحليل — اضغط تحليل للمحاولة"
+    status == "UNSUPPORTED" -> "الملف يحتاج فتحاً صالحاً"
+    else -> if (status == null) "اضغط رمز التحليل" else null
 }
 
 private fun subtitleFor(f: File, vm: MainViewModel): String =

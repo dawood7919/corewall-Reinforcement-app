@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Architecture
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import coil3.compose.AsyncImage
 import com.corewall.qaqc.data.db.FileMetaEntity
 import com.corewall.qaqc.ui.design.CwStatusBadge
+import com.corewall.qaqc.ui.design.CwIconButton
 import com.corewall.qaqc.ui.design.CwTone
 import com.corewall.qaqc.ui.design.IconSize
 import com.corewall.qaqc.ui.design.LocalCwColors
@@ -132,6 +134,8 @@ fun FileGridTile(
     selectionMode: Boolean,
     onOpen: () -> Unit,
     onToggleSelect: () -> Unit,
+    analysisLabel: String? = null,
+    onAnalyze: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
@@ -181,6 +185,14 @@ fun FileGridTile(
                             .size(IconSize.md)
                     )
                 }
+                if (!selectionMode && onAnalyze != null) {
+                    CwIconButton(
+                        icon = Icons.Filled.AutoAwesome,
+                        contentDescription = "حلّل PDF",
+                        onClick = onAnalyze,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    )
+                }
             }
             Spacer(Modifier.height(Space.sm))
             Text(
@@ -200,6 +212,10 @@ fun FileGridTile(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            analysisLabel?.let {
+                Spacer(Modifier.height(Space.xs))
+                Text(it, style = MaterialTheme.typography.labelSmall, color = c.accent)
+            }
         }
     }
 }
@@ -215,6 +231,8 @@ fun FileListRow(
     selectionMode: Boolean,
     onOpen: () -> Unit,
     onToggleSelect: () -> Unit,
+    analysisLabel: String? = null,
+    onAnalyze: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
@@ -261,6 +279,10 @@ fun FileListRow(
                         }
                     }
                 }
+                analysisLabel?.let {
+                    Spacer(Modifier.height(Space.xxs))
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = c.accent, maxLines = 1)
+                }
             }
             if (meta?.favourite == true) {
                 Icon(
@@ -269,6 +291,9 @@ fun FileListRow(
                     tint = c.warning.fg,
                     modifier = Modifier.size(IconSize.md)
                 )
+            }
+            if (!selectionMode && onAnalyze != null) {
+                CwIconButton(Icons.Filled.AutoAwesome, "حلّل PDF", onAnalyze)
             }
             if (selected) {
                 Icon(
