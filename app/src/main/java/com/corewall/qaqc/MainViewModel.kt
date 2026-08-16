@@ -1092,7 +1092,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }.isSuccess
 
         override suspend fun completeTask(id: Long): Boolean = runCatching {
-            val task = tasks.value.firstOrNull { it.id == id } ?: return@runCatching false
+            val task = this@MainViewModel.tasks.value.firstOrNull { it.id == id } ?: return@runCatching false
             repo.upsertTask(task.copy(done = true, completedAt = System.currentTimeMillis()))
             true
         }.getOrDefault(false)
