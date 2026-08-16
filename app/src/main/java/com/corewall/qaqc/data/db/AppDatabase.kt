@@ -22,6 +22,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DailyAttendanceEntity::class,
         SitePhotoEntity::class,
         AiAnalysisEntity::class,
+        AgentExecutionPlanEntity::class,
+        AgentExecutionStepEntity::class,
+        AgentActionAuditEntity::class,
         DocumentEntity::class,
         DocFactEntity::class,
         ChatMessageEntity::class,
@@ -45,7 +48,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TakeoffFormulaEntity::class,
         TakeoffAnnotationEntity::class
     ],
-    version = 24,
+    version = 25,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -64,6 +67,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dailyAttendanceDao(): DailyAttendanceDao
     abstract fun sitePhotoDao(): SitePhotoDao
     abstract fun aiAnalysisDao(): AiAnalysisDao
+    abstract fun agentExecutionDao(): AgentExecutionDao
     abstract fun documentDao(): DocumentDao
     abstract fun docFactDao(): DocFactDao
     abstract fun chatMessageDao(): ChatMessageDao
@@ -527,6 +531,38 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** خطط وكيل الذكاء وإيصالات التنفيذ الدائمة؛ جداول جديدة لا تمس بيانات المستخدم. */
+        private val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `agent_execution_plans` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`level` TEXT NOT NULL, `title` TEXT NOT NULL, `sourceQuestion` TEXT NOT NULL, " +
+                        "`status` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_execution_plans_level` ON `agent_execution_plans` (`level`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_execution_plans_status` ON `agent_execution_plans` (`status`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `agent_execution_steps` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `planId` INTEGER NOT NULL, " +
+                        "`ordinal` INTEGER NOT NULL, `tool` TEXT NOT NULL, `argsJson` TEXT NOT NULL, " +
+                        "`label` TEXT NOT NULL, `risk` TEXT NOT NULL, `requiresApproval` INTEGER NOT NULL, " +
+                        "`status` TEXT NOT NULL, `result` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_execution_steps_planId` ON `agent_execution_steps` (`planId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_execution_steps_status` ON `agent_execution_steps` (`status`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `agent_action_audit` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `planId` INTEGER, `stepId` INTEGER, " +
+                        "`level` TEXT NOT NULL, `tool` TEXT NOT NULL, `detail` TEXT NOT NULL, `result` TEXT NOT NULL, " +
+                        "`ok` INTEGER NOT NULL, `auto` INTEGER NOT NULL, `at` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_action_audit_level` ON `agent_action_audit` (`level`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_action_audit_planId` ON `agent_action_audit` (`planId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_action_audit_at` ON `agent_action_audit` (`at`)")
+            }
+        }
+
         private val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_filePath` ON `pdf_annotations` (`filePath`)")
@@ -612,7 +648,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24
+                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25
                 ).build().also { instance = it }
             }
     }

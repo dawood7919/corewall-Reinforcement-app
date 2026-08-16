@@ -52,8 +52,10 @@ interface AgentHost {
 
     // ---------------------------------------------- إجراءات محتاجة موافقة
     suspend fun addTask(title: String, level: String): Boolean
-    suspend fun addComment(elementId: String, text: String): Boolean
-    suspend fun setInspection(elementId: String, status: String): Boolean
+    suspend fun completeTask(id: Long): Boolean
+    suspend fun addNote(title: String, body: String, level: String): Boolean
+    suspend fun addComment(elementId: String, text: String, level: String): Boolean
+    suspend fun setInspection(elementId: String, status: String, level: String): Boolean
     suspend fun deleteTask(id: Long): Boolean
 
     /** elementId المقابل لكود مرجعي في الدور الحالي، أو null. */

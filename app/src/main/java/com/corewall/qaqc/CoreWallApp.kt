@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.corewall.qaqc.ai.AiEngine
 import com.corewall.qaqc.ai.AiRepository
+import com.corewall.qaqc.ai.agent.AgentExecutionStore
 import com.corewall.qaqc.data.AppRepository
 import com.corewall.qaqc.data.FileLibrary
 import com.corewall.qaqc.data.FilesManager
@@ -23,6 +24,8 @@ class CoreWallApp : Application() {
     lateinit var aiRepository: AiRepository
         private set
     lateinit var aiEngine: AiEngine
+        private set
+    lateinit var agentExecutionStore: AgentExecutionStore
         private set
     lateinit var fileLibrary: FileLibrary
         private set
@@ -44,6 +47,7 @@ class CoreWallApp : Application() {
         val db = AppDatabase.get(this)
         aiRepository = AiRepository(db.aiAnalysisDao())
         aiEngine = AiEngine(this, db.documentDao(), db.docFactDao(), db.chatMessageDao(), db.promptDao())
+        agentExecutionStore = AgentExecutionStore(db.agentExecutionDao())
         fileLibrary = FileLibrary(db.fileMetaDao(), db.linkDao())
 
         // التسخين في الخلفية: فكّ الـJSON وفتح القاعدة بيحصلوا بالتوازي

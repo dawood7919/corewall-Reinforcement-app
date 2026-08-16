@@ -109,6 +109,11 @@ sealed interface Dest {
 
     // ───────────────────────────── وجهات المساعد
 
+    /** المحادثة التفصيلية؛ مركز قيادة الذكاء هو نقطة الدخول الرئيسية. */
+    data object AiChat : Dest {
+        override val title = "محادثة الذكاء"
+    }
+
     data object FloorKnowledge : Dest {
         override val title = "ذاكرة الدور"
     }

@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -106,6 +107,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val repo: AppRepository = (app as CoreWallApp).repository
     val files: FilesManager = (app as CoreWallApp).filesManager
+    private val agentExecutionStore = (app as CoreWallApp).agentExecutionStore
     private val settingsStore: SettingsStore = (app as CoreWallApp).settingsStore
 
     val planData = repo.planData
@@ -997,8 +999,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 aiEngine.saveTurn(level, q, run.answer)
                 if (run.executed.isNotEmpty()) {
                     _actionLog.value = (run.executed.reversed() + _actionLog.value).take(60)
+                    run.executed.forEach { action ->
+                        agentExecutionStore.audit(
+                            level = level,
+                            tool = action.tool,
+                            detail = action.detail,
+                            result = if (action.ok) "تمت القراءة أو التنقل" else "تعذّر التنفيذ",
+                            ok = action.ok,
+                            auto = action.auto
+                        )
+                    }
                 }
-                _pendingActions.value = run.pending
+                val created = if (run.pending.isNotEmpty()) {
+                    agentExecutionStore.createPlan(level, q, run.pending)
+                } else null
+                _pendingActions.value = created?.let { plan ->
+                    run.pending.mapIndexed { index, pending ->
+                        pending.copy(planId = plan.planId, stepId = plan.stepIds.getOrNull(index))
+                    }
+                } ?: emptyList()
+                if (created != null) _agentStatus.value = "خطة تنفيذ جاهزة للمراجعة"
+                loadAgentAudit()
             }.onFailure { e ->
                 _chatError.value = e.aiMessage()
             }
@@ -1070,12 +1091,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }.isSuccess
 
-        override suspend fun addComment(elementId: String, text: String): Boolean = runCatching {
-            repo.addComment(elementId, _currentLevel.value, text)
-        }.isSuccess
+        override suspend fun completeTask(id: Long): Boolean = runCatching {
+            val task = tasks.value.firstOrNull { it.id == id } ?: return@runCatching false
+            repo.upsertTask(task.copy(done = true, completedAt = System.currentTimeMillis()))
+            true
+        }.getOrDefault(false)
 
-        override suspend fun setInspection(elementId: String, status: String): Boolean = runCatching {
-            repo.setInspection(elementId, _currentLevel.value, status)
+        override suspend fun addNote(title: String, body: String, level: String): Boolean = runCatching {
+            val now = System.currentTimeMillis()
+            repo.saveNote(
+                NoteEntity(
+                    elementId = FLOOR_NOTE_ID,
+                    level = level,
+                    title = title,
+                    body = body,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            )
+            true
+        }.getOrDefault(false)
+
+        override suspend fun addComment(elementId: String, text: String, level: String): Boolean = runCatching {
+            repo.addComment(elementId, level, text)
+            }.isSuccess
+
+        override suspend fun setInspection(elementId: String, status: String, level: String): Boolean = runCatching {
+            repo.setInspection(elementId, level, status)
         }.isSuccess
 
         override suspend fun deleteTask(id: Long): Boolean = runCatching { repo.deleteTask(id) }.isSuccess
@@ -1104,6 +1146,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         MutableStateFlow<List<com.corewall.qaqc.ai.agent.ActionLogEntry>>(emptyList())
     val actionLog: StateFlow<List<com.corewall.qaqc.ai.agent.ActionLogEntry>> = _actionLog
 
+    /** خطط قابلة للمراجعة تعيش في Room ولا تختفي عند إغلاق التطبيق. */
+    val executionPlans by lazy {
+        currentLevel
+            .flatMapLatest { agentExecutionStore.plans(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+
+    fun executionSteps(planId: Long) = agentExecutionStore.steps(planId)
+
+    private val _agentAudit = MutableStateFlow<List<com.corewall.qaqc.data.db.AgentActionAuditEntity>>(emptyList())
+    val agentAudit: StateFlow<List<com.corewall.qaqc.data.db.AgentActionAuditEntity>> = _agentAudit
+
+    fun loadAgentAudit() {
+        viewModelScope.launch {
+            _agentAudit.value = withContext(Dispatchers.IO) {
+                agentExecutionStore.latestAudit(_currentLevel.value)
+            }
+        }
+    }
+
     private val _copilotOpen = MutableStateFlow(false)
     val copilotOpen: StateFlow<Boolean> = _copilotOpen
     fun setCopilotOpen(open: Boolean) { _copilotOpen.value = open }
@@ -1130,6 +1192,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun confirmAction(id: Long) {
         val p = _pendingActions.value.firstOrNull { it.id == id } ?: return
         _pendingActions.value = _pendingActions.value.filterNot { it.id == id }
+        if (p.planId != null && p.stepId != null) {
+            executePlanStep(p.planId, p.stepId)
+            return
+        }
         viewModelScope.launch {
             val executor = com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine)
             val outcome = executor.run(p.action)
@@ -1148,6 +1214,72 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             loadKnowledge()
             refreshSuggestions()
         }
+    }
+
+    /** موافقة صريحة على خطوة واحدة؛ الحذف لا يدخل في تنفيذ جماعي. */
+    fun executePlanStep(planId: Long, stepId: Long) {
+        viewModelScope.launch {
+            executePersistedStep(planId, stepId)
+            loadKnowledge(); loadAgentAudit(); refreshSuggestions()
+        }
+    }
+
+    /** اعتماد الخطة ينفذ الأوامر الكتابية فقط؛ الأوامر الحساسة والحذف تبقى منفصلة. */
+    fun executePlan(planId: Long) {
+        viewModelScope.launch {
+            val steps = agentExecutionStore.stepsForPlan(planId)
+            val eligible = steps.filter { it.status == "PENDING" && it.risk == com.corewall.qaqc.ai.agent.ToolRisk.WRITE.name }
+            agentExecutionStore.markPlan(planId, "APPROVED")
+            eligible.forEach { step -> executePersistedStep(planId, step.id) }
+            if (eligible.isEmpty()) finishPlan(planId)
+            loadKnowledge(); loadAgentAudit(); refreshSuggestions()
+        }
+    }
+
+    fun dismissPlan(planId: Long) {
+        viewModelScope.launch {
+            agentExecutionStore.markPlan(planId, "DISMISSED")
+            agentExecutionStore.stepsForPlan(planId).filter { it.status == "PENDING" }.forEach {
+                agentExecutionStore.markStep(it.id, "DISMISSED", "ألغى المستخدم الخطة")
+            }
+            loadAgentAudit()
+        }
+    }
+
+    private suspend fun finishPlan(planId: Long) {
+        val steps = agentExecutionStore.stepsForPlan(planId)
+        val status = when {
+            steps.isEmpty() || steps.all { it.status == "DONE" || it.status == "DISMISSED" } -> "DONE"
+            steps.any { it.status == "FAILED" } -> "PARTIAL"
+            else -> "APPROVED"
+        }
+        agentExecutionStore.markPlan(planId, status)
+    }
+
+    private suspend fun executePersistedStep(planId: Long, stepId: Long) {
+        val action = agentExecutionStore.actionForStep(stepId) ?: return
+        val tool = com.corewall.qaqc.ai.agent.AgentTools.find(action.tool) ?: return
+        agentExecutionStore.markPlan(planId, "RUNNING")
+        agentExecutionStore.markStep(stepId, "RUNNING", "جاري التنفيذ")
+        val outcome = com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine).run(action)
+        agentExecutionStore.markStep(stepId, if (outcome.ok) "DONE" else "FAILED", outcome.userMessage.ifBlank { outcome.observation })
+        agentExecutionStore.audit(
+            level = _currentLevel.value,
+            tool = tool.name,
+            detail = action.describe(),
+            result = outcome.userMessage.ifBlank { outcome.observation },
+            ok = outcome.ok,
+            auto = false,
+            planId = planId,
+            stepId = stepId
+        )
+        finishPlan(planId)
+        _actionLog.value = listOf(
+            com.corewall.qaqc.ai.agent.ActionLogEntry(
+                at = System.currentTimeMillis(), tool = tool.name, detail = action.describe(), ok = outcome.ok, auto = false
+            )
+        ) + _actionLog.value
+        _agentStatus.value = outcome.userMessage.ifBlank { null }
     }
 
     fun dismissAction(id: Long) {

@@ -408,6 +408,64 @@ data class AiAnalysisEntity(
 )
 
 /**
+ * خطة ينشئها عقل التطبيق من طلب المستخدم. الخطة مستقلة عن المحادثة حتى تظل
+ * نتيجة المراجعة والتنفيذ متاحة بعد إغلاق التطبيق.
+ */
+@Entity(
+    tableName = "agent_execution_plans",
+    indices = [Index(value = ["level"]), Index(value = ["status"])]
+)
+data class AgentExecutionPlanEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val level: String,
+    val title: String,
+    val sourceQuestion: String,
+    /** DRAFT | APPROVED | RUNNING | DONE | PARTIAL | DISMISSED */
+    val status: String = "DRAFT",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** خطوة حتمية ضمن خطة الوكيل؛ المعاملات محفوظة JSON لمراجعتها قبل التنفيذ. */
+@Entity(
+    tableName = "agent_execution_steps",
+    indices = [Index(value = ["planId"]), Index(value = ["status"])]
+)
+data class AgentExecutionStepEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val planId: Long,
+    val ordinal: Int,
+    val tool: String,
+    val argsJson: String,
+    val label: String,
+    val risk: String,
+    val requiresApproval: Boolean,
+    /** PENDING | RUNNING | DONE | FAILED | DISMISSED */
+    val status: String = "PENDING",
+    val result: String = "",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** إيصال دائم لكل قراءة أو تنفيذ أو فشل صادر عن عقل التطبيق. */
+@Entity(
+    tableName = "agent_action_audit",
+    indices = [Index(value = ["level"]), Index(value = ["planId"]), Index(value = ["at"])]
+)
+data class AgentActionAuditEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val planId: Long? = null,
+    val stepId: Long? = null,
+    val level: String,
+    val tool: String,
+    val detail: String,
+    val result: String,
+    val ok: Boolean,
+    val auto: Boolean,
+    val at: Long
+)
+
+/**
  * مستند اتحلّل بالـ AI. الملف نفسه بيفضل على القرص —
  * ده "المعرفة" المستخرجة منه عشان يبقى قابل للبحث والفهم.
  */

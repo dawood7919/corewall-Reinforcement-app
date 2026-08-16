@@ -65,6 +65,7 @@ import com.corewall.qaqc.ui.design.LocalReducedMotion
 import com.corewall.qaqc.ui.design.ScreenMotion
 import com.corewall.qaqc.ui.design.rememberPressScale
 import com.corewall.qaqc.ui.ai.AiChatScreen
+import com.corewall.qaqc.ui.ai.AiCommandCenterScreen
 import com.corewall.qaqc.ui.ai.AiReportScreen
 import com.corewall.qaqc.ui.ai.AiSettingsScreen
 import com.corewall.qaqc.ui.ai.PromptsScreen
@@ -287,7 +288,7 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
         Dest.Plan -> PlanScreen(vm, modifier)
         Dest.Checks -> ChecksScreen(vm, modifier)
         Dest.Data -> DataScreen(vm, modifier)
-        Dest.Assistant -> AiChatScreen(vm, modifier)
+        Dest.Assistant -> AiCommandCenterScreen(vm, modifier)
 
         // الفحص — الأربع شاشات دول كانوا مبنيين ومحدش يقدر يوصلهم
         Dest.PourReadiness -> PourReadinessScreen(vm, modifier)
@@ -310,6 +311,7 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
         Dest.Manpower -> ManpowerScreen(vm, modifier)
 
         // المساعد
+        Dest.AiChat -> AiChatScreen(vm, modifier)
         Dest.FloorKnowledge -> KnowledgeScreen(vm, modifier)
         Dest.ProjectKnowledge -> ProjectKnowledgeScreen(vm, modifier)
         Dest.DocumentGen -> AiReportScreen(vm, modifier)
