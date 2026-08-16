@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.creative.CreativeBlock
@@ -59,7 +60,7 @@ fun CreativeDocumentEditorScreen(vm: MainViewModel, modifier: Modifier = Modifie
     BackHandler { vm.closeCreativeDocument() }
 
     Column(modifier.fillMaxSize()) {
-        Surface(color = c.surface, shadowElevation = 3f, modifier = Modifier.fillMaxWidth()) {
+        Surface(color = c.surface, shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(Space.md)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(onClick = vm::closeCreativeDocument) { Icon(Icons.Filled.ArrowBack, null); Spacer(Modifier.width(4.dp)); Text("رجوع") }
@@ -121,7 +122,7 @@ private fun EditableBlock(block: CreativeBlock, onChange: (CreativeBlock) -> Uni
 @Composable
 private fun DocumentPreview(content: CreativeDocumentContent) {
     val c = LocalCwColors.current
-    Surface(shape = Radius.shapeLg, color = c.surface, tonalElevation = 2f, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = Radius.shapeLg, color = c.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Text(content.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = c.textPrimary)
             Text(content.subtitle, style = MaterialTheme.typography.bodySmall, color = c.textSecondary)
