@@ -407,6 +407,27 @@ interface AgentExecutionDao {
 }
 
 @Dao
+interface CreativeDocumentDao {
+    @Query("SELECT * FROM creative_documents WHERE level = :level AND status != 'ARCHIVED' ORDER BY updatedAt DESC")
+    fun observeForLevel(level: String): Flow<List<CreativeDocumentEntity>>
+
+    @Query("SELECT * FROM creative_documents WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): CreativeDocumentEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: CreativeDocumentEntity): Long
+
+    @Insert
+    suspend fun insertExport(entity: CreativeDocumentExportEntity): Long
+
+    @Query("SELECT * FROM creative_document_exports WHERE documentId = :documentId ORDER BY createdAt DESC")
+    suspend fun exportsForDocument(documentId: Long): List<CreativeDocumentExportEntity>
+
+    @Query("UPDATE creative_documents SET status = :status, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String, updatedAt: Long)
+}
+
+@Dao
 interface DocumentDao {
     @Query("SELECT * FROM documents ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<DocumentEntity>>

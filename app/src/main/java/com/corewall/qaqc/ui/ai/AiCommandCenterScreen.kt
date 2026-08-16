@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.TaskAlt
@@ -91,6 +92,12 @@ fun AiCommandCenterScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                             Spacer(Modifier.width(6.dp))
                             Text("تحديث النشاط")
                         }
+                    }
+                    Spacer(Modifier.height(Space.sm))
+                    OutlinedButton(onClick = vm::openCreativeStudio, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Description, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("استوديو التقارير والملفات")
                     }
                 }
             }

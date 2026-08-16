@@ -465,6 +465,40 @@ data class AgentActionAuditEntity(
     val at: Long
 )
 
+/** مسودة تقرير تنشأ من الاستوديو أو من خطة الذكاء؛ المحتوى يبقى JSON قابل لإعادة التصدير. */
+@Entity(
+    tableName = "creative_documents",
+    indices = [Index(value = ["level"]), Index(value = ["updatedAt"]), Index(value = ["status"])]
+)
+data class CreativeDocumentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val level: String,
+    /** QUALITY | TAKEOFF | DAILY | MEETING | LETTER */
+    val templateKey: String,
+    val title: String,
+    val contentJson: String,
+    /** مصادر المحتوى بصيغة JSON، مثل ملفات PDF أو ملاحظات أو بنود حصر. */
+    val sourceJson: String = "[]",
+    /** DRAFT | READY | EXPORTED | ARCHIVED */
+    val status: String = "DRAFT",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** نسخة خرجت من مسودة التقرير؛ لا نكتب فوق النسخ السابقة حتى تظل قابلة للمراجعة. */
+@Entity(
+    tableName = "creative_document_exports",
+    indices = [Index(value = ["documentId"]), Index(value = ["createdAt"])]
+)
+data class CreativeDocumentExportEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val documentId: Long,
+    /** PDF | IMAGE | ZIP */
+    val format: String,
+    val path: String,
+    val createdAt: Long
+)
+
 /**
  * مستند اتحلّل بالـ AI. الملف نفسه بيفضل على القرص —
  * ده "المعرفة" المستخرجة منه عشان يبقى قابل للبحث والفهم.

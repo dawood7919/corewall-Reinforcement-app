@@ -66,6 +66,8 @@ import com.corewall.qaqc.ui.design.ScreenMotion
 import com.corewall.qaqc.ui.design.rememberPressScale
 import com.corewall.qaqc.ui.ai.AiChatScreen
 import com.corewall.qaqc.ui.ai.AiCommandCenterScreen
+import com.corewall.qaqc.ui.creative.CreativeDocumentEditorScreen
+import com.corewall.qaqc.ui.creative.CreativeStudioScreen
 import com.corewall.qaqc.ui.ai.AiReportScreen
 import com.corewall.qaqc.ui.ai.AiSettingsScreen
 import com.corewall.qaqc.ui.ai.PromptsScreen
@@ -312,6 +314,8 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
 
         // المساعد
         Dest.AiChat -> AiChatScreen(vm, modifier)
+        Dest.CreativeStudio -> CreativeStudioScreen(vm, modifier)
+        Dest.CreativeEditor -> CreativeDocumentEditorScreen(vm, modifier)
         Dest.FloorKnowledge -> KnowledgeScreen(vm, modifier)
         Dest.ProjectKnowledge -> ProjectKnowledgeScreen(vm, modifier)
         Dest.DocumentGen -> AiReportScreen(vm, modifier)

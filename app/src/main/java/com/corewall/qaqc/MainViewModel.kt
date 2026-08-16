@@ -21,6 +21,9 @@ import com.corewall.qaqc.data.db.PdfMeasurementEntity
 import com.corewall.qaqc.data.db.PdfScaleEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
+import com.corewall.qaqc.creative.CreativeDocumentContent
+import com.corewall.qaqc.creative.CreativePdfExporter
+import com.corewall.qaqc.creative.CreativeTemplate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.corewall.qaqc.data.model.PlanElement
@@ -108,6 +111,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val repo: AppRepository = (app as CoreWallApp).repository
     val files: FilesManager = (app as CoreWallApp).filesManager
     private val agentExecutionStore = (app as CoreWallApp).agentExecutionStore
+    private val creativeDocumentStore = (app as CoreWallApp).creativeDocumentStore
     private val settingsStore: SettingsStore = (app as CoreWallApp).settingsStore
 
     val planData = repo.planData
@@ -399,6 +403,117 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         navigator.push(Dest.TakeoffProject(id, name))
     fun openTakeoffEditor(drawingId: Long, path: String, name: String) =
         navigator.push(Dest.TakeoffEditor(drawingId, path, name))
+
+    // ══════════════════════════════════════════════ استوديو الإنشاء
+
+    val creativeDocuments by lazy {
+        currentLevel
+            .flatMapLatest { creativeDocumentStore.documents(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+
+    private val _editingCreativeDocument = MutableStateFlow<com.corewall.qaqc.data.db.CreativeDocumentEntity?>(null)
+    val editingCreativeDocument: StateFlow<com.corewall.qaqc.data.db.CreativeDocumentEntity?> = _editingCreativeDocument
+    private val _creativeExportState = MutableStateFlow<String?>(null)
+    val creativeExportState: StateFlow<String?> = _creativeExportState
+
+    fun openCreativeStudio() = navigator.push(Dest.CreativeStudio)
+
+    fun createCreativeDocument(template: String, title: String = CreativeTemplate.label(template)) {
+        viewModelScope.launch {
+            val id = creativeDocumentStore.create(_currentLevel.value, template, title)
+            openCreativeDocument(id)
+        }
+    }
+
+    fun openCreativeDocument(id: Long) {
+        viewModelScope.launch {
+            _editingCreativeDocument.value = creativeDocumentStore.document(id)
+            if (_editingCreativeDocument.value != null) navigator.push(Dest.CreativeEditor)
+        }
+    }
+
+    fun closeCreativeDocument() {
+        _editingCreativeDocument.value = null
+        _creativeExportState.value = null
+        navigator.dismiss(Dest.CreativeEditor)
+    }
+
+    fun saveCreativeDocument(content: CreativeDocumentContent) {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            creativeDocumentStore.update(current, content)
+            _editingCreativeDocument.value = creativeDocumentStore.document(current.id)
+        }
+    }
+
+    fun creativeDocumentContent(entity: com.corewall.qaqc.data.db.CreativeDocumentEntity): CreativeDocumentContent =
+        creativeDocumentStore.decode(entity)
+
+    fun exportCreativeDocumentPdf() {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            _creativeExportState.value = "جارٍ إنشاء PDF…"
+            val content = creativeDocumentStore.decode(current)
+            CreativePdfExporter.export(appContext, current.id, content)
+                .onSuccess { file ->
+                    creativeDocumentStore.recordExport(current.id, "PDF", file.absolutePath)
+                    _creativeExportState.value = "تم حفظ PDF: ${file.name}"
+                }
+                .onFailure { error -> _creativeExportState.value = "تعذّر التصدير: ${error.message ?: "خطأ غير معروف"}" }
+        }
+    }
+
+    fun exportCreativeDocumentImage() = exportCreative("IMAGE") { _, content ->
+        com.corewall.qaqc.creative.CreativeSecondaryExporters.image(appContext, content).getOrThrow()
+    }
+
+    fun exportCreativeDocumentWord() = exportCreative("WORD") { _, content ->
+        com.corewall.qaqc.creative.CreativeSecondaryExporters.wordCompatible(appContext, content).getOrThrow()
+    }
+
+    fun exportCreativeDocumentPackage() {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            _creativeExportState.value = "جارٍ إنشاء الحزمة…"
+            val exports = creativeDocumentStore.exports(current.id).map { java.io.File(it.path) }
+            com.corewall.qaqc.creative.CreativeSecondaryExporters.packageFiles(appContext, current.title, exports)
+                .onSuccess { file ->
+                    creativeDocumentStore.recordExport(current.id, "ZIP", file.absolutePath)
+                    _creativeExportState.value = "تم حفظ الحزمة: ${file.name}"
+                }
+                .onFailure { error -> _creativeExportState.value = "تعذّر إنشاء الحزمة: ${error.message ?: "خطأ غير معروف"}" }
+        }
+    }
+
+    fun shareLatestCreativeExport() {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            val latest = creativeDocumentStore.exports(current.id).firstOrNull()
+            if (latest == null) {
+                _creativeExportState.value = "صدّر ملفاً أولاً ثم شاركه"
+                return@launch
+            }
+            val shared = files.share(java.io.File(latest.path))
+            _creativeExportState.value = if (shared) "تم فتح شاشة المشاركة" else "تعذّر فتح شاشة المشاركة"
+        }
+    }
+
+    private fun exportCreative(
+        format: String,
+        work: suspend (com.corewall.qaqc.data.db.CreativeDocumentEntity, CreativeDocumentContent) -> java.io.File
+    ) {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            _creativeExportState.value = "جارٍ إنشاء الملف…"
+            runCatching { work(current, creativeDocumentStore.decode(current)) }
+                .onSuccess { file ->
+                    creativeDocumentStore.recordExport(current.id, format, file.absolutePath)
+                    _creativeExportState.value = "تم حفظ ${if (format == "IMAGE") "الصورة" else "مستند Word"}: ${file.name}"
+                }
+                .onFailure { error -> _creativeExportState.value = "تعذّر التصدير: ${error.message ?: "خطأ غير معروف"}" }
+        }
+    }
 
     // ══════════════════════════════════════════════ نظام الملاحظات
 
@@ -1111,6 +1226,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
             true
         }.getOrDefault(false)
+
+        override suspend fun createCreativeDocument(title: String, template: String, level: String): Long? = runCatching {
+            creativeDocumentStore.create(level, template, title)
+        }.getOrNull()
+
+        override suspend fun exportCreativeDocumentPdf(documentId: Long): String? = runCatching {
+            val document = creativeDocumentStore.document(documentId) ?: return@runCatching null
+            CreativePdfExporter.export(appContext, document.id, creativeDocumentStore.decode(document)).getOrThrow().also { file ->
+                creativeDocumentStore.recordExport(document.id, "PDF", file.absolutePath)
+            }.absolutePath
+        }.getOrNull()
 
         override suspend fun addComment(elementId: String, text: String, level: String): Boolean = runCatching {
             repo.addComment(elementId, level, text)

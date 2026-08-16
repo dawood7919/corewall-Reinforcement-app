@@ -114,6 +114,14 @@ sealed interface Dest {
         override val title = "محادثة الذكاء"
     }
 
+    data object CreativeStudio : Dest {
+        override val title = "استوديو الإنشاء"
+    }
+
+    data object CreativeEditor : Dest {
+        override val title = "تحرير المستند"
+    }
+
     data object FloorKnowledge : Dest {
         override val title = "ذاكرة الدور"
     }

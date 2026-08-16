@@ -25,6 +25,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AgentExecutionPlanEntity::class,
         AgentExecutionStepEntity::class,
         AgentActionAuditEntity::class,
+        CreativeDocumentEntity::class,
+        CreativeDocumentExportEntity::class,
         DocumentEntity::class,
         DocFactEntity::class,
         ChatMessageEntity::class,
@@ -48,7 +50,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TakeoffFormulaEntity::class,
         TakeoffAnnotationEntity::class
     ],
-    version = 25,
+    version = 26,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -68,6 +70,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sitePhotoDao(): SitePhotoDao
     abstract fun aiAnalysisDao(): AiAnalysisDao
     abstract fun agentExecutionDao(): AgentExecutionDao
+    abstract fun creativeDocumentDao(): CreativeDocumentDao
     abstract fun documentDao(): DocumentDao
     abstract fun docFactDao(): DocFactDao
     abstract fun chatMessageDao(): ChatMessageDao
@@ -563,6 +566,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** مسودات استوديو الإنشاء وإصداراتها؛ تحفظ المصدر والتصدير منفصلين. */
+        private val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `creative_documents` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `level` TEXT NOT NULL, " +
+                        "`templateKey` TEXT NOT NULL, `title` TEXT NOT NULL, `contentJson` TEXT NOT NULL, " +
+                        "`sourceJson` TEXT NOT NULL, `status` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_creative_documents_level` ON `creative_documents` (`level`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_creative_documents_updatedAt` ON `creative_documents` (`updatedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_creative_documents_status` ON `creative_documents` (`status`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `creative_document_exports` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `documentId` INTEGER NOT NULL, " +
+                        "`format` TEXT NOT NULL, `path` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_creative_document_exports_documentId` ON `creative_document_exports` (`documentId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_creative_document_exports_createdAt` ON `creative_document_exports` (`createdAt`)")
+            }
+        }
+
         private val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_filePath` ON `pdf_annotations` (`filePath`)")
@@ -648,7 +673,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25
+                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26
                 ).build().also { instance = it }
             }
     }
