@@ -58,9 +58,9 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
     val file = remember(path) { File(path) }
     val cadStore = remember { (context.applicationContext as CoreWallApp).cadMeasurementStore }
     val scope = rememberCoroutineScope()
-    val parseResult by produceState<DxfParser.ParseResult?>(null, path) {
+    val parseResult by produceState<CadLoadResult?>(null, path) {
         value = null
-        value = withContext(Dispatchers.IO) { DxfParser.parseFile(file) }
+        value = withContext(Dispatchers.IO) { CadDocumentLoader.load(file) }
     }
     var layers by remember { mutableStateOf<List<CadLayer>>(emptyList()) }
     val measurements by cadStore.measurements(path).collectAsState(initial = emptyList())
@@ -109,9 +109,37 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
             is CadEntity.Polyline -> {
                 e.points.forEach(::consider)
                 e.points.zipWithNext().forEach { (a, b) -> consider(CadPoint((a.x + b.x) / 2, (a.y + b.y) / 2)) }
+                if (e.closed && e.points.size > 2) {
+                    val a = e.points.last(); val b = e.points.first()
+                    consider(CadPoint((a.x + b.x) / 2, (a.y + b.y) / 2))
+                }
             }
-            is CadEntity.Circle -> consider(e.center)
-            is CadEntity.Arc -> consider(e.center)
+            is CadEntity.Circle -> {
+                consider(e.center)
+                consider(CadPoint(e.center.x + e.radius, e.center.y))
+                consider(CadPoint(e.center.x - e.radius, e.center.y))
+                consider(CadPoint(e.center.x, e.center.y + e.radius))
+                consider(CadPoint(e.center.x, e.center.y - e.radius))
+            }
+            is CadEntity.Arc -> {
+                consider(e.center)
+                fun endpoint(degrees: Double) = CadPoint(
+                    e.center.x + e.radius * kotlin.math.cos(Math.toRadians(degrees)),
+                    e.center.y + e.radius * kotlin.math.sin(Math.toRadians(degrees))
+                )
+                consider(endpoint(e.startDeg)); consider(endpoint(e.endDeg))
+            }
+            is CadEntity.Ellipse -> {
+                consider(e.center)
+                fun point(angle: Double) = CadPoint(
+                    e.center.x + e.majorAxis.x * kotlin.math.cos(angle) + e.minorAxis.x * kotlin.math.sin(angle),
+                    e.center.y + e.majorAxis.y * kotlin.math.cos(angle) + e.minorAxis.y * kotlin.math.sin(angle)
+                )
+                consider(point(e.startRad)); consider(point(e.endRad))
+                consider(CadPoint(e.center.x + e.majorAxis.x, e.center.y + e.majorAxis.y))
+                consider(CadPoint(e.center.x - e.majorAxis.x, e.center.y - e.majorAxis.y))
+            }
+            is CadEntity.PointEnt -> consider(e.point)
             is CadEntity.TextEnt -> consider(e.position)
         }
         return best ?: p
@@ -163,7 +191,6 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                 Text(file.name, color = CadLine, fontWeight = FontWeight.Bold)
                 Text(parseResult!!.error ?: "تعذّر الفتح", color = CadDim)
                 Spacer(Modifier.height(Space.lg))
-                if (parseResult!!.isBinaryDwg) TextButton(onClick = { if (!files.openExternally(file)) Toast.makeText(context, "مفيش تطبيق CAD", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.OpenInNew, null); Spacer(Modifier.width(Space.sm)); Text("فتح خارجي") }
                 TextButton(onClick = onClose) { Text("إغلاق") }
             }
             else -> {
@@ -212,6 +239,23 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                                     path.moveTo(first.x, first.y)
                                     for (s in 1..steps) { val t = a + (end - a) * s / steps; val pt = worldToScreen(arcPoint(e.center, e.radius, t)); path.lineTo(pt.x, pt.y) }
                                     drawPath(path, CadLine.copy(alpha = 0.85f), style = stroke)
+                                }
+                                is CadEntity.Ellipse -> {
+                                    val path = Path(); var a = e.startRad; var end = e.endRad
+                                    if (end < a) end += Math.PI * 2
+                                    fun point(angle: Double) = CadPoint(
+                                        e.center.x + e.majorAxis.x * kotlin.math.cos(angle) + e.minorAxis.x * kotlin.math.sin(angle),
+                                        e.center.y + e.majorAxis.y * kotlin.math.cos(angle) + e.minorAxis.y * kotlin.math.sin(angle)
+                                    )
+                                    val first = worldToScreen(point(a)); path.moveTo(first.x, first.y)
+                                    val steps = max(12, ((end - a) / (Math.PI / 24)).toInt())
+                                    for (s in 1..steps) { val p = worldToScreen(point(a + (end - a) * s / steps)); path.lineTo(p.x, p.y) }
+                                    drawPath(path, CadLine.copy(alpha = 0.85f), style = stroke)
+                                }
+                                is CadEntity.PointEnt -> {
+                                    val p = worldToScreen(e.point)
+                                    drawLine(CadLine, Offset(p.x - 5f, p.y), Offset(p.x + 5f, p.y), strokeWidth = 1.4f)
+                                    drawLine(CadLine, Offset(p.x, p.y - 5f), Offset(p.x, p.y + 5f), strokeWidth = 1.4f)
                                 }
                                 is CadEntity.TextEnt -> {
                                     val o = worldToScreen(e.position)

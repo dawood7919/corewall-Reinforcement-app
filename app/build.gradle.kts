@@ -21,7 +21,16 @@ android {
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.
         // لو احتجت تشغّل على محاكي Intel، ضيف "x86_64" هنا.
         ndk {
+            // محرك LibreDWG المحلي يشمل ARM64 المستهدف (Galaxy S25 Ultra)
+            // مع الإبقاء على ARMv7 كي لا تتعطل الأجهزة التي كانت مدعومة سابقاً.
+            abiFilters.clear()
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
         }
 
         // بصمة الكوميت جوّه التطبيق.
@@ -69,6 +78,13 @@ android {
         compose = true
         // مطلوب من AGP 8: من غيره `BuildConfig` مابيتولّدش أصلاً.
         buildConfig = true
+    }
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     // BouncyCastle بيشحن نسخ متعددة من نفس ملفات الميتاداتا (واحدة لكل

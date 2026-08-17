@@ -34,6 +34,16 @@ sealed class CadEntity {
         val endDeg: Double,
         override val layer: String
     ) : CadEntity()
+    /** محوران متجهان، لذلك تبقى القطوع الناقصة صحيحة بعد INSERT غير منتظم المقياس. */
+    data class Ellipse(
+        val center: CadPoint,
+        val majorAxis: CadPoint,
+        val minorAxis: CadPoint,
+        val startRad: Double = 0.0,
+        val endRad: Double = Math.PI * 2,
+        override val layer: String
+    ) : CadEntity()
+    data class PointEnt(val point: CadPoint, override val layer: String) : CadEntity()
     data class TextEnt(
         val position: CadPoint,
         val height: Double,
@@ -200,6 +210,18 @@ fun computeBounds(entities: List<CadEntity>): Rect {
                 acc(CadPoint(e.center.x - e.radius, e.center.y - e.radius))
                 acc(CadPoint(e.center.x + e.radius, e.center.y + e.radius))
             }
+            is CadEntity.Ellipse -> {
+                var end = e.endRad
+                if (end < e.startRad) end += Math.PI * 2
+                repeat(37) { step ->
+                    val a = e.startRad + (end - e.startRad) * step / 36.0
+                    acc(CadPoint(
+                        e.center.x + e.majorAxis.x * cos(a) + e.minorAxis.x * sin(a),
+                        e.center.y + e.majorAxis.y * cos(a) + e.minorAxis.y * sin(a)
+                    ))
+                }
+            }
+            is CadEntity.PointEnt -> acc(e.point)
             is CadEntity.TextEnt -> acc(e.position)
         }
     }
