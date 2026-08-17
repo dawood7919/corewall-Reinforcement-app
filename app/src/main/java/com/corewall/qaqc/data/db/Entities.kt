@@ -499,6 +499,28 @@ data class CreativeDocumentExportEntity(
     val createdAt: Long
 )
 
+/** إعدادات معايرة CAD مرتبطة بمسار الرسم نفسه، لا بحالة الشاشة المؤقتة. */
+@Entity(tableName = "cad_drawing_settings")
+data class CadDrawingSettingsEntity(
+    @PrimaryKey val filePath: String,
+    val unitsPerMeter: Double,
+    val displayUnit: String,
+    val updatedAt: Long
+)
+
+/** علامة قياس مستقلة؛ هندستها محفوظة في إحداثيات CAD الأصلية كي تبقى ثابتة مع الزوم. */
+@Entity(
+    tableName = "cad_measurements",
+    indices = [Index(value = ["filePath"]), Index(value = ["createdAt"])]
+)
+data class CadMeasurementEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val filePath: String,
+    val kind: String,
+    val pointsJson: String,
+    val createdAt: Long
+)
+
 /**
  * مستند اتحلّل بالـ AI. الملف نفسه بيفضل على القرص —
  * ده "المعرفة" المستخرجة منه عشان يبقى قابل للبحث والفهم.

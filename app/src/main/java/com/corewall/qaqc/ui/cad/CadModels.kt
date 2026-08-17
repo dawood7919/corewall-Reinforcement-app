@@ -2,6 +2,7 @@ package com.corewall.qaqc.ui.cad
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -11,6 +12,7 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /** نقطة في إحداثيات الرسم (وحدات CAD — عادة متر أو مم حسب الملف). */
+@Serializable
 data class CadPoint(val x: Double, val y: Double) {
     fun toOffset() = Offset(x.toFloat(), y.toFloat())
     fun distanceTo(o: CadPoint) = hypot(o.x - x, o.y - y)

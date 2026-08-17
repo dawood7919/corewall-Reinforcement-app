@@ -428,6 +428,27 @@ interface CreativeDocumentDao {
 }
 
 @Dao
+interface CadMeasurementDao {
+    @Query("SELECT * FROM cad_measurements WHERE filePath = :filePath ORDER BY id")
+    fun observeMeasurements(filePath: String): Flow<List<CadMeasurementEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMeasurement(entity: CadMeasurementEntity): Long
+
+    @Query("DELETE FROM cad_measurements WHERE id = :id")
+    suspend fun deleteMeasurement(id: Long)
+
+    @Query("DELETE FROM cad_measurements WHERE filePath = :filePath")
+    suspend fun deleteAllMeasurements(filePath: String)
+
+    @Query("SELECT * FROM cad_drawing_settings WHERE filePath = :filePath LIMIT 1")
+    suspend fun settings(filePath: String): CadDrawingSettingsEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSettings(entity: CadDrawingSettingsEntity)
+}
+
+@Dao
 interface DocumentDao {
     @Query("SELECT * FROM documents ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<DocumentEntity>>

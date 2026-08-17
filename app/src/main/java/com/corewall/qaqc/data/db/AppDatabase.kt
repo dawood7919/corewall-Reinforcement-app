@@ -27,6 +27,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AgentActionAuditEntity::class,
         CreativeDocumentEntity::class,
         CreativeDocumentExportEntity::class,
+        CadDrawingSettingsEntity::class,
+        CadMeasurementEntity::class,
         DocumentEntity::class,
         DocFactEntity::class,
         ChatMessageEntity::class,
@@ -50,7 +52,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TakeoffFormulaEntity::class,
         TakeoffAnnotationEntity::class
     ],
-    version = 26,
+    version = 27,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -71,6 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun aiAnalysisDao(): AiAnalysisDao
     abstract fun agentExecutionDao(): AgentExecutionDao
     abstract fun creativeDocumentDao(): CreativeDocumentDao
+    abstract fun cadMeasurementDao(): CadMeasurementDao
     abstract fun documentDao(): DocumentDao
     abstract fun docFactDao(): DocFactDao
     abstract fun chatMessageDao(): ChatMessageDao
@@ -588,6 +591,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** معايرة ورسومات قياس CAD؛ تبقى الإحداثيات الأصلية مستقلة عن الزوم. */
+        private val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cad_drawing_settings` (" +
+                        "`filePath` TEXT NOT NULL, `unitsPerMeter` REAL NOT NULL, `displayUnit` TEXT NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`filePath`))"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cad_measurements` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `filePath` TEXT NOT NULL, " +
+                        "`kind` TEXT NOT NULL, `pointsJson` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_cad_measurements_filePath` ON `cad_measurements` (`filePath`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_cad_measurements_createdAt` ON `cad_measurements` (`createdAt`)")
+            }
+        }
+
         private val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_filePath` ON `pdf_annotations` (`filePath`)")
@@ -673,7 +694,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26
+                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27
                 ).build().also { instance = it }
             }
     }

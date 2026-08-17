@@ -33,7 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corewall.qaqc.CoreWallApp
 import com.corewall.qaqc.data.FilesManager
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -54,13 +56,14 @@ private val CadDim = Color(0xFF8B9BB4)
 fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
     val context = LocalContext.current
     val file = remember(path) { File(path) }
+    val cadStore = remember { (context.applicationContext as CoreWallApp).cadMeasurementStore }
+    val scope = rememberCoroutineScope()
     val parseResult by produceState<DxfParser.ParseResult?>(null, path) {
         value = null
         value = withContext(Dispatchers.IO) { DxfParser.parseFile(file) }
     }
     var layers by remember { mutableStateOf<List<CadLayer>>(emptyList()) }
-    var measurements by remember { mutableStateOf<List<CadMeasurement>>(emptyList()) }
-    var nextId by remember { mutableLongStateOf(1L) }
+    val measurements by cadStore.measurements(path).collectAsState(initial = emptyList())
     var tool by remember { mutableStateOf(CadMeasureTool.PAN) }
     var unit by remember { mutableStateOf(MeasureUnit.M) }
     var unitsPerMeter by remember { mutableFloatStateOf(1f) }
@@ -73,11 +76,13 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
     var offsetY by remember { mutableFloatStateOf(0f) }
     var fitted by remember { mutableStateOf(false) }
 
-    LaunchedEffect(parseResult) {
+    LaunchedEffect(parseResult, path) {
         val d = parseResult?.drawing ?: return@LaunchedEffect
         layers = d.layers.map { it.copy() }
-        unitsPerMeter = DxfParser.unitsPerMeterFromInsUnits(d.insUnits).toFloat()
-        unit = when (d.insUnits) { 4 -> MeasureUnit.MM; 5 -> MeasureUnit.CM; else -> MeasureUnit.M }
+        val saved = cadStore.settings(path)
+        unitsPerMeter = (saved?.unitsPerMeter ?: DxfParser.unitsPerMeterFromInsUnits(d.insUnits)).toFloat()
+        unit = saved?.displayUnit?.let { runCatching { MeasureUnit.valueOf(it) }.getOrNull() }
+            ?: when (d.insUnits) { 4 -> MeasureUnit.MM; 5 -> MeasureUnit.CM; else -> MeasureUnit.M }
         fitted = false
     }
 
@@ -100,8 +105,11 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
         var best: CadPoint? = null; var bestD = tol
         fun consider(q: CadPoint) { val d = p.distanceTo(q); if (d < bestD) { bestD = d; best = q } }
         for (e in drawing.visibleEntities()) when (e) {
-            is CadEntity.Line -> { consider(e.a); consider(e.b) }
-            is CadEntity.Polyline -> e.points.forEach(::consider)
+            is CadEntity.Line -> { consider(e.a); consider(e.b); consider(CadPoint((e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2)) }
+            is CadEntity.Polyline -> {
+                e.points.forEach(::consider)
+                e.points.zipWithNext().forEach { (a, b) -> consider(CadPoint((a.x + b.x) / 2, (a.y + b.y) / 2)) }
+            }
             is CadEntity.Circle -> consider(e.center)
             is CadEntity.Arc -> consider(e.center)
             is CadEntity.TextEnt -> consider(e.position)
@@ -115,18 +123,18 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
             CadMeasureTool.PAN -> Unit
             CadMeasureTool.DISTANCE -> {
                 val pts = draftPoints + p
-                if (pts.size >= 2) { measurements = measurements + CadMeasurement.Distance(nextId++, pts[0], pts[1]); draftPoints = emptyList() }
+                if (pts.size >= 2) { scope.launch { cadStore.save(path, CadMeasurement.Distance(0, pts[0], pts[1])) }; draftPoints = emptyList() }
                 else draftPoints = pts
             }
             CadMeasureTool.CONTINUOUS, CadMeasureTool.AREA -> draftPoints = draftPoints + p
             CadMeasureTool.ANGLE -> {
                 val pts = draftPoints + p
-                if (pts.size >= 3) { measurements = measurements + CadMeasurement.Angle(nextId++, pts[1], pts[0], pts[2]); draftPoints = emptyList() }
+                if (pts.size >= 3) { scope.launch { cadStore.save(path, CadMeasurement.Angle(0, pts[1], pts[0], pts[2])) }; draftPoints = emptyList() }
                 else draftPoints = pts
             }
             CadMeasureTool.RADIUS -> {
                 val pts = draftPoints + p
-                if (pts.size >= 2) { measurements = measurements + CadMeasurement.Radius(nextId++, pts[0], pts[1]); draftPoints = emptyList() }
+                if (pts.size >= 2) { scope.launch { cadStore.save(path, CadMeasurement.Radius(0, pts[0], pts[1])) }; draftPoints = emptyList() }
                 else draftPoints = pts
             }
             CadMeasureTool.CALIBRATE -> {
@@ -139,8 +147,8 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
 
     fun finishPoly() {
         when (tool) {
-            CadMeasureTool.CONTINUOUS -> if (draftPoints.size >= 2) measurements = measurements + CadMeasurement.Continuous(nextId++, draftPoints)
-            CadMeasureTool.AREA -> if (draftPoints.size >= 3) measurements = measurements + CadMeasurement.AreaPoly(nextId++, draftPoints)
+            CadMeasureTool.CONTINUOUS -> if (draftPoints.size >= 2) scope.launch { cadStore.save(path, CadMeasurement.Continuous(0, draftPoints)) }
+            CadMeasureTool.AREA -> if (draftPoints.size >= 3) scope.launch { cadStore.save(path, CadMeasurement.AreaPoly(0, draftPoints)) }
             else -> Unit
         }
         draftPoints = emptyList()
@@ -168,13 +176,13 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                             Text(file.name, color = CadLine, fontWeight = FontWeight.Bold, maxLines = 1, style = MaterialTheme.typography.titleSmall)
                             Text("${drawing.entities.size} كيان · ${layers.count { it.visible }}/${layers.size} طبقة", color = CadDim, style = MaterialTheme.typography.labelSmall)
                         }
-                        IconButton(onClick = { if (measurements.isNotEmpty()) measurements = measurements.dropLast(1) else if (draftPoints.isNotEmpty()) draftPoints = draftPoints.dropLast(1) }) { Icon(Icons.AutoMirrored.Filled.Undo, "تراجع", tint = CadLine) }
-                        IconButton(onClick = { measurements = emptyList(); draftPoints = emptyList() }) { Icon(Icons.Filled.Delete, "مسح", tint = CadLine) }
+                        IconButton(onClick = { if (measurements.isNotEmpty()) scope.launch { cadStore.delete(measurements.last().id) } else if (draftPoints.isNotEmpty()) draftPoints = draftPoints.dropLast(1) }) { Icon(Icons.AutoMirrored.Filled.Undo, "تراجع", tint = CadLine) }
+                        IconButton(onClick = { scope.launch { cadStore.clear(path) }; draftPoints = emptyList() }) { Icon(Icons.Filled.Delete, "مسح", tint = CadLine) }
                         IconButton(onClick = { showLayers = !showLayers }) { Icon(Icons.Filled.Layers, "طبقات", tint = CadLine) }
                     }
                     val hint = when (tool) {
                         CadMeasureTool.PAN -> "إصبعين للزوم · اسحب للتحريك"
-                        CadMeasureTool.DISTANCE -> if (draftPoints.isEmpty()) "نقطة البداية" else "نقطة النهاية"
+                        CadMeasureTool.DISTANCE -> if (draftPoints.isEmpty()) "التقط نقطة البداية" else "التقط نقطة النهاية"
                         CadMeasureTool.CONTINUOUS -> "نقاط متتالية · دبل تاب إنهاء"
                         CadMeasureTool.AREA -> "رؤوس المضلع · دبل تاب إنهاء"
                         CadMeasureTool.ANGLE -> listOf("ضلع 1", "الرأس", "ضلع 2").getOrElse(draftPoints.size) { "" }
@@ -243,17 +251,13 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                                     }
                                 }
                                 chip("تحريك", Icons.Filled.PanTool, CadMeasureTool.PAN)
-                                chip("مسافة", Icons.Filled.Straighten, CadMeasureTool.DISTANCE)
-                                chip("متصل", Icons.Filled.Timeline, CadMeasureTool.CONTINUOUS)
-                                chip("مساحة", Icons.Filled.SquareFoot, CadMeasureTool.AREA)
-                                chip("زاوية", Icons.Filled.Architecture, CadMeasureTool.ANGLE)
-                                chip("نق", Icons.Filled.RadioButtonUnchecked, CadMeasureTool.RADIUS)
+                                chip("بُعد", Icons.Filled.Straighten, CadMeasureTool.DISTANCE)
                                 chip("معايرة", Icons.Filled.Straighten, CadMeasureTool.CALIBRATE)
                                 if (tool == CadMeasureTool.CONTINUOUS || tool == CadMeasureTool.AREA) TextButton(onClick = { finishPoly() }) { Text("إنهاء", color = CadAccent) }
                             }
                             Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xxs), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                                 Text("الوحدة:", color = CadDim, fontSize = 12.sp)
-                                MeasureUnit.entries.forEach { u -> FilterChip(selected = unit == u, onClick = { unit = u }, label = { Text(u.label, fontSize = 11.sp) }) }
+                                MeasureUnit.entries.forEach { u -> FilterChip(selected = unit == u, onClick = { unit = u; scope.launch { cadStore.saveSettings(path, unitsPerMeter.toDouble(), u) } }, label = { Text(u.label, fontSize = 11.sp) }) }
                             }
                         }
                     }
@@ -268,7 +272,7 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
         }, confirmButton = {
             TextButton(onClick = {
                 val realM = calibrateInput.toDoubleOrNull(); val dist = a.distanceTo(b)
-                if (realM != null && realM > 0 && dist > 0) { unitsPerMeter = (dist / realM).toFloat(); Toast.makeText(context, "تمت المعايرة ✓", Toast.LENGTH_SHORT).show(); calibrateDialog = null; calibrateInput = "" }
+                if (realM != null && realM > 0 && dist > 0) { unitsPerMeter = (dist / realM).toFloat(); scope.launch { cadStore.saveSettings(path, unitsPerMeter.toDouble(), unit) }; Toast.makeText(context, "تمت المعايرة ✓", Toast.LENGTH_SHORT).show(); calibrateDialog = null; calibrateInput = "" }
             }) { Text("تطبيق") }
         }, dismissButton = { TextButton(onClick = { calibrateDialog = null }) { Text("إلغاء") } })
     }
@@ -279,8 +283,30 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeas(m: CadMeas
     when (m) {
         is CadMeasurement.Distance -> {
             val a = w2s(m.a); val b = w2s(m.b)
-            drawLine(CadMeasure, a, b, strokeWidth = 2.5f); drawCircle(CadMeasure, 4f, a); drawCircle(CadMeasure, 4f, b)
-            drawContext.canvas.nativeCanvas.drawText(unit.format(m.length, upm), (a.x + b.x) / 2, (a.y + b.y) / 2 - 8, paint)
+            val dx = b.x - a.x; val dy = b.y - a.y
+            val length = hypot(dx.toDouble(), dy.toDouble()).toFloat().coerceAtLeast(1f)
+            val nx = -dy / length; val ny = dx / length; val offset = 24f
+            val da = Offset(a.x + nx * offset, a.y + ny * offset)
+            val db = Offset(b.x + nx * offset, b.y + ny * offset)
+            // خطوط الامتداد ثم خط البُعد المنفصل عن الكيان المقاس.
+            drawLine(CadMeasure.copy(alpha = .75f), a, Offset(a.x + nx * (offset + 10f), a.y + ny * (offset + 10f)), strokeWidth = 1.7f)
+            drawLine(CadMeasure.copy(alpha = .75f), b, Offset(b.x + nx * (offset + 10f), b.y + ny * (offset + 10f)), strokeWidth = 1.7f)
+            drawLine(CadMeasure, da, db, strokeWidth = 2.6f)
+            fun arrow(at: Offset, toward: Offset) {
+                val adx = toward.x - at.x; val ady = toward.y - at.y; val al = hypot(adx.toDouble(), ady.toDouble()).toFloat().coerceAtLeast(1f)
+                val ux = adx / al; val uy = ady / al; val px = -uy; val py = ux
+                val p1 = Offset(at.x + ux * 12f + px * 5f, at.y + uy * 12f + py * 5f)
+                val p2 = Offset(at.x + ux * 12f - px * 5f, at.y + uy * 12f - py * 5f)
+                val path = Path().apply { moveTo(at.x, at.y); lineTo(p1.x, p1.y); lineTo(p2.x, p2.y); close() }
+                drawPath(path, CadMeasure)
+            }
+            arrow(da, db); arrow(db, da)
+            drawCircle(CadMeasure, 4f, a); drawCircle(CadMeasure, 4f, b)
+            val label = unit.format(m.length, upm)
+            paint.textAlign = android.graphics.Paint.Align.CENTER
+            val mid = Offset((da.x + db.x) / 2, (da.y + db.y) / 2 - 8f)
+            paint.color = android.graphics.Color.rgb(255, 176, 32)
+            drawContext.canvas.nativeCanvas.drawText(label, mid.x, mid.y, paint)
         }
         is CadMeasurement.Continuous -> {
             for (i in 0 until m.points.lastIndex) drawLine(CadMeasure, w2s(m.points[i]), w2s(m.points[i + 1]), strokeWidth = 2.5f)

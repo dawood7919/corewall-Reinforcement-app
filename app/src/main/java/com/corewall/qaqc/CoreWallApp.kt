@@ -9,6 +9,7 @@ import com.corewall.qaqc.ai.AiEngine
 import com.corewall.qaqc.ai.AiRepository
 import com.corewall.qaqc.ai.agent.AgentExecutionStore
 import com.corewall.qaqc.creative.CreativeDocumentStore
+import com.corewall.qaqc.ui.cad.CadMeasurementStore
 import com.corewall.qaqc.data.AppRepository
 import com.corewall.qaqc.data.FileLibrary
 import com.corewall.qaqc.data.FilesManager
@@ -29,6 +30,8 @@ class CoreWallApp : Application() {
     lateinit var agentExecutionStore: AgentExecutionStore
         private set
     lateinit var creativeDocumentStore: CreativeDocumentStore
+        private set
+    lateinit var cadMeasurementStore: CadMeasurementStore
         private set
     lateinit var fileLibrary: FileLibrary
         private set
@@ -52,6 +55,7 @@ class CoreWallApp : Application() {
         aiEngine = AiEngine(this, db.documentDao(), db.docFactDao(), db.chatMessageDao(), db.promptDao())
         agentExecutionStore = AgentExecutionStore(db.agentExecutionDao())
         creativeDocumentStore = CreativeDocumentStore(db.creativeDocumentDao())
+        cadMeasurementStore = CadMeasurementStore(db.cadMeasurementDao())
         fileLibrary = FileLibrary(db.fileMetaDao(), db.linkDao())
 
         // التسخين في الخلفية: فكّ الـJSON وفتح القاعدة بيحصلوا بالتوازي
