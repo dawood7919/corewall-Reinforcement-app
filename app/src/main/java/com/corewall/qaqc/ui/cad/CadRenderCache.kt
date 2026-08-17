@@ -2,7 +2,6 @@ package com.corewall.qaqc.ui.cad
 
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.Picture
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -68,7 +67,8 @@ internal class CadViewport {
 }
 
 internal data class CadPreparedScene(
-    val picture: Picture,
+    val geometryPath: Path,
+    val strokePaint: Paint,
     val snapIndex: CadSnapIndex,
     val labels: List<CadEntity.TextEnt>,
     val visibleEntityCount: Int
@@ -145,64 +145,59 @@ private fun cellKey(x: Int, y: Int): Long = (x.toLong() shl 32) xor (y.toLong() 
  * يسجل كل هندسة الرسم مرة واحدة كـ Picture. في كل إطار zoom لا يبقى إلا تحويل
  * Canvas واحد وإعادة تشغيل أوامر Skia، بدلاً من إنشاء Path وحساب sin/cos لكل كيان.
  */
-internal object CadStaticPicture {
-    fun record(entities: List<CadEntity>, bounds: Rect): Picture {
-        val picture = Picture()
-        val canvas = picture.beginRecording(1, 1)
+internal object CadStaticPath {
+    fun build(entities: List<CadEntity>, bounds: Rect): CadPreparedScene {
+        val geometry = Path()
         val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFE8F1FF.toInt()
             style = Paint.Style.STROKE
             strokeWidth = 0f // hairline: ثابت بالبكسل بعد zoom ولا يحتاج إعادة تسجيل.
         }
-        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xC8B4C8E6.toInt()
-            style = Paint.Style.FILL
-        }
         val marker = (max(bounds.width, bounds.height).toDouble() / 600.0).coerceAtLeast(1e-3)
-        fun drawArc(center: CadPoint, radius: Double, startDeg: Double, endDeg: Double) {
+        fun appendArc(center: CadPoint, radius: Double, startDeg: Double, endDeg: Double) {
             var end = endDeg; if (end < startDeg) end += 360.0
-            val path = Path()
             val first = arcPoint(center, radius, startDeg)
-            path.moveTo(first.x.toFloat(), first.y.toFloat())
+            geometry.moveTo(first.x.toFloat(), first.y.toFloat())
             val steps = max(8, ((end - startDeg) / 6.0).toInt())
             for (step in 1..steps) {
                 val point = arcPoint(center, radius, startDeg + (end - startDeg) * step / steps)
-                path.lineTo(point.x.toFloat(), point.y.toFloat())
+                geometry.lineTo(point.x.toFloat(), point.y.toFloat())
             }
-            canvas.drawPath(path, stroke)
         }
         entities.forEach { entity -> when (entity) {
-            is CadEntity.Line -> canvas.drawLine(entity.a.x.toFloat(), entity.a.y.toFloat(), entity.b.x.toFloat(), entity.b.y.toFloat(), stroke)
+            is CadEntity.Line -> { geometry.moveTo(entity.a.x.toFloat(), entity.a.y.toFloat()); geometry.lineTo(entity.b.x.toFloat(), entity.b.y.toFloat()) }
             is CadEntity.Polyline -> if (entity.points.size > 1) {
-                val path = Path().apply {
-                    moveTo(entity.points.first().x.toFloat(), entity.points.first().y.toFloat())
-                    entity.points.drop(1).forEach { lineTo(it.x.toFloat(), it.y.toFloat()) }
-                    if (entity.closed) close()
-                }
-                canvas.drawPath(path, stroke)
+                geometry.moveTo(entity.points.first().x.toFloat(), entity.points.first().y.toFloat())
+                entity.points.drop(1).forEach { geometry.lineTo(it.x.toFloat(), it.y.toFloat()) }
+                if (entity.closed) geometry.close()
             }
-            is CadEntity.Circle -> canvas.drawCircle(entity.center.x.toFloat(), entity.center.y.toFloat(), entity.radius.toFloat(), stroke)
-            is CadEntity.Arc -> drawArc(entity.center, entity.radius, entity.startDeg, entity.endDeg)
+            is CadEntity.Circle -> geometry.addCircle(entity.center.x.toFloat(), entity.center.y.toFloat(), entity.radius.toFloat(), Path.Direction.CW)
+            is CadEntity.Arc -> appendArc(entity.center, entity.radius, entity.startDeg, entity.endDeg)
             is CadEntity.Ellipse -> {
                 var end = entity.endRad; if (end < entity.startRad) end += Math.PI * 2
                 val steps = max(12, ((end - entity.startRad) / (Math.PI / 24)).toInt())
-                val path = Path()
                 for (step in 0..steps) {
                     val angle = entity.startRad + (end - entity.startRad) * step / steps
                     val x = entity.center.x + entity.majorAxis.x * cos(angle) + entity.minorAxis.x * sin(angle)
                     val y = entity.center.y + entity.majorAxis.y * cos(angle) + entity.minorAxis.y * sin(angle)
-                    if (step == 0) path.moveTo(x.toFloat(), y.toFloat()) else path.lineTo(x.toFloat(), y.toFloat())
+                    if (step == 0) geometry.moveTo(x.toFloat(), y.toFloat()) else geometry.lineTo(x.toFloat(), y.toFloat())
                 }
-                canvas.drawPath(path, stroke)
             }
             is CadEntity.PointEnt -> {
-                canvas.drawLine((entity.point.x - marker).toFloat(), entity.point.y.toFloat(), (entity.point.x + marker).toFloat(), entity.point.y.toFloat(), stroke)
-                canvas.drawLine(entity.point.x.toFloat(), (entity.point.y - marker).toFloat(), entity.point.x.toFloat(), (entity.point.y + marker).toFloat(), stroke)
+                geometry.moveTo((entity.point.x - marker).toFloat(), entity.point.y.toFloat())
+                geometry.lineTo((entity.point.x + marker).toFloat(), entity.point.y.toFloat())
+                geometry.moveTo(entity.point.x.toFloat(), (entity.point.y - marker).toFloat())
+                geometry.lineTo(entity.point.x.toFloat(), (entity.point.y + marker).toFloat())
             }
             // النص يرسم كطبقة screen-space مستقلة كي لا ينقلب رأساً على عقب عند تحويل محور Y.
             is CadEntity.TextEnt -> Unit
         } }
-        picture.endRecording()
-        return picture
+        return CadPreparedScene(
+            geometryPath = geometry,
+            strokePaint = stroke,
+            snapIndex = CadSnapIndex.build(entities, bounds),
+            labels = entities.filterIsInstance<CadEntity.TextEnt>(),
+            visibleEntityCount = entities.size
+        )
     }
 }

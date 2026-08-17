@@ -72,7 +72,12 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
     var calibrateDialog by remember { mutableStateOf<Pair<CadPoint, CadPoint>?>(null) }
     var calibrateInput by remember { mutableStateOf("") }
     val viewport = remember(path) { CadViewport() }
-    val labelPaint = remember { android.graphics.Paint().apply { color = android.graphics.Color.argb(200, 180, 200, 230); isAntiAlias = true } }
+    val labelPaint = remember {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.argb(200, 180, 200, 230)
+            isAntiAlias = true
+        }
+    }
 
     LaunchedEffect(parseResult, path) {
         val d = parseResult?.drawing ?: return@LaunchedEffect
@@ -141,12 +146,7 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                 val visibleEntities = remember(drawing, layers) { drawing.visibleEntities(layers) }
                 val scene by produceState<CadPreparedScene?>(null, visibleEntities, drawing.bounds) {
                     value = withContext(Dispatchers.Default) {
-                        CadPreparedScene(
-                            picture = CadStaticPicture.record(visibleEntities, drawing.bounds),
-                            snapIndex = CadSnapIndex.build(visibleEntities, drawing.bounds),
-                            labels = visibleEntities.filterIsInstance<CadEntity.TextEnt>(),
-                            visibleEntityCount = visibleEntities.size
-                        )
+                        CadStaticPath.build(visibleEntities, drawing.bounds)
                     }
                 }
                 var canvasSize by remember(drawing) { mutableStateOf(IntSize.Zero) }
@@ -192,9 +192,8 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                                 native.save()
                                 native.translate(viewport.offsetX, viewport.offsetY)
                                 native.scale(viewport.scale, -viewport.scale)
-                                native.drawPicture(prepared.picture)
+                                native.drawPath(prepared.geometryPath, prepared.strokePaint)
                                 native.restore()
-                                // النصوص قليلة التكلفة بعد كبحها إلى ما يظهر داخل مساحة العرض فقط.
                                 var labelCount = 0
                                 for (label in prepared.labels) {
                                     if (labelCount >= 750) break
