@@ -61,9 +61,9 @@ data class CadDrawing(
     val bounds: Rect,
     val insUnits: Int = 0
 ) {
-    fun visibleEntities(): List<CadEntity> {
-        val vis = layers.filter { it.visible }.map { it.name }.toSet()
-        return entities.filter { it.layer in vis || layers.none { l -> l.name == it.layer } }
+    fun visibleEntities(activeLayers: List<CadLayer> = layers): List<CadEntity> {
+        val vis = activeLayers.filter { it.visible }.map { it.name }.toSet()
+        return entities.filter { it.layer in vis || activeLayers.none { layer -> layer.name == it.layer } }
     }
 }
 
