@@ -77,7 +77,16 @@ private object NativeDwgDocumentSource : CadDocumentSource {
             } else {
                 val entities = payload.entities.mapNotNull(::toEntity)
                 val layers = payload.layers
-                    .map { CadLayer(it.name.ifBlank { "0" }, it.colorIndex, it.visible) }
+                    .map {
+                        CadLayer(
+                            name = it.name.ifBlank { "0" },
+                            colorIndex = it.colorIndex,
+                            trueColor = it.trueColor,
+                            lineType = it.lineType,
+                            lineWeight = it.lineWeight,
+                            visible = it.visible
+                        )
+                    }
                     .ifEmpty { listOf(CadLayer("0")) }
                 val drawing = CadDrawing(entities, layers, computeBounds(entities), payload.insUnits)
                 if (entities.isEmpty()) {
@@ -94,13 +103,14 @@ private object NativeDwgDocumentSource : CadDocumentSource {
     private fun toEntity(entity: NativeDwgEntity): CadEntity? {
         val v = entity.values
         val layer = entity.layer.ifBlank { "0" }
+        val style = CadVisualStyle(entity.colorIndex, entity.trueColor, entity.lineType, entity.lineWeight)
         return when (entity.type) {
-            "LINE" -> v.takeIf { it.size >= 4 }?.let { CadEntity.Line(CadPoint(it[0], it[1]), CadPoint(it[2], it[3]), layer) }
+            "LINE" -> v.takeIf { it.size >= 4 }?.let { CadEntity.Line(CadPoint(it[0], it[1]), CadPoint(it[2], it[3]), layer, style) }
             "POLYLINE" -> v.takeIf { it.size >= 4 && it.size % 2 == 0 }?.let {
-                CadEntity.Polyline(it.chunked(2) { p -> CadPoint(p[0], p[1]) }, entity.closed, layer)
+                CadEntity.Polyline(it.chunked(2) { p -> CadPoint(p[0], p[1]) }, entity.closed, layer, style)
             }
-            "CIRCLE" -> v.takeIf { it.size >= 3 && it[2] > 0 }?.let { CadEntity.Circle(CadPoint(it[0], it[1]), it[2], layer) }
-            "ARC" -> v.takeIf { it.size >= 5 && it[2] > 0 }?.let { CadEntity.Arc(CadPoint(it[0], it[1]), it[2], it[3], it[4], layer) }
+            "CIRCLE" -> v.takeIf { it.size >= 3 && it[2] > 0 }?.let { CadEntity.Circle(CadPoint(it[0], it[1]), it[2], layer, style) }
+            "ARC" -> v.takeIf { it.size >= 5 && it[2] > 0 }?.let { CadEntity.Arc(CadPoint(it[0], it[1]), it[2], it[3], it[4], layer, style) }
             "ELLIPSE" -> v.takeIf { it.size >= 8 }?.let {
                 CadEntity.Ellipse(
                     center = CadPoint(it[0], it[1]),
@@ -108,12 +118,13 @@ private object NativeDwgDocumentSource : CadDocumentSource {
                     minorAxis = CadPoint(it[4], it[5]),
                     startRad = it[6],
                     endRad = it[7],
-                    layer = layer
+                    layer = layer,
+                    style = style
                 )
             }
-            "POINT" -> v.takeIf { it.size >= 2 }?.let { CadEntity.PointEnt(CadPoint(it[0], it[1]), layer) }
+            "POINT" -> v.takeIf { it.size >= 2 }?.let { CadEntity.PointEnt(CadPoint(it[0], it[1]), layer, style) }
             "TEXT" -> v.takeIf { it.size >= 4 }?.let {
-                CadEntity.TextEnt(CadPoint(it[0], it[1]), it[2], entity.text.orEmpty(), it[3], layer)
+                CadEntity.TextEnt(CadPoint(it[0], it[1]), it[2], entity.text.orEmpty(), it[3], layer, style)
             }
             else -> null
         }
@@ -131,7 +142,14 @@ private data class NativeDwgPayload(
 )
 
 @Serializable
-private data class NativeDwgLayer(val name: String, val colorIndex: Int = 7, val visible: Boolean = true)
+private data class NativeDwgLayer(
+    val name: String,
+    val colorIndex: Int = 7,
+    val trueColor: Long? = null,
+    val lineType: String = "CONTINUOUS",
+    val lineWeight: Int = 0,
+    val visible: Boolean = true
+)
 
 @Serializable
 private data class NativeDwgEntity(
@@ -139,5 +157,9 @@ private data class NativeDwgEntity(
     val layer: String = "0",
     val values: List<Double> = emptyList(),
     val text: String? = null,
-    val closed: Boolean = false
+    val closed: Boolean = false,
+    val colorIndex: Int = 256,
+    val trueColor: Long? = null,
+    val lineType: String = "BYLAYER",
+    val lineWeight: Int = 0
 )

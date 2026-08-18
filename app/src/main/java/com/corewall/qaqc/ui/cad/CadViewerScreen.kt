@@ -146,7 +146,7 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                 val visibleEntities = remember(drawing, layers) { drawing.visibleEntities(layers) }
                 val scene by produceState<CadPreparedScene?>(null, visibleEntities, drawing.bounds) {
                     value = withContext(Dispatchers.Default) {
-                        CadStaticPath.build(visibleEntities, drawing.bounds)
+                        CadStaticPath.build(drawing, visibleEntities)
                     }
                 }
                 var canvasSize by remember(drawing) { mutableStateOf(IntSize.Zero) }
@@ -192,14 +192,16 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                                 native.save()
                                 native.translate(viewport.offsetX, viewport.offsetY)
                                 native.scale(viewport.scale, -viewport.scale)
-                                native.drawPath(prepared.geometryPath, prepared.strokePaint)
+                                prepared.strokes.forEach { stroke -> native.drawPath(stroke.path, stroke.paint) }
                                 native.restore()
                                 var labelCount = 0
-                                for (label in prepared.labels) {
+                                for (preparedLabel in prepared.labels) {
                                     if (labelCount >= 750) break
+                                    val label = preparedLabel.label
                                     val point = worldToScreen(label.position)
                                     if (point.x !in -80f..size.width + 80f || point.y !in -40f..size.height + 40f) continue
                                     labelPaint.textSize = max(10f, (label.height * viewport.scale).toFloat().coerceAtMost(28f))
+                                    labelPaint.color = preparedLabel.color
                                     native.drawText(label.value.take(80), point.x, point.y, labelPaint)
                                     labelCount++
                                 }

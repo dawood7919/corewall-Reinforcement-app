@@ -28,6 +28,13 @@ constexpr int kMaxBlockDepth = 8;
 constexpr double kPi = 3.14159265358979323846;
 
 struct Pt { double x = 0.0; double y = 0.0; };
+struct DrawStyle {
+  int color_index = 256; // BYLAYER
+  bool has_true_color = false;
+  unsigned int true_color = 0;
+  std::string line_type = "BYLAYER";
+  int line_weight = 0;
+};
 struct Affine {
   double a = 1.0, b = 0.0, c = 0.0, d = 1.0, tx = 0.0, ty = 0.0;
   Pt point(Pt p) const { return {a * p.x + c * p.y + tx, b * p.x + d * p.y + ty}; }
@@ -82,13 +89,44 @@ class PayloadWriter {
     if (warnings_.size() < 64) warnings_.push_back(warning);
   }
 
-  std::string layerFor(Dwg_Data* dwg, Dwg_Object_Entity* entity, const std::string& fallback) {
-    if (!dwg || !entity || !entity->layer) return fallback.empty() ? "0" : fallback;
-    char* name = dwg_handle_name(dwg, "LAYER", entity->layer);
+  std::string handleName(Dwg_Data* dwg, const char* table, Dwg_Object_Ref* handle, const std::string& fallback) {
+    if (!dwg || !handle) return fallback;
+    char* name = dwg_handle_name(dwg, table, handle);
     if (!name) return fallback.empty() ? "0" : fallback;
     std::string result(name);
     std::free(name); // dwg_handle_name always returns an allocated copy.
-    return result.empty() ? "0" : result;
+    return result.empty() ? fallback : result;
+  }
+
+  std::string layerFor(Dwg_Data* dwg, Dwg_Object_Entity* entity, const std::string& fallback) {
+    if (!entity) return fallback.empty() ? "0" : fallback;
+    return handleName(dwg, "LAYER", entity->layer, fallback.empty() ? "0" : fallback);
+  }
+
+  DrawStyle styleFor(Dwg_Data* dwg, Dwg_Object_Entity* entity) {
+    DrawStyle style;
+    if (!entity) return style;
+    style.color_index = entity->color.index;
+    if (entity->color.method == DWG_COLOR_METHOD_TRUECOLOR && (entity->color.rgb & 0x00ffffffu) != 0u) {
+      style.has_true_color = true;
+      style.true_color = entity->color.rgb & 0x00ffffffu;
+    }
+    style.line_type = handleName(dwg, "LTYPE", entity->ltype, "BYLAYER");
+    style.line_weight = entity->linewt;
+    return style;
+  }
+
+  DrawStyle styleFor(Dwg_Data* dwg, Dwg_Object_LAYER* layer) {
+    DrawStyle style;
+    if (!layer) return style;
+    style.color_index = layer->color.index;
+    if (layer->color.method == DWG_COLOR_METHOD_TRUECOLOR && (layer->color.rgb & 0x00ffffffu) != 0u) {
+      style.has_true_color = true;
+      style.true_color = layer->color.rgb & 0x00ffffffu;
+    }
+    style.line_type = handleName(dwg, "LTYPE", layer->ltype, "CONTINUOUS");
+    style.line_weight = layer->linewt;
+    return style;
   }
 
   void addLayers(Dwg_Data* dwg) {
@@ -98,9 +136,12 @@ class PayloadWriter {
       Dwg_Object_LAYER* layer = layers[i];
       const std::string name = layer->name ? layer->name : "0";
       if (layerNames_.insert(name).second) {
+        const DrawStyle style = styleFor(dwg, layer);
         std::ostringstream item;
-        item << "{\"name\":\"" << escapeJson(name.c_str()) << "\",\"colorIndex\":7,\"visible\":"
-             << ((!layer->off && !layer->frozen) ? "true" : "false") << '}';
+        item << "{\"name\":\"" << escapeJson(name.c_str()) << "\",\"colorIndex\":" << style.color_index;
+        if (style.has_true_color) item << ",\"trueColor\":" << style.true_color;
+        item << ",\"lineType\":\"" << escapeJson(style.line_type.c_str()) << "\",\"lineWeight\":" << style.line_weight
+             << ",\"visible\":" << ((!layer->off && !layer->frozen) ? "true" : "false") << '}';
         layers_.push_back(item.str());
       }
     }
@@ -124,7 +165,7 @@ class PayloadWriter {
   }
 
   void add(const std::string& type, const std::string& layer, const std::vector<double>& values,
-           bool closed = false, const char* text = nullptr) {
+           bool closed = false, const char* text = nullptr, const DrawStyle& style = DrawStyle()) {
     if (!canAdd()) return;
     for (double value : values) if (!finite(value)) { addWarning("تم تجاوز كيان بقيم هندسية غير صالحة"); return; }
     ensureLayer(layer);
@@ -135,6 +176,10 @@ class PayloadWriter {
     item << ']';
     if (closed) item << ",\"closed\":true";
     if (text) item << ",\"text\":\"" << escapeJson(text) << "\"";
+    item << ",\"colorIndex\":" << style.color_index;
+    if (style.has_true_color) item << ",\"trueColor\":" << style.true_color;
+    item << ",\"lineType\":\"" << escapeJson(style.line_type.c_str()) << "\"";
+    item << ",\"lineWeight\":" << style.line_weight;
     item << '}';
     entities_.push_back(item.str());
   }
@@ -162,10 +207,11 @@ class PayloadWriter {
 Pt point2(double x, double y) { return {x, y}; }
 
 void appendEntity(Dwg_Data* dwg, Dwg_Object* object, const Affine& transform,
-                  const std::string& inheritedLayer, int blockDepth, PayloadWriter& writer);
+                  const std::string& inheritedLayer, const DrawStyle& inheritedStyle,
+                  int blockDepth, PayloadWriter& writer);
 
 void appendPolyline(const std::vector<Pt>& points, bool closed, const Affine& transform,
-                    const std::string& layer, PayloadWriter& writer) {
+                    const std::string& layer, const DrawStyle& style, PayloadWriter& writer) {
   if (points.size() < 2) return;
   std::vector<double> output;
   output.reserve(points.size() * 2);
@@ -174,20 +220,21 @@ void appendPolyline(const std::vector<Pt>& points, bool closed, const Affine& tr
     if (!valid(mapped)) return;
     output.push_back(mapped.x); output.push_back(mapped.y);
   }
-  writer.add("POLYLINE", layer, output, closed);
+  writer.add("POLYLINE", layer, output, closed, nullptr, style);
 }
 
 void appendEllipse(const Pt& center, const Pt& major, const Pt& minor, double start, double end,
-                   const Affine& transform, const std::string& layer, PayloadWriter& writer) {
+                   const Affine& transform, const std::string& layer, const DrawStyle& style,
+                   PayloadWriter& writer) {
   const Pt c = transform.point(center);
   const Pt majorMapped = transform.vector(major);
   const Pt minorMapped = transform.vector(minor);
   if (!valid(c) || !valid(majorMapped) || !valid(minorMapped)) return;
-  writer.add("ELLIPSE", layer, {c.x, c.y, majorMapped.x, majorMapped.y, minorMapped.x, minorMapped.y, start, end});
+  writer.add("ELLIPSE", layer, {c.x, c.y, majorMapped.x, majorMapped.y, minorMapped.x, minorMapped.y, start, end}, false, nullptr, style);
 }
 
 void appendCircleOrEllipse(const Pt& center, double radius, const Affine& transform,
-                           const std::string& layer, PayloadWriter& writer) {
+                           const std::string& layer, const DrawStyle& style, PayloadWriter& writer) {
   if (!(radius > 0.0) || !finite(radius)) return;
   const Pt ex = transform.vector({radius, 0.0});
   const Pt ey = transform.vector({0.0, radius});
@@ -197,14 +244,15 @@ void appendCircleOrEllipse(const Pt& center, double radius, const Affine& transf
   const Pt c = transform.point(center);
   if (!valid(c)) return;
   if (std::abs(lx - ly) <= 1e-9 * std::max(1.0, std::max(lx, ly)) && std::abs(dot) <= 1e-9 * std::max(1.0, lx * ly)) {
-    writer.add("CIRCLE", layer, {c.x, c.y, (lx + ly) * 0.5});
+    writer.add("CIRCLE", layer, {c.x, c.y, (lx + ly) * 0.5}, false, nullptr, style);
   } else {
-    appendEllipse(center, {radius, 0.0}, {0.0, radius}, 0.0, 2.0 * kPi, transform, layer, writer);
+    appendEllipse(center, {radius, 0.0}, {0.0, radius}, 0.0, 2.0 * kPi, transform, layer, style, writer);
   }
 }
 
 void appendArcOrEllipse(const Pt& center, double radius, double startRad, double endRad,
-                        const Affine& transform, const std::string& layer, PayloadWriter& writer) {
+                        const Affine& transform, const std::string& layer, const DrawStyle& style,
+                        PayloadWriter& writer) {
   const Pt ex = transform.vector({radius, 0.0});
   const Pt ey = transform.vector({0.0, radius});
   const double lx = std::hypot(ex.x, ex.y);
@@ -218,11 +266,11 @@ void appendArcOrEllipse(const Pt& center, double radius, double startRad, double
     const double rotation = std::atan2(ex.y, ex.x);
     writer.add("ARC", layer, {c.x, c.y, (lx + ly) * 0.5,
                                (startRad + rotation) * 180.0 / kPi,
-                               (endRad + rotation) * 180.0 / kPi});
+                               (endRad + rotation) * 180.0 / kPi}, false, nullptr, style);
   } else {
     // المقياس غير المنتظم أو الانعكاس يحوّل القوس إلى قطع ناقص؛ نحفظ المحورين
     // ومعاملات القوس بدقة بدلاً من رسم قوس دائري مزيف.
-    appendEllipse(center, {radius, 0.0}, {0.0, radius}, startRad, endRad, transform, layer, writer);
+    appendEllipse(center, {radius, 0.0}, {0.0, radius}, startRad, endRad, transform, layer, style, writer);
   }
 }
 
@@ -264,7 +312,8 @@ std::vector<Pt> expandLwPolyline(const Dwg_Entity_LWPOLYLINE* entity) {
 }
 
 void appendBlock(Dwg_Data* dwg, Dwg_Entity_INSERT* insert, const Affine& parent,
-                 const std::string& inheritedLayer, int blockDepth, PayloadWriter& writer) {
+                 const std::string& inheritedLayer, const DrawStyle& inheritedStyle,
+                 int blockDepth, PayloadWriter& writer) {
   if (blockDepth >= kMaxBlockDepth) { writer.addWarning("تم تجاوز BLOCK متداخل بعمق أكبر من 8"); return; }
   if (!insert || !insert->block_header) { writer.addWarning("INSERT بلا مرجع BLOCK صالح"); return; }
   Dwg_Object* block = dwg_ref_object(dwg, insert->block_header);
@@ -275,32 +324,115 @@ void appendBlock(Dwg_Data* dwg, Dwg_Entity_INSERT* insert, const Affine& parent,
   const double co = std::cos(angle), si = std::sin(angle);
   const Affine local{co * sx, si * sx, -si * sy, co * sy, insert->ins_pt.x, insert->ins_pt.y};
   const std::string insertLayer = writer.layerFor(dwg, insert->parent, inheritedLayer);
+  DrawStyle insertStyle = writer.styleFor(dwg, insert->parent);
+  if (insertStyle.color_index == 0) insertStyle = inheritedStyle;
   // BLOCK_HEADER يملك الكيانات بالطريقة العامة نفسها؛ الواجهة العامة متاحة
   // في جميع حزم LibreDWG، بخلاف دوال block المساعدة غير المصدّرة في بعض البنى.
   for (Dwg_Object* item = get_first_owned_entity(block); item; item = get_next_owned_entity(block, item)) {
-    appendEntity(dwg, item, compose(parent, local), insertLayer, blockDepth + 1, writer);
+    appendEntity(dwg, item, compose(parent, local), insertLayer, insertStyle, blockDepth + 1, writer);
+  }
+}
+
+void appendDimensionBlock(Dwg_Data* dwg, Dwg_Object_Ref* blockRef, const Affine& transform,
+                          const std::string& layer, const DrawStyle& style, int blockDepth,
+                          PayloadWriter& writer) {
+  if (blockDepth >= kMaxBlockDepth || !blockRef) return;
+  Dwg_Object* block = dwg_ref_object(dwg, blockRef);
+  if (!block) { writer.addWarning("تعذر حل BLOCK البعد في DWG"); return; }
+  for (Dwg_Object* item = get_first_owned_entity(block); item; item = get_next_owned_entity(block, item)) {
+    appendEntity(dwg, item, transform, layer, style, blockDepth + 1, writer);
+  }
+}
+
+void appendSpline(const Dwg_Entity_SPLINE* entity, const Affine& transform, const std::string& layer,
+                  const DrawStyle& style, PayloadWriter& writer) {
+  if (!entity) return;
+  std::vector<Pt> points;
+  if (entity->fit_pts && entity->num_fit_pts >= 2) {
+    points.reserve(entity->num_fit_pts);
+    for (BITCODE_BS i = 0; i < entity->num_fit_pts; ++i) points.push_back(point2(entity->fit_pts[i].x, entity->fit_pts[i].y));
+  } else if (entity->ctrl_pts && entity->num_ctrl_pts >= 2) {
+    points.reserve(entity->num_ctrl_pts);
+    for (BITCODE_BL i = 0; i < entity->num_ctrl_pts; ++i) points.push_back(point2(entity->ctrl_pts[i].x, entity->ctrl_pts[i].y));
+  }
+  // مسار التحكم ليس تقييم NURBS كاملاً، لكنه يمنع اختفاء المنحنى عند قراءة ملف 2D.
+  appendPolyline(points, entity->closed_b != 0, transform, layer, style, writer);
+}
+
+void appendLeader(const Dwg_Entity_LEADER* entity, const Affine& transform, const std::string& layer,
+                  const DrawStyle& style, PayloadWriter& writer) {
+  if (!entity || !entity->points || entity->num_points < 2) return;
+  std::vector<Pt> points;
+  points.reserve(entity->num_points);
+  for (BITCODE_BL i = 0; i < entity->num_points; ++i) points.push_back(point2(entity->points[i].x, entity->points[i].y));
+  appendPolyline(points, false, transform, layer, style, writer);
+}
+
+void appendHatch(const Dwg_Entity_HATCH* entity, const Affine& transform, const std::string& layer,
+                 const DrawStyle& style, PayloadWriter& writer) {
+  if (!entity || !entity->paths) return;
+  for (BITCODE_BL pathIndex = 0; pathIndex < entity->num_paths; ++pathIndex) {
+    const Dwg_HATCH_Path& path = entity->paths[pathIndex];
+    if ((path.flag & 2u) != 0u && path.polyline_paths && path.num_segs_or_paths >= 2) {
+      std::vector<Pt> points;
+      points.reserve(path.num_segs_or_paths);
+      for (BITCODE_BL i = 0; i < path.num_segs_or_paths; ++i) {
+        points.push_back(point2(path.polyline_paths[i].point.x, path.polyline_paths[i].point.y));
+      }
+      appendPolyline(points, path.closed != 0, transform, layer, style, writer);
+      continue;
+    }
+    if (!path.segs) continue;
+    for (BITCODE_BL segIndex = 0; segIndex < path.num_segs_or_paths; ++segIndex) {
+      const Dwg_HATCH_PathSeg& seg = path.segs[segIndex];
+      switch (seg.curve_type) {
+        case 1: appendPolyline({point2(seg.first_endpoint.x, seg.first_endpoint.y), point2(seg.second_endpoint.x, seg.second_endpoint.y)}, false, transform, layer, style, writer); break;
+        case 2: appendArcOrEllipse(point2(seg.center.x, seg.center.y), seg.radius, seg.start_angle, seg.end_angle, transform, layer, style, writer); break;
+        case 3: {
+          const Pt major = point2(seg.endpoint.x - seg.center.x, seg.endpoint.y - seg.center.y);
+          const Pt minor = {-major.y * seg.minor_major_ratio, major.x * seg.minor_major_ratio};
+          appendEllipse(point2(seg.center.x, seg.center.y), major, minor, seg.start_angle, seg.end_angle, transform, layer, style, writer);
+          break;
+        }
+        case 4: {
+          std::vector<Pt> points;
+          if (seg.fitpts && seg.num_fitpts >= 2) {
+            for (BITCODE_BL i = 0; i < seg.num_fitpts; ++i) points.push_back(point2(seg.fitpts[i].x, seg.fitpts[i].y));
+          } else if (seg.control_points && seg.num_control_points >= 2) {
+            for (BITCODE_BL i = 0; i < seg.num_control_points; ++i) points.push_back(point2(seg.control_points[i].point.x, seg.control_points[i].point.y));
+          }
+          appendPolyline(points, false, transform, layer, style, writer);
+          break;
+        }
+        default: writer.addWarning("تم تجاوز حد HATCH بنوع منحنى غير معروف"); break;
+      }
+    }
   }
 }
 
 void appendEntity(Dwg_Data* dwg, Dwg_Object* object, const Affine& transform,
-                  const std::string& inheritedLayer, int blockDepth, PayloadWriter& writer) {
+                  const std::string& inheritedLayer, const DrawStyle& inheritedStyle,
+                  int blockDepth, PayloadWriter& writer) {
   if (!object || !object->tio.entity) return;
   Dwg_Object_Entity* common = object->tio.entity;
   std::string layer = writer.layerFor(dwg, common, inheritedLayer);
   if (layer == "0" && !inheritedLayer.empty()) layer = inheritedLayer;
+  DrawStyle style = writer.styleFor(dwg, common);
+  if (style.color_index == 0) style = inheritedStyle;
+  if (style.line_type == "BYBLOCK") style.line_type = inheritedStyle.line_type;
 
   switch (object->fixedtype) {
     case DWG_TYPE_LINE: {
       auto* e = common->tio.LINE; if (!e) return;
       const Pt a = transform.point(point2(e->start.x, e->start.y)); const Pt b = transform.point(point2(e->end.x, e->end.y));
-      if (valid(a) && valid(b)) writer.add("LINE", layer, {a.x, a.y, b.x, b.y});
+      if (valid(a) && valid(b)) writer.add("LINE", layer, {a.x, a.y, b.x, b.y}, false, nullptr, style);
       break;
     }
     case DWG_TYPE_LWPOLYLINE: {
       auto* e = common->tio.LWPOLYLINE; if (!e || !e->points) return;
       const std::vector<Pt> points = expandLwPolyline(e);
       // LibreDWG يعيد ترميز bit الإغلاق من DXF 1 إلى 512 داخل حقل flag.
-      appendPolyline(points, (e->flag & 512u) != 0, transform, layer, writer);
+      appendPolyline(points, (e->flag & 512u) != 0, transform, layer, style, writer);
       break;
     }
     case DWG_TYPE_POLYLINE_2D: {
@@ -312,7 +444,7 @@ void appendEntity(Dwg_Data* dwg, Dwg_Object* object, const Affine& transform,
           const auto* v = vertex->tio.entity->tio.VERTEX_2D; points.push_back(point2(v->point.x, v->point.y));
         }
       }
-      appendPolyline(points, (e->flag & 1u) != 0, transform, layer, writer);
+      appendPolyline(points, (e->flag & 1u) != 0, transform, layer, style, writer);
       break;
     }
     case DWG_TYPE_POLYLINE_3D: {
@@ -324,15 +456,15 @@ void appendEntity(Dwg_Data* dwg, Dwg_Object* object, const Affine& transform,
           const auto* v = vertex->tio.entity->tio.VERTEX_3D; points.push_back(point2(v->point.x, v->point.y));
         }
       }
-      appendPolyline(points, false, transform, layer, writer);
+      appendPolyline(points, false, transform, layer, style, writer);
       break;
     }
     case DWG_TYPE_CIRCLE: {
-      auto* e = common->tio.CIRCLE; if (e) appendCircleOrEllipse(point2(e->center.x, e->center.y), e->radius, transform, layer, writer);
+      auto* e = common->tio.CIRCLE; if (e) appendCircleOrEllipse(point2(e->center.x, e->center.y), e->radius, transform, layer, style, writer);
       break;
     }
     case DWG_TYPE_ARC: {
-      auto* e = common->tio.ARC; if (e) appendArcOrEllipse(point2(e->center.x, e->center.y), e->radius, e->start_angle, e->end_angle, transform, layer, writer);
+      auto* e = common->tio.ARC; if (e) appendArcOrEllipse(point2(e->center.x, e->center.y), e->radius, e->start_angle, e->end_angle, transform, layer, style, writer);
       break;
     }
     case DWG_TYPE_ELLIPSE: {
@@ -340,20 +472,20 @@ void appendEntity(Dwg_Data* dwg, Dwg_Object* object, const Affine& transform,
       if (e) {
         const Pt major = point2(e->sm_axis.x, e->sm_axis.y);
         const Pt minor = {-major.y * e->axis_ratio, major.x * e->axis_ratio};
-        appendEllipse(point2(e->center.x, e->center.y), major, minor, e->start_angle, e->end_angle, transform, layer, writer);
+        appendEllipse(point2(e->center.x, e->center.y), major, minor, e->start_angle, e->end_angle, transform, layer, style, writer);
       }
       break;
     }
     case DWG_TYPE_POINT: {
       auto* e = common->tio.POINT; if (!e) return;
-      const Pt p = transform.point(point2(e->x, e->y)); if (valid(p)) writer.add("POINT", layer, {p.x, p.y});
+      const Pt p = transform.point(point2(e->x, e->y)); if (valid(p)) writer.add("POINT", layer, {p.x, p.y}, false, nullptr, style);
       break;
     }
     case DWG_TYPE_TEXT: {
       auto* e = common->tio.TEXT; if (!e) return;
       const Pt p = transform.point(point2(e->ins_pt.x, e->ins_pt.y));
       const double scale = std::sqrt(std::abs(transform.a * transform.d - transform.b * transform.c));
-      if (valid(p)) writer.add("TEXT", layer, {p.x, p.y, e->height * scale, e->rotation * 180.0 / kPi}, false, e->text_value);
+      if (valid(p)) writer.add("TEXT", layer, {p.x, p.y, e->height * scale, e->rotation * 180.0 / kPi}, false, e->text_value, style);
       break;
     }
     case DWG_TYPE_MTEXT: {
@@ -361,11 +493,37 @@ void appendEntity(Dwg_Data* dwg, Dwg_Object* object, const Affine& transform,
       const Pt p = transform.point(point2(e->ins_pt.x, e->ins_pt.y));
       const double rotation = std::atan2(e->x_axis_dir.y, e->x_axis_dir.x) * 180.0 / kPi;
       const double scale = std::sqrt(std::abs(transform.a * transform.d - transform.b * transform.c));
-      if (valid(p)) writer.add("TEXT", layer, {p.x, p.y, e->text_height * scale, rotation}, false, e->text);
+      if (valid(p)) writer.add("TEXT", layer, {p.x, p.y, e->text_height * scale, rotation}, false, e->text, style);
+      break;
+    }
+    case DWG_TYPE_ATTDEF: {
+      auto* e = common->tio.ATTDEF; if (!e || (e->flags & 1u) != 0u) return;
+      const Pt p = transform.point(point2(e->ins_pt.x, e->ins_pt.y));
+      const double scale = std::sqrt(std::abs(transform.a * transform.d - transform.b * transform.c));
+      if (valid(p)) writer.add("TEXT", layer, {p.x, p.y, e->height * scale, e->rotation * 180.0 / kPi}, false, e->default_value, style);
+      break;
+    }
+    case DWG_TYPE_SPLINE:
+      appendSpline(common->tio.SPLINE, transform, layer, style, writer);
+      break;
+    case DWG_TYPE_LEADER:
+      appendLeader(common->tio.LEADER, transform, layer, style, writer);
+      break;
+    case DWG_TYPE_HATCH:
+      appendHatch(common->tio.HATCH, transform, layer, style, writer);
+      break;
+    case DWG_TYPE_DIMENSION_LINEAR: {
+      auto* e = common->tio.DIMENSION_LINEAR;
+      if (e) appendDimensionBlock(dwg, e->block, transform, layer, style, blockDepth, writer);
+      break;
+    }
+    case DWG_TYPE_DIMENSION_ALIGNED: {
+      auto* e = common->tio.DIMENSION_ALIGNED;
+      if (e) appendDimensionBlock(dwg, e->block, transform, layer, style, blockDepth, writer);
       break;
     }
     case DWG_TYPE_INSERT:
-      appendBlock(dwg, common->tio.INSERT, transform, layer, blockDepth, writer);
+      appendBlock(dwg, common->tio.INSERT, transform, layer, style, blockDepth, writer);
       break;
     default:
       writer.addWarning(std::string("تم تجاوز كيان DWG غير مدعوم: ") + (object->name ? object->name : "UNKNOWN"));
@@ -391,7 +549,7 @@ std::string loadDwg(const char* path) {
     return jsonError("ملف DWG لا يحتوي على Model Space صالح");
   }
   for (Dwg_Object* entity = get_first_owned_entity(model->obj); entity; entity = get_next_owned_entity(model->obj, entity)) {
-    appendEntity(&dwg, entity, Affine{}, "", 0, writer);
+    appendEntity(&dwg, entity, Affine{}, "", DrawStyle{}, 0, writer);
   }
   const std::string payload = writer.finish(&dwg);
   dwg_free(&dwg); // تحرير كل الذاكرة التي خصصها LibreDWG قبل العودة إلى Kotlin.

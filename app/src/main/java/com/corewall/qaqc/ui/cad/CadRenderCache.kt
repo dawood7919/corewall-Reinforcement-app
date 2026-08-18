@@ -2,6 +2,8 @@ package com.corewall.qaqc.ui.cad
 
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Color
+import android.graphics.DashPathEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -67,12 +69,16 @@ internal class CadViewport {
 }
 
 internal data class CadPreparedScene(
-    val geometryPath: Path,
-    val strokePaint: Paint,
+    val strokes: List<CadPreparedStroke>,
     val snapIndex: CadSnapIndex,
-    val labels: List<CadEntity.TextEnt>,
+    val labels: List<CadPreparedLabel>,
     val visibleEntityCount: Int
 )
+
+internal data class CadPreparedStroke(val path: Path, val paint: Paint)
+internal data class CadPreparedLabel(val label: CadEntity.TextEnt, val color: Int)
+
+private data class CadStrokeKey(val color: Int, val lineType: String, val lineWeight: Int)
 
 /** فهرس خلايا ثابت للالتقاط، يمنع مسح آلاف/مئات آلاف الكيانات عند كل نقرة قياس. */
 internal class CadSnapIndex private constructor(
@@ -146,15 +152,18 @@ private fun cellKey(x: Int, y: Int): Long = (x.toLong() shl 32) xor (y.toLong() 
  * Canvas واحد وإعادة تشغيل أوامر Skia، بدلاً من إنشاء Path وحساب sin/cos لكل كيان.
  */
 internal object CadStaticPath {
-    fun build(entities: List<CadEntity>, bounds: Rect): CadPreparedScene {
-        val geometry = Path()
-        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFE8F1FF.toInt()
+    fun build(drawing: CadDrawing, entities: List<CadEntity>): CadPreparedScene {
+        val paths = LinkedHashMap<CadStrokeKey, Path>()
+        val labels = ArrayList<CadPreparedLabel>()
+        val bounds = drawing.bounds
+        val marker = (max(bounds.width, bounds.height).toDouble() / 600.0).coerceAtLeast(1e-3)
+        fun paintFor(key: CadStrokeKey) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = key.color
             style = Paint.Style.STROKE
             strokeWidth = 0f // hairline: ثابت بالبكسل بعد zoom ولا يحتاج إعادة تسجيل.
+            pathEffect = linePattern(key.lineType)
         }
-        val marker = (max(bounds.width, bounds.height).toDouble() / 600.0).coerceAtLeast(1e-3)
-        fun appendArc(center: CadPoint, radius: Double, startDeg: Double, endDeg: Double) {
+        fun appendArc(geometry: Path, center: CadPoint, radius: Double, startDeg: Double, endDeg: Double) {
             var end = endDeg; if (end < startDeg) end += 360.0
             val first = arcPoint(center, radius, startDeg)
             geometry.moveTo(first.x.toFloat(), first.y.toFloat())
@@ -164,7 +173,11 @@ internal object CadStaticPath {
                 geometry.lineTo(point.x.toFloat(), point.y.toFloat())
             }
         }
-        entities.forEach { entity -> when (entity) {
+        entities.forEach { entity ->
+            val style = drawing.resolvedStyle(entity)
+            val key = CadStrokeKey(style.toArgb(), style.lineType.uppercase(), style.lineWeight)
+            val geometry = paths.getOrPut(key) { Path() }
+            when (entity) {
             is CadEntity.Line -> { geometry.moveTo(entity.a.x.toFloat(), entity.a.y.toFloat()); geometry.lineTo(entity.b.x.toFloat(), entity.b.y.toFloat()) }
             is CadEntity.Polyline -> if (entity.points.size > 1) {
                 geometry.moveTo(entity.points.first().x.toFloat(), entity.points.first().y.toFloat())
@@ -172,7 +185,7 @@ internal object CadStaticPath {
                 if (entity.closed) geometry.close()
             }
             is CadEntity.Circle -> geometry.addCircle(entity.center.x.toFloat(), entity.center.y.toFloat(), entity.radius.toFloat(), Path.Direction.CW)
-            is CadEntity.Arc -> appendArc(entity.center, entity.radius, entity.startDeg, entity.endDeg)
+            is CadEntity.Arc -> appendArc(geometry, entity.center, entity.radius, entity.startDeg, entity.endDeg)
             is CadEntity.Ellipse -> {
                 var end = entity.endRad; if (end < entity.startRad) end += Math.PI * 2
                 val steps = max(12, ((end - entity.startRad) / (Math.PI / 24)).toInt())
@@ -190,14 +203,39 @@ internal object CadStaticPath {
                 geometry.lineTo(entity.point.x.toFloat(), (entity.point.y + marker).toFloat())
             }
             // النص يرسم كطبقة screen-space مستقلة كي لا ينقلب رأساً على عقب عند تحويل محور Y.
-            is CadEntity.TextEnt -> Unit
+            is CadEntity.TextEnt -> labels += CadPreparedLabel(entity, style.toArgb())
         } }
         return CadPreparedScene(
-            geometryPath = geometry,
-            strokePaint = stroke,
+            strokes = paths.map { (key, path) -> CadPreparedStroke(path, paintFor(key)) },
             snapIndex = CadSnapIndex.build(entities, bounds),
-            labels = entities.filterIsInstance<CadEntity.TextEnt>(),
+            labels = labels,
             visibleEntityCount = entities.size
         )
+    }
+
+    private fun CadVisualStyle.toArgb(): Int {
+        trueColor?.let { return (0xFF000000L or (it and 0x00FFFFFFL)).toInt() }
+        return aciToArgb(colorIndex)
+    }
+
+    private fun aciToArgb(index: Int): Int = when (index) {
+        1 -> 0xFFFF0000.toInt(); 2 -> 0xFFFFFF00.toInt(); 3 -> 0xFF00FF00.toInt()
+        4 -> 0xFF00FFFF.toInt(); 5 -> 0xFF0000FF.toInt(); 6 -> 0xFFFF00FF.toInt()
+        7 -> 0xFFE8F1FF.toInt(); 8 -> 0xFF808080.toInt(); 9 -> 0xFFC0C0C0.toInt()
+        else -> {
+            val normalized = (index.coerceIn(10, 249) - 10)
+            val hue = (normalized % 24) * 15f
+            val band = normalized / 24
+            val saturation = if (band % 2 == 0) 0.9f else 0.55f
+            val value = (1f - (band / 10f) * 0.55f).coerceIn(0.45f, 1f)
+            Color.HSVToColor(floatArrayOf(hue, saturation, value))
+        }
+    }
+
+    private fun linePattern(lineType: String) = when {
+        lineType.contains("HIDDEN") || lineType.contains("DASH") -> DashPathEffect(floatArrayOf(8f, 5f), 0f)
+        lineType.contains("CENTER") -> DashPathEffect(floatArrayOf(15f, 5f, 3f, 5f), 0f)
+        lineType.contains("PHANTOM") -> DashPathEffect(floatArrayOf(15f, 4f, 3f, 4f, 3f, 4f), 0f)
+        else -> null
     }
 }
