@@ -89,6 +89,10 @@ class PayloadWriter {
     if (warnings_.size() < 64) warnings_.push_back(warning);
   }
 
+  void addWarningOnce(const std::string& warning) {
+    if (warningKeys_.insert(warning).second) addWarning(warning);
+  }
+
   std::string handleName(Dwg_Data* dwg, const char* table, Dwg_Object_Ref* handle, const std::string& fallback) {
     if (!dwg || !handle) return fallback;
     char* name = dwg_handle_name(dwg, table, handle);
@@ -201,6 +205,7 @@ class PayloadWriter {
   std::vector<std::string> layers_;
   std::vector<std::string> entities_;
   std::unordered_set<std::string> layerNames_;
+  std::unordered_set<std::string> warningKeys_;
   bool entityCapReported_ = false;
 };
 
@@ -510,7 +515,10 @@ void appendEntity(Dwg_Data* dwg, Dwg_Object* object, const Affine& transform,
       appendLeader(common->tio.LEADER, transform, layer, style, writer);
       break;
     case DWG_TYPE_HATCH:
-      appendHatch(common->tio.HATCH, transform, layer, style, writer);
+      // لا تُرسم مسارات تعريف HATCH كخطوط مستقلة: في هذه اللوحة كانت تمثل
+      // شبكة التهشير الداخلية وتكرر حدود النموذج، فتوسّع bounds وتشوّه fit.
+      // الهندسة المرجعية للحدود تبقى موجودة ككيانات Model Space أصلية.
+      writer.addWarningOnce("تم إخفاء شبكة HATCH الداخلية لحماية موضع اللوحة؛ الحدود الأصلية ما زالت معروضة");
       break;
     case DWG_TYPE_DIMENSION_LINEAR: {
       auto* e = common->tio.DIMENSION_LINEAR;

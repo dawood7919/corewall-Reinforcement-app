@@ -42,6 +42,12 @@ assert_entity "2018/Ellipse.dwg" "ELLIPSE"
 assert_entity "2018/Text.dwg" "TEXT"
 assert_entity "2018/Point.dwg" "POINT"
 
+# HATCH يعرض داخلياً شبكة نمطية لا تصلح كحدود قياس أو fit. يجب ألا تتحول هذه
+# الشبكة إلى مسارات CAD مستقلة قبل وجود تحويل موثوق للحدود المرجعية.
+hatch_payload="$("${HOST_BIN}" "${ROOT}/third_party/libredwg/test/test-data/2004/HatchG.dwg")"
+grep -q '"ok":true' <<<"${hatch_payload}"
+grep -q 'تم إخفاء شبكة HATCH الداخلية' <<<"${hatch_payload}"
+
 printf 'AC1027\nintentionally incomplete fixture\n' > "${BAD_FILE}"
 if "${HOST_BIN}" "${BAD_FILE}" > "${BUILD_DIR}/bad.json"; then
   echo "Malformed DWG unexpectedly parsed successfully" >&2
