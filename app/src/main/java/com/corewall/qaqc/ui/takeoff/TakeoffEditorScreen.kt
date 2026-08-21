@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
@@ -72,6 +73,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -83,6 +85,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.TakeoffAnnotationEntity
 import com.corewall.qaqc.data.db.TakeoffCategoryEntity
+import com.corewall.qaqc.data.db.TakeoffGroupEntity
 import com.corewall.qaqc.data.db.TakeoffItemEntity
 import com.corewall.qaqc.pdfengine.PageLayout
 import com.corewall.qaqc.pdfengine.PdfCanvas
@@ -223,6 +226,10 @@ fun TakeoffEditorScreen(
         projectId?.let { vm.takeoff.categories(it) }
             ?: kotlinx.coroutines.flow.flowOf(emptyList<TakeoffCategoryEntity>())
     }.collectAsStateWithLifecycle(emptyList())
+    val groups: List<TakeoffGroupEntity> by remember(projectId) {
+        projectId?.let { vm.takeoff.groups(it) }
+            ?: kotlinx.coroutines.flow.flowOf(emptyList<TakeoffGroupEntity>())
+    }.collectAsStateWithLifecycle(emptyList())
 
     // ── البيانات المخزّنة
     val rows by remember(drawingId) { vm.takeoff.items(drawingId) }
@@ -273,6 +280,7 @@ fun TakeoffEditorScreen(
     var formulasOpen by remember { mutableStateOf(false) }
     var toolsSheetOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var treeOpen by remember { mutableStateOf(false) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     /** بند بنضيف له هندسة إضافية (حلقة/قطعة جديدة) بدل إنشاء بند مستقل. */
     var addToShapeFor by remember { mutableStateOf<TakeoffItem?>(null) }
@@ -543,6 +551,43 @@ fun TakeoffEditorScreen(
         } else {
             pendingNaming = PendingNaming(picked, viaRect)
         }
+    }
+
+    /**
+     * قفزة من لوحة القياسات/الفئات لبند بعينه — بتروح لصفحته، تقرّب على
+     * صندوقه المحيط (مش الصفحة كلها)، وتحدّده. مقصود إنها تلغي أي أمر
+     * شغّال الأول (زي زرار اليد بالظبط) عشان مفيش قفزة تحصل نص رسم شكل.
+     */
+    fun focusItem(item: TakeoffItem) {
+        clearDrafts()
+        mode = EditorMode.POINTER
+        multiSelectedIds = emptySet()
+        selectedAnnotationId = null
+        state.goToPage(item.page, animateZoom = false)
+        val slot = state.layout.slotAt(item.page)
+        val allPts = item.verts + item.extraRings.flatten() + item.extraSegments.flatten()
+        if (slot != null && allPts.isNotEmpty()) {
+            val minX = allPts.minOf { it.x }.toFloat()
+            val maxX = allPts.maxOf { it.x }.toFloat()
+            val minY = allPts.minOf { it.y }.toFloat()
+            val maxY = allPts.maxOf { it.y }.toFloat()
+            val rMinX = slot.left + minX * slot.size.width
+            val rMinY = slot.top + minY * slot.size.height
+            val rMaxX = slot.left + maxX * slot.size.width
+            val rMaxY = slot.top + maxY * slot.size.height
+            // نقطة واحدة (عدّ/عمود بعلامة وحيدة) بتديك صندوق بلا مساحة —
+            // بندي له نصف قطر بسيط عشان zoomToRect ميتجاهلوش.
+            val pad = maxOf(slot.size.width, slot.size.height) * 0.06f
+            val rect = if (rMaxX - rMinX < 1f || rMaxY - rMinY < 1f) {
+                val cx = (rMinX + rMaxX) / 2f
+                val cy = (rMinY + rMaxY) / 2f
+                Rect(cx - pad, cy - pad, cx + pad, cy + pad)
+            } else {
+                Rect(rMinX - pad, rMinY - pad, rMaxX + pad, rMaxY + pad)
+            }
+            state.zoomToRect(rect, paddingPx = 80f)
+        }
+        selectedId = item.id
     }
 
     fun saveAnnotation(type: TakeoffAnnotationType, page: Int, points: List<TakeoffPoint>, text: String = "") {
@@ -913,6 +958,7 @@ fun TakeoffEditorScreen(
                 onFormulas = { formulasOpen = true },
                 onCalibrate = { endSession(); calibrating = true },
                 onSettings = { settingsOpen = true },
+                onTree = { treeOpen = true },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
@@ -1100,6 +1146,35 @@ fun TakeoffEditorScreen(
         )
     }
 
+    if (treeOpen) {
+        val categoryModels = remember(categories) { categories.map { vm.takeoff.categoryToModel(it) } }
+        val groupModels = remember(groups) { groups.map { vm.takeoff.groupToModel(it) } }
+        // `items` كاملة وغير مفلترة عن قصد — التصفية بتاعت الخصومات جوّه
+        // الشيت نفسه بس على قايمة العرض، مش على القايمة اللي بتتحسب منها
+        // الكمية الصافية (netOf محتاج يشوف الخصومات عشان يطرحها).
+        TakeoffMeasurementTreeSheet(
+            allItems = items,
+            categories = categoryModels,
+            groups = groupModels,
+            pageGeometryFor = pageGeometryFor,
+            onSelect = { item -> focusItem(item); treeOpen = false },
+            onToggleVisible = { item ->
+                val itemId = item.id.toLongOrNull()
+                if (itemId != null) {
+                    scope.launch {
+                        vm.takeoff.itemById(itemId)?.let { row ->
+                            vm.takeoff.saveItem(row.copy(visible = !row.visible))
+                        }
+                    }
+                }
+            },
+            onDelete = { item ->
+                item.id.toLongOrNull()?.let { id -> scope.launch { vm.takeoff.deleteItem(id) } }
+            },
+            onDismiss = { treeOpen = false }
+        )
+    }
+
     pendingNaming?.let { naming ->
         TakeoffNameSheet(
             tool = naming.tool,
@@ -1246,6 +1321,7 @@ private fun TakeoffTopBar(
     onFormulas: () -> Unit,
     onCalibrate: () -> Unit,
     onSettings: () -> Unit,
+    onTree: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
@@ -1271,10 +1347,16 @@ private fun TakeoffTopBar(
                     color = if (calibrated) c.success.fg else c.danger.fg
                 )
             }
-            CwIconButton(Icons.Filled.Straighten, "معايرة المقياس", onCalibrate)
-            CwIconButton(Icons.Filled.Calculate, "الصيغ", onFormulas)
-            CwIconButton(Icons.Filled.Functions, "الإجماليات", onTotals)
-            CwIconButton(Icons.Filled.Settings, "إعدادات الرسم", onSettings)
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CwIconButton(Icons.Filled.Category, "القياسات والفئات", onTree)
+                CwIconButton(Icons.Filled.Straighten, "معايرة المقياس", onCalibrate)
+                CwIconButton(Icons.Filled.Calculate, "الصيغ", onFormulas)
+                CwIconButton(Icons.Filled.Functions, "الإجماليات", onTotals)
+                CwIconButton(Icons.Filled.Settings, "إعدادات الرسم", onSettings)
+            }
         }
     }
 }

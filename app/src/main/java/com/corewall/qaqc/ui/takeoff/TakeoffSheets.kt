@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -22,7 +23,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
@@ -37,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -45,6 +52,7 @@ import com.corewall.qaqc.data.AppSettings
 import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.takeoff.PageGeometry
 import com.corewall.qaqc.takeoff.TakeoffCategory
+import com.corewall.qaqc.takeoff.TakeoffGroup
 import com.corewall.qaqc.takeoff.TakeoffItem
 import com.corewall.qaqc.takeoff.TakeoffMath
 import com.corewall.qaqc.takeoff.TakeoffPoint
@@ -53,6 +61,7 @@ import com.corewall.qaqc.ui.design.CwBanner
 import com.corewall.qaqc.ui.design.CwButton
 import com.corewall.qaqc.ui.design.CwButtonStyle
 import com.corewall.qaqc.ui.design.CwChip
+import com.corewall.qaqc.ui.design.CwEmptyState
 import com.corewall.qaqc.ui.design.CwField
 import com.corewall.qaqc.ui.design.CwIconButton
 import com.corewall.qaqc.ui.design.CwSegmented
@@ -900,5 +909,231 @@ private fun SettingsSliderRow(
             Text(valueLabel, style = MaterialTheme.typography.labelMedium, color = c.textTertiary)
         }
         Slider(value = value, onValueChange = onChange, valueRange = range)
+    }
+}
+
+// ═══════════════════════════════════════════════ لوحة القياسات والفئات
+
+/**
+ * لوحة القياسات والفئات — شيت بارتفاع شبه كامل، مش شاشة `Dest` منفصلة
+ * في الـNavigator عن قصد: نفس القيمة العملية ("شاشة تظهر فيها القياسات")
+ * من غير تعقيد وجهة تنقّل جديدة لسياق أصلاً محتاج بيانات الرسمة المفتوحة.
+ *
+ * كل بند: اسمه ولونه وفئته ومجموعته وكميته وصفحته، وثلاث أفعال — تحديد
+ * وقفز ([onSelect])، إخفاء/إظهار، وحذف. مفيش تعديل هنا — ده مكانه
+ * [TakeoffEditItemSheet] بعد التحديد.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TakeoffMeasurementTreeSheet(
+    allItems: List<TakeoffItem>,
+    categories: List<TakeoffCategory>,
+    groups: List<TakeoffGroup>,
+    pageGeometryFor: (Int) -> PageGeometry,
+    onSelect: (TakeoffItem) -> Unit,
+    onToggleVisible: (TakeoffItem) -> Unit,
+    onDelete: (TakeoffItem) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = LocalCwColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var query by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = c.surface,
+        shape = Radius.sheet
+    ) {
+        Column(
+            Modifier
+                .fillMaxHeight(0.88f)
+                .navigationBarsPadding()
+                .padding(horizontal = Space.lg)
+        ) {
+            Row(
+                Modifier.padding(vertical = Space.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "القياسات والفئات",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = c.textPrimary,
+                    modifier = Modifier.weight(1f)
+                )
+                CwIconButton(Icons.Filled.Close, "إغلاق", onDismiss)
+            }
+
+            CwField(
+                value = query,
+                onValueChange = { query = it },
+                label = "بحث بالاسم",
+                leading = { Icon(Icons.Filled.Search, contentDescription = null, tint = c.textTertiary) }
+            )
+            Spacer(Modifier.height(Space.sm))
+
+            // الخصومات مستبعدة من قايمة العرض بس — بتترسم كفتحة في بندها
+            // الأب مش قياس مستقل، فظهورها كصف منفصل تحت "بلا فئة" مربك.
+            // `allItems` نفسها بتفضل كاملة وواصلة لـ`netOf` تحت عشان الطرح
+            // يشتغل صح.
+            val displayable = remember(allItems, query) {
+                allItems.asSequence()
+                    .filter { it.tool != TakeoffTool.DEDUCT }
+                    .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
+                    .toList()
+            }
+            val rows = remember(displayable, categories, groups) { buildTreeRows(displayable, categories, groups) }
+
+            when {
+                allItems.none { it.tool != TakeoffTool.DEDUCT } -> CwEmptyState(
+                    icon = Icons.Filled.Search,
+                    title = "مفيش قياسات في الرسمة دي لسه",
+                    detail = "ابدأ برسم أول قياس من شريط الأدوات"
+                )
+                rows.isEmpty() -> CwEmptyState(icon = Icons.Filled.Search, title = "مفيش نتايج لـ\"$query\"")
+                else -> LazyColumn(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(Space.xxs)
+                ) {
+                    items(
+                        rows,
+                        key = { row ->
+                            when (row) {
+                                is TreeRow.CategoryHeader -> "cat_${row.category?.id ?: "none"}"
+                                is TreeRow.GroupHeader -> "grp_${row.group.id}"
+                                is TreeRow.ItemRow -> "item_${row.item.id}"
+                            }
+                        }
+                    ) { row ->
+                        when (row) {
+                            is TreeRow.CategoryHeader -> CategoryHeaderRow(row.category, row.count)
+                            is TreeRow.GroupHeader -> GroupHeaderRow(row.group)
+                            is TreeRow.ItemRow -> MeasurementRow(
+                                item = row.item,
+                                quantityText = formatQuantity(
+                                    row.item.tool, netOf(row.item, allItems, pageGeometryFor(row.item.page))
+                                ),
+                                onSelect = { onSelect(row.item); onDismiss() },
+                                onToggleVisible = { onToggleVisible(row.item) },
+                                onDelete = { onDelete(row.item) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private sealed interface TreeRow {
+    data class CategoryHeader(val category: TakeoffCategory?, val count: Int) : TreeRow
+    data class GroupHeader(val group: TakeoffGroup) : TreeRow
+    data class ItemRow(val item: TakeoffItem) : TreeRow
+}
+
+/** فئات (بالاسم، "بلا فئة" آخر حاجة) → مجموعات جوّاها → بنود بالاسم. */
+private fun buildTreeRows(
+    items: List<TakeoffItem>,
+    categories: List<TakeoffCategory>,
+    groups: List<TakeoffGroup>
+): List<TreeRow> = buildList {
+    val catMap = categories.associateBy { it.id }
+    val groupMap = groups.associateBy { it.id }
+    val byCat = items.groupBy { it.categoryId }
+    val orderedCatIds = byCat.keys.sortedWith(compareBy({ it == null }, { catMap[it]?.name ?: "" }))
+    for (catId in orderedCatIds) {
+        val catItems = byCat.getValue(catId)
+        add(TreeRow.CategoryHeader(catId?.let { catMap[it] }, catItems.size))
+        val byGroup = catItems.groupBy { it.groupId }
+        val orderedGroupIds = byGroup.keys.sortedWith(compareBy({ it == null }, { groupMap[it]?.name ?: "" }))
+        for (groupId in orderedGroupIds) {
+            val groupItems = byGroup.getValue(groupId)
+            groupId?.let { groupMap[it] }?.let { add(TreeRow.GroupHeader(it)) }
+            groupItems.sortedBy { it.name }.forEach { add(TreeRow.ItemRow(it)) }
+        }
+    }
+}
+
+@Composable
+private fun CategoryHeaderRow(category: TakeoffCategory?, count: Int) {
+    val c = LocalCwColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = Space.md, bottom = Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm)
+    ) {
+        Box(
+            Modifier
+                .size(12.dp)
+                .background(Color(((category?.colorArgb ?: 0xFF98A1B2L) or 0xFF000000L).toInt()), CircleShape)
+        )
+        Text(
+            category?.name ?: "بلا فئة",
+            style = MaterialTheme.typography.titleSmall,
+            color = c.textPrimary,
+            modifier = Modifier.weight(1f)
+        )
+        Text("$count", style = CwText.codeSmall, color = c.textTertiary)
+    }
+}
+
+@Composable
+private fun GroupHeaderRow(group: TakeoffGroup) {
+    val c = LocalCwColors.current
+    Text(
+        group.name,
+        style = MaterialTheme.typography.labelMedium,
+        color = c.textSecondary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = Space.lg, top = Space.xs, bottom = Space.xxs)
+    )
+}
+
+@Composable
+private fun MeasurementRow(
+    item: TakeoffItem,
+    quantityText: String,
+    onSelect: () -> Unit,
+    onToggleVisible: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val c = LocalCwColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(Radius.shapeMd)
+            .clickable(onClick = onSelect)
+            .padding(horizontal = Space.sm, vertical = Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm)
+    ) {
+        Box(
+            Modifier
+                .size(10.dp)
+                .background(Color((item.colorArgb or 0xFF000000L).toInt()), CircleShape)
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                item.name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (item.visible) c.textPrimary else c.textTertiary,
+                maxLines = 1
+            )
+            Text(
+                "${toolLabel(item.tool)} · صفحة ${item.page + 1}",
+                style = CwText.codeSmall,
+                color = c.textTertiary
+            )
+        }
+        Text(quantityText, style = MaterialTheme.typography.labelMedium, color = c.textSecondary)
+        CwIconButton(
+            if (item.visible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+            if (item.visible) "إخفاء" else "إظهار",
+            onToggleVisible
+        )
+        CwIconButton(Icons.Filled.Delete, "حذف", onDelete, tint = c.danger.fg)
     }
 }
