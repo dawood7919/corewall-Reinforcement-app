@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 68
-        versionName = "11.17"
+        versionCode = 69
+        versionName = "11.18"
 
         // PDFium مكتبة أصلية، ومعاها ٤ معماريات = ١٨ ميجا. الأجهزة الحقيقية
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.

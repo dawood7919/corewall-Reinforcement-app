@@ -928,12 +928,16 @@ internal fun buildTreeRows(
 ): List<TreeRow> = buildList {
     val catMap = categories.associateBy { it.id }
     val groupMap = groups.associateBy { it.id }
-    val byCat = items.groupBy { it.categoryId }
+    // التطبيع قبل التجميع مقصود. البند ممكن يشاور على فئة مش موجودة في
+    // الخريطة — فئة اتحذفت، أو (الأهم) أول إطار قبل ما `projectId` يوصل
+    // والفئات لسه فاضية. من غير التطبيع كل id مش محلول بيعمل رأس "بلا
+    // فئة" لوحده، فبيطلع أكتر من رأس بنفس مفتاح `cat_none` والقايمة بتقع.
+    val byCat = items.groupBy { item -> item.categoryId?.takeIf(catMap::containsKey) }
     val orderedCatIds = byCat.keys.sortedWith(compareBy({ it == null }, { catMap[it]?.name ?: "" }))
     for (catId in orderedCatIds) {
         val catItems = byCat.getValue(catId)
         add(TreeRow.CategoryHeader(catId?.let { catMap[it] }, catItems.size))
-        val byGroup = catItems.groupBy { it.groupId }
+        val byGroup = catItems.groupBy { item -> item.groupId?.takeIf(groupMap::containsKey) }
         val orderedGroupIds = byGroup.keys.sortedWith(compareBy({ it == null }, { groupMap[it]?.name ?: "" }))
         for (groupId in orderedGroupIds) {
             val groupItems = byGroup.getValue(groupId)
