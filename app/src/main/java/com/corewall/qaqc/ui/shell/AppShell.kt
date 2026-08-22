@@ -101,6 +101,7 @@ import com.corewall.qaqc.ui.media.ImageViewerScreen
 import com.corewall.qaqc.ui.notes.NoteEditorScreen
 import com.corewall.qaqc.ui.notes.NotesScreen
 import com.corewall.qaqc.ui.takeoff.TakeoffDataScreen
+import com.corewall.qaqc.ui.takeoff.TakeoffFormulasScreen
 import com.corewall.qaqc.ui.takeoff.TakeoffEditorScreen
 import com.corewall.qaqc.ui.pdf.PdfOrganizerScreen
 import com.corewall.qaqc.ui.pdf.PdfViewerScreen
@@ -306,6 +307,9 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
         // حصر الكميات — قسم مستقل: أقسامه ورسماته مالهاش علاقة بالأدوار.
         Dest.Takeoff -> V2TakeoffProjectsScreen(vm, modifier)
         is Dest.TakeoffProject -> V2TakeoffDrawingsScreen(vm, dest.projectId, modifier)
+        is Dest.TakeoffFormulas -> TakeoffFormulasScreen(
+            vm = vm, drawingId = dest.drawingId, modifier = modifier
+        )
         is Dest.TakeoffData -> TakeoffDataScreen(
             vm = vm, drawingId = dest.drawingId,
             onOpenDrawing = { vm.back() }, modifier = modifier

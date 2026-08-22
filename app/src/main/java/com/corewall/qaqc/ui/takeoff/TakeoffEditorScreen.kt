@@ -284,8 +284,6 @@ fun TakeoffEditorScreen(
         .collectAsStateWithLifecycle(emptyList())
     val scaleRows by remember(drawingId) { vm.takeoff.scales(drawingId) }
         .collectAsStateWithLifecycle(emptyList())
-    val formulaRows by remember(drawingId) { vm.takeoff.formulas(drawingId) }
-        .collectAsStateWithLifecycle(emptyList())
     val annotationRows by remember(drawingId) { vm.takeoff.annotations(drawingId) }
         .collectAsStateWithLifecycle(emptyList())
 
@@ -325,7 +323,6 @@ fun TakeoffEditorScreen(
     var colourIndex by remember { mutableIntStateOf(0) }
     var calibrating by remember { mutableStateOf(false) }
     var totalsOpen by remember { mutableStateOf(false) }
-    var formulasOpen by remember { mutableStateOf(false) }
     var toolsSheetOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
     /** الدوك السفلي مفرود ولا مطوي — مطوي بيدّي الرسمة الشاشة كلها. */
@@ -1254,7 +1251,7 @@ fun TakeoffEditorScreen(
                 onCalibrate = { endSession(); calibrating = true },
                 onSettings = { settingsOpen = true },
                 onTree = { vm.openTakeoffData(drawingId, drawingName) },
-                onFormulas = { formulasOpen = true },
+                onFormulas = { vm.openTakeoffFormulas(drawingId, drawingName) },
                 undoLabel = lastUndo?.label,
                 onUndo = {
                     val action = lastUndo
@@ -1550,19 +1547,6 @@ fun TakeoffEditorScreen(
         )
     }
 
-    if (formulasOpen) {
-        TakeoffFormulasSheet(
-            drawingId = drawingId,
-            items = items,
-            categories = categories,
-            formulaRows = formulaRows,
-            pageGeometryFor = pageGeometryFor,
-            onSave = { entity -> scope.launch { vm.takeoff.saveFormula(entity) } },
-            onDelete = { id -> scope.launch { vm.takeoff.deleteFormula(id) } },
-            onDismiss = { formulasOpen = false }
-        )
-    }
-
     editingItem?.let { editing ->
         TakeoffEditItemSheet(
             item = editing,
@@ -1623,14 +1607,21 @@ private fun annotationHit(a: TakeoffAnnotation, p: TakeoffPoint, page: PageGeome
         a.verts.size >= 2 && TakeoffMath.distanceToPolylinePt(p, a.verts, page) <= 16.0
 }
 
+/**
+ * الاسم المقترح — **لاتيني**، زي أي اسم بند تاني.
+ *
+ * كان عربي، وده كان بيخلّي الاقتراح نفسه مرفوض من قاعدة الأسماء الجديدة:
+ * البند بيتستدعى في الصيغ باسمه كتوكن، فالاسم اللي التطبيق بيقترحه لازم
+ * يعدّي نفس الشرط اللي بيتطلب من المستخدم.
+ */
 private fun defaultName(tool: TakeoffTool, index: Int): String = when (tool) {
-    TakeoffTool.AREA -> "مساحة $index"
-    TakeoffTool.LENGTH -> "طول $index"
-    TakeoffTool.COUNT -> "عدّ $index"
-    TakeoffTool.DEDUCT -> "خصم $index"
-    TakeoffTool.VOLUME -> "حجم $index"
-    TakeoffTool.COLUMN -> "عمود $index"
-    TakeoffTool.DIMENSION -> "بُعد $index"
+    TakeoffTool.AREA -> "area_$index"
+    TakeoffTool.LENGTH -> "length_$index"
+    TakeoffTool.COUNT -> "count_$index"
+    TakeoffTool.DEDUCT -> "deduct_$index"
+    TakeoffTool.VOLUME -> "volume_$index"
+    TakeoffTool.COLUMN -> "column_$index"
+    TakeoffTool.DIMENSION -> "dim_$index"
 }
 
 /** أقل عدد رؤوس مسموح بيه قبل ما "احذف الرأس" يوقف — زي القيد الهندسي لكل أداة. */

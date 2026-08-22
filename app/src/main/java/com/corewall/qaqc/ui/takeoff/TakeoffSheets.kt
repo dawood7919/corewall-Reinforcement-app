@@ -57,6 +57,8 @@ import com.corewall.qaqc.takeoff.TakeoffItem
 import com.corewall.qaqc.takeoff.TakeoffMath
 import com.corewall.qaqc.takeoff.TakeoffPoint
 import com.corewall.qaqc.takeoff.TakeoffTool
+import com.corewall.qaqc.takeoff.LATIN_NAME_ERROR
+import com.corewall.qaqc.takeoff.isLatinTakeoffName
 import com.corewall.qaqc.ui.design.CwBanner
 import com.corewall.qaqc.ui.design.CwButton
 import com.corewall.qaqc.ui.design.CwButtonStyle
@@ -467,7 +469,13 @@ fun TakeoffNameSheet(
         ) {
             Text(toolTitle(tool), style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
 
-            CwField(value = name, onValueChange = { name = it }, label = "الاسم")
+            // لاتيني إجباري: الاسم ده بيتحوّل لتوكن جوّه نص الصيغ.
+            val nameOk = isLatinTakeoffName(name)
+            CwField(
+                value = name, onValueChange = { name = it }, label = "الاسم (English)",
+                placeholder = "slab_area",
+                error = if (name.isBlank() || nameOk) null else LATIN_NAME_ERROR
+            )
 
             Text("الفئة", style = CwText.codeSmall, color = c.textTertiary)
             Row(
@@ -596,7 +604,7 @@ fun TakeoffNameSheet(
                             thickness, colLength, colWidth, colHeight
                         )
                     },
-                    enabled = dimsValid
+                    enabled = dimsValid && nameOk
                 )
                 CwButton("إلغاء", onDismiss, style = CwButtonStyle.Ghost)
             }
@@ -656,7 +664,13 @@ fun TakeoffEditItemSheet(
         ) {
             Text("تعديل البند", style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
 
-            CwField(value = name, onValueChange = { name = it }, label = "الاسم")
+            // لاتيني إجباري: الاسم ده بيتحوّل لتوكن جوّه نص الصيغ.
+            val nameOk = isLatinTakeoffName(name)
+            CwField(
+                value = name, onValueChange = { name = it }, label = "الاسم (English)",
+                placeholder = "slab_area",
+                error = if (name.isBlank() || nameOk) null else LATIN_NAME_ERROR
+            )
 
             Text("الفئة", style = CwText.codeSmall, color = c.textTertiary)
             Row(
@@ -759,7 +773,8 @@ fun TakeoffEditItemSheet(
                             name.trim().ifBlank { item.name }, categoryId, colorArgb,
                             zone.trim(), progress, rate
                         )
-                    }
+                    },
+                    enabled = nameOk
                 )
                 CwButton("إلغاء", onDismiss, style = CwButtonStyle.Ghost)
             }

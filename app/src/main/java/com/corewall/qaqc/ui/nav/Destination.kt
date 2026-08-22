@@ -203,6 +203,13 @@ sealed interface Dest {
         override val stateKey = "takeoff-data-$drawingId"
     }
 
+    /** صيغ رسمة — شاشة مستقلة، كتابة الصيغة شغل تركيز مش لمسة سريعة. */
+    @Immutable
+    data class TakeoffFormulas(val drawingId: Long, val drawingName: String) : Dest {
+        override val title = "صيغ: $drawingName"
+        override val stateKey = "takeoff-formulas-$drawingId"
+    }
+
     /** شاشة الحصر نفسها — رسمة مفتوحة بأدواتها. شاشة كاملة. */
     @Immutable
     data class TakeoffEditor(
