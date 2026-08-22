@@ -100,6 +100,7 @@ import com.corewall.qaqc.ui.nav.Dest
 import com.corewall.qaqc.ui.media.ImageViewerScreen
 import com.corewall.qaqc.ui.notes.NoteEditorScreen
 import com.corewall.qaqc.ui.notes.NotesScreen
+import com.corewall.qaqc.ui.takeoff.TakeoffDataScreen
 import com.corewall.qaqc.ui.takeoff.TakeoffEditorScreen
 import com.corewall.qaqc.ui.pdf.PdfOrganizerScreen
 import com.corewall.qaqc.ui.pdf.PdfViewerScreen
