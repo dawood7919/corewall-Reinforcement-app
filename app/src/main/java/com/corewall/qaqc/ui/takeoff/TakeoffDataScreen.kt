@@ -104,18 +104,10 @@ fun TakeoffDataScreen(
     val allItems = remember(rows) { rows.map { vm.takeoff.toModel(it) } }
     val categories = remember(categoryRows) { categoryRows.map { vm.takeoff.categoryToModel(it) } }
 
-    /**
-     * الصفحة بتتقاس بالنقط، والمقاس الحقيقي جوّه ملف الـPDF — وإحنا مش
-     * فاتحينه هنا عن قصد (فتح PDFium لمجرد عرض قايمة تبذير). المقاس
-     * الافتراضي A4 بالنقط كافي: المعايرة المتخزّنة هي اللي بتحدد المتر
-     * لكل نقطة، والنسبة دي هي اللي بتحكم الرقم.
-     */
-    val pageGeometryFor = remember(scaleRows) {
-        { page: Int ->
-            val mpp = scaleRows.firstOrNull { it.page == page }?.metresPerPoint ?: 0.0
-            PageGeometry(A4_WIDTH_PT, A4_HEIGHT_PT, mpp)
-        }
-    }
+    // مقاس الصفحة بيتقرا من الملف — المساحة بتتأثر بيه تربيعيًا، وافتراض
+    // A4 كان بيدّي أرقام أصغر من اللي على الرسمة بمعامل ثابت.
+    val pagesInUse = remember(allItems) { allItems.map { it.page }.toSet() }
+    val pageGeometryFor = rememberDrawingPageGeometry(vm, drawingId, scaleRows, pagesInUse)
 
     // الخصومات بتترسم كفتحة في بندها الأب، فمالهاش كارت مستقل. `allItems`
     // بتفضل كاملة وواصلة لـ`netOf` عشان الطرح يشتغل صح.
@@ -404,7 +396,3 @@ private fun toolLabel(tool: TakeoffTool): String = when (tool) {
     TakeoffTool.DIMENSION -> "بُعد"
     TakeoffTool.DEDUCT -> "خصم"
 }
-
-/** مقاس A4 بالنقط — الافتراضي لما الرسمة نفسها مش مفتوحة. */
-private const val A4_WIDTH_PT = 595.0
-private const val A4_HEIGHT_PT = 842.0

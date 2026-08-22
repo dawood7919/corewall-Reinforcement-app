@@ -88,12 +88,9 @@ fun TakeoffFormulasScreen(
         .collectAsStateWithLifecycle(emptyList())
 
     val items = remember(rows) { rows.map { vm.takeoff.toModel(it) } }
-    val pageGeometryFor = remember(scaleRows) {
-        { page: Int ->
-            val mpp = scaleRows.firstOrNull { it.page == page }?.metresPerPoint ?: 0.0
-            PageGeometry(A4_W_PT, A4_H_PT, mpp)
-        }
-    }
+    // نفس سبب شاشة البيانات: المقاس الحقيقي للصفحة داخل في الكمية.
+    val pagesInUse = remember(items) { items.map { it.page }.toSet() }
+    val pageGeometryFor = rememberDrawingPageGeometry(vm, drawingId, scaleRows, pagesInUse)
 
     val evaluated = remember(formulaRows, items, pageGeometryFor) {
         formulaRows.map { row ->
@@ -413,6 +410,3 @@ private fun decodeRefs(raw: String): Map<String, Long> = runCatching {
 }.getOrDefault(emptyMap())
 
 private fun encodeRefs(refs: Map<String, Long>): String = refsJson.encodeToString(refs)
-
-private const val A4_W_PT = 595.0
-private const val A4_H_PT = 842.0
