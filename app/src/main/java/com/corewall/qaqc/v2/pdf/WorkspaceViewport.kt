@@ -89,6 +89,13 @@ internal class WorkspaceViewport {
 
     private companion object {
         const val MIN_ZOOM = 0.12f
-        const val MAX_ZOOM = 12f
+        /**
+         * ٦٤× — نفس سقف العارض الكلاسيكي.
+         *
+         * كان ١٢×، وده كان أقل من نص سقف الرسم في المسار التاني، فالتقريب
+         * كان بيقف فجأة وانت بترسم تفصيلة. السلّم بيرندر بوضوح كامل لحد
+         * ٦٤ بكسل لكل نقطة، فالرقم ده هو آخر تقريب لسه حاد.
+         */
+        const val MAX_ZOOM = 64f
     }
 }

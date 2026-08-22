@@ -185,7 +185,7 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
         canvas.scale(viewport.zoom, viewport.zoom)
         canvas.drawRect(0f, 0f, pageSize.width, pageSize.height, pagePaint)
 
-        val sharpLevel = levelFor(viewport.zoom)
+        val sharpLevel = V2ZoomLadder.levelFor(viewport.zoom)
         drawLayer(canvas, current, (sharpLevel - 1).coerceAtLeast(0))
         drawLayer(canvas, current, sharpLevel)
         overlay.drawPersisted(canvas, persistedItems, pageIndex, pageSize.width, pageSize.height, viewport.zoom)
@@ -257,7 +257,7 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
     }
 
     private fun drawLayer(canvas: Canvas, tiles: V2TileScheduler, level: Int) {
-        val scale = scaleFor(level)
+        val scale = V2ZoomLadder.scaleFor(level)
         val step = TILE_PX / scale
         val visible = viewport.visiblePageRect()
         val maxCol = ((ceil(pageSize.width * scale).toInt() - 1) / TILE_PX.toInt()).coerceAtLeast(0)
@@ -308,20 +308,6 @@ internal class PdfWorkspaceView(context: Context) : View(context) {
             invalidate()
             return true
         }
-    }
-
-    private fun levelFor(zoom: Float): Int = when {
-        zoom < 0.75f -> 0
-        zoom < 1.5f -> 1
-        zoom < 3f -> 2
-        else -> 3
-    }
-
-    private fun scaleFor(level: Int): Float = when (level.coerceIn(0, 3)) {
-        0 -> 0.5f
-        1 -> 1f
-        2 -> 2f
-        else -> 4f
     }
 
     private fun memoryBudget(context: Context): Long {

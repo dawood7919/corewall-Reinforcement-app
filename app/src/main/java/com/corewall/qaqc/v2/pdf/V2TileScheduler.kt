@@ -41,7 +41,7 @@ internal class V2TileScheduler(
     fun bitmap(key: V2TileKey): Bitmap? = cache[key]
 
     fun requestVisible(viewport: WorkspaceViewport, page: Int, size: SizePt) {
-        val level = levelFor(viewport.zoom)
+        val level = V2ZoomLadder.levelFor(viewport.zoom)
         val keys = buildList {
             // مستوى سابق موجود دائماً للتحميل التقدمي، ثم المستوى الحاد المطلوب.
             addAll(tilesFor(viewport.visiblePageRect(), page, size, (level - 1).coerceAtLeast(0)))
@@ -90,7 +90,7 @@ internal class V2TileScheduler(
     }
 
     private suspend fun render(key: V2TileKey, size: SizePt): Bitmap? {
-        val scale = scaleFor(key.level)
+        val scale = V2ZoomLadder.scaleFor(key.level)
         val pagePixelsW = ceil(size.width * scale).toInt().coerceAtLeast(1)
         val pagePixelsH = ceil(size.height * scale).toInt().coerceAtLeast(1)
         val originX = key.column * TILE_PX
@@ -129,7 +129,7 @@ internal class V2TileScheduler(
     }
 
     private fun tilesFor(rect: RectF, page: Int, size: SizePt, level: Int): List<V2TileKey> {
-        val scale = scaleFor(level)
+        val scale = V2ZoomLadder.scaleFor(level)
         val pixelsW = ceil(size.width * scale).toInt()
         val pixelsH = ceil(size.height * scale).toInt()
         val maxCol = ((pixelsW - 1) / TILE_PX).coerceAtLeast(0)
@@ -144,24 +144,10 @@ internal class V2TileScheduler(
     }
 
     private fun distance(key: V2TileKey, size: SizePt, centre: Pair<Float, Float>): Float {
-        val scale = scaleFor(key.level)
+        val scale = V2ZoomLadder.scaleFor(key.level)
         val x = (key.column + 0.5f) * TILE_PX / scale
         val y = (key.row + 0.5f) * TILE_PX / scale
         return abs(x - centre.first) + abs(y - centre.second)
-    }
-
-    private fun levelFor(zoom: Float): Int = when {
-        zoom < 0.75f -> 0
-        zoom < 1.5f -> 1
-        zoom < 3f -> 2
-        else -> 3
-    }
-
-    private fun scaleFor(level: Int): Float = when (level.coerceIn(0, 3)) {
-        0 -> 0.5f
-        1 -> 1f
-        2 -> 2f
-        else -> 4f
     }
 
     private data class Request(val key: V2TileKey, val priority: Float, val generation: Long)
