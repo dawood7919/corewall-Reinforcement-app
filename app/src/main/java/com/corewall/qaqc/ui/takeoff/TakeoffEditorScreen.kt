@@ -1243,11 +1243,25 @@ fun TakeoffEditorScreen(
                     }
                     val placingDimOffset = tool == TakeoffTool.DIMENSION && draft.size == 2 && dimDragPoint != null
                     if (draft.isNotEmpty() && draftPage.intValue >= 0 && !placingDimOffset) {
+                        // خط مطاطي للمؤشّر: الشكل بيتمد للعلامة وانت بتحرّكها،
+                        // فبتشوف الضلع قبل ما تثبّته بدل ما تحطه وتحكم بعدين.
+                        // نقطة مؤقتة للعرض بس — مابتتضافش لـ`draft`.
+                        // العدّ والأعمدة كل لمسة فيهم علامة مستقلة، فنقطة
+                        // مؤقتة معناها علامة وهمية زيادة على الشاشة. الخط
+                        // المطاطي للأدوات اللي ليها ضلع بس.
+                        val activeTool = if (deductFor != null) TakeoffTool.DEDUCT else tool
+                        val hasEdges = activeTool != TakeoffTool.COUNT && activeTool != TakeoffTool.COLUMN
+                        val rubberBand = if (settings.virtualCursor && hasEdges) {
+                            cursorPos
+                                ?.let { state.pageHit(it) }
+                                ?.takeIf { it.page == draftPage.intValue }
+                                ?.let { TakeoffPoint(it.nx.toDouble(), it.ny.toDouble()) }
+                        } else null
                         drawTakeoffDraft(
                             state = s,
                             page = draftPage.intValue,
-                            points = draft.toList(),
-                            tool = if (deductFor != null) TakeoffTool.DEDUCT else tool,
+                            points = if (rubberBand != null) draft + rubberBand else draft.toList(),
+                            tool = activeTool,
                             colour = activeColour,
                             strokeWidth = settings.takeoffStrokeWidth,
                             markerRadius = settings.takeoffMarkerRadius
