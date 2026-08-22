@@ -132,9 +132,9 @@ fun TakeoffFormulasScreen(
                             row = row,
                             resultText = result.error
                                 ?: result.value?.let { v ->
-                                    "%.${row.roundTo.coerceIn(0, 6)}f".format(v) +
+                                    "Q = " + "%.${row.roundTo.coerceIn(0, 6)}f".format(v) +
                                         if (row.unit.isNotBlank()) " ${row.unit}" else ""
-                                } ?: "—",
+                                } ?: "Q = —",
                             isError = result.error != null,
                             onEdit = { editing = row },
                             onDelete = { scope.launch { vm.takeoff.deleteFormula(row.id) } }
@@ -188,6 +188,18 @@ private fun FormulaCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(Modifier.height(Space.xxs))
+                // الناتج هو اللي الكارت موجود عشانه — سطر لوحده تحت الاسم
+                // مباشرة، مش رقم مزنوق في آخر صف الأزرار.
+                Text(
+                    resultText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isError) c.danger.fg else c.accent,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(Space.xxs))
                 Text(
                     row.expr.ifBlank { "—" },
                     style = CwText.codeSmall,
@@ -196,12 +208,6 @@ private fun FormulaCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                resultText,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = if (isError) c.danger.fg else c.accent
-            )
             CwIconButton(Icons.Filled.Edit, "تعديل", onEdit)
             CwIconButton(Icons.Filled.Delete, "حذف", onDelete, tint = c.danger.fg)
         }
@@ -302,6 +308,7 @@ private fun FormulaEditorDialog(
     if (picking) {
         MeasurementPickerDialog(
             items = items,
+            pageGeometryFor = pageGeometryFor,
             onPick = { item ->
                 val base = takeoffSlug(item.name)
                 // نفس البند لو اتستدعى مرتين بياخد نفس التوكن — التوكن
@@ -318,10 +325,11 @@ private fun FormulaEditorDialog(
     }
 }
 
-/** كل القياسات القابلة للاستدعاء — بالاسم، زي ما بتتكتب في الصيغة. */
+/** كل القياسات القابلة للاستدعاء — بالاسم والكمية ووحدتها. */
 @Composable
 private fun MeasurementPickerDialog(
     items: List<TakeoffItem>,
+    pageGeometryFor: (Int) -> PageGeometry,
     onPick: (TakeoffItem) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -338,6 +346,7 @@ private fun MeasurementPickerDialog(
             } else {
                 LazyColumn(Modifier.heightIn(max = 340.dp)) {
                     items(referencable, key = { it.id }) { item ->
+                        val qty = netOf(item, items, pageGeometryFor(item.page))
                         Column(Modifier.fillMaxWidth()) {
                             Spacer(Modifier.height(Space.xxs))
                             CwCard(
@@ -345,19 +354,35 @@ private fun MeasurementPickerDialog(
                                 onClick = { onPick(item) },
                                 contentPadding = PaddingValues(Space.sm)
                             ) {
-                                Text(
-                                    takeoffSlug(item.name),
-                                    style = CwText.codeSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = c.textPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    "صفحة ${item.page + 1}",
-                                    style = CwText.codeSmall,
-                                    color = c.textTertiary
-                                )
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        // الاسم زي ما هيتكتب في الصيغة بالظبط،
+                                        // مش زي ما هو متخزّن — عشان اللي تشوفه
+                                        // هنا هو اللي هيتحط في النص.
+                                        Text(
+                                            takeoffSlug(item.name),
+                                            style = CwText.codeSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = c.textPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            "صفحة ${item.page + 1}",
+                                            style = CwText.codeSmall,
+                                            color = c.textTertiary
+                                        )
+                                    }
+                                    Text(
+                                        latinQuantity(item.tool, qty),
+                                        style = CwText.codeSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = c.accent
+                                    )
+                                }
                             }
                         }
                     }
@@ -366,6 +391,19 @@ private fun MeasurementPickerDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("تمام") } }
     )
+}
+
+/**
+ * الكمية بوحدة لاتينية — `12.50 m2`.
+ *
+ * مش نفس [formatQuantity]: دي بتكتب "م²" بالعربي، والسطر ده بيتقرا جنب
+ * توكن لاتيني جوّه سياق صيغة، فخلط الاتجاهين في سطر واحد بيبوّظ ترتيبه.
+ */
+private fun latinQuantity(tool: TakeoffTool, value: Double): String = when (tool) {
+    TakeoffTool.COUNT -> "${value.toInt()} no."
+    TakeoffTool.LENGTH, TakeoffTool.DIMENSION -> "%.2f m".format(value)
+    TakeoffTool.VOLUME, TakeoffTool.COLUMN -> "%.2f m3".format(value)
+    else -> "%.2f m2".format(value)
 }
 
 private val refsJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }

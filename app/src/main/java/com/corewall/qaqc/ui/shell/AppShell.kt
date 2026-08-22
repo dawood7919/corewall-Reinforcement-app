@@ -260,11 +260,6 @@ fun AppShell(vm: MainViewModel) {
         )
     }
 
-    // المساعد الطايف — فوق كل شاشة إلا العارضات (عشان ما يغطّيش أدواتها).
-    if (!fullScreen) {
-        com.corewall.qaqc.ui.ai.AiCopilotOverlay(vm)
-    }
-
     // محرّر الملاحظة بياخد بياناته من الـViewModel، ووجوده في المكدّس هو اللي
     // بيحدّد إنه ظاهر — فمفيش مصدرين للحقيقة.
     if (dest == Dest.NoteEditor) {
