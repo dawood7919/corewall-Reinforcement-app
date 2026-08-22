@@ -79,7 +79,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
@@ -1060,7 +1059,11 @@ fun TakeoffEditorScreen(
      * يتكرر — وأي أداة تتضاف بعد كده تشتغل باللمس وتفضل ميتة بالمؤشّر.
      */
     fun canvasTap(point: Offset, kind: PointerKind) {
-                        val penOnly = settings.stylusOnly && mode != EditorMode.POINTER
+                        // المؤشّر بيبعت لمساته كـ"صباع". لو حارس "القلم بس"
+                        // فضل شغّال معاه، كل لمسة بتترفض في أول سطر والرسم
+                        // بيبقى ميت من غير أي علامة إن فيه حاجة اترفضت.
+                        val penOnly = settings.stylusOnly && !settings.virtualCursor &&
+                            mode != EditorMode.POINTER
                         when {
                             // في وضع القلم، الصباع بيتنقّل بس — مايرسمش ولا يعاير.
                             penOnly && !kind.isPen -> Unit
@@ -1106,7 +1109,13 @@ fun TakeoffEditorScreen(
      * بتسيب، وحركة المؤشّر بينهم بتتبعت كسحب. الباقي لمسة واحدة.
      */
     fun cursorPlace() {
-        val pos = cursorPos ?: return
+        // نفس الافتراضي اللي العلامة بتترسم عنده. من غير ده أول لمسة قبل
+        // أي سحب كانت بترجع فاضية — والعلامة ظاهرة في النص، فاللمسة تبان
+        // كأنها اتجاهلت من غير سبب.
+        val pos = cursorPos ?: Offset(
+            state.viewport.width / 2f,
+            state.viewport.height / 2f
+        ).also { cursorPos = it }
         val dragMode = mode == EditorMode.RECT ||
             mode == EditorMode.BOXSELECT ||
             mode == EditorMode.VERTEX
@@ -1292,11 +1301,14 @@ fun TakeoffEditorScreen(
                             // ويحرّكوا الصفحة — نفس تقسيم أي برنامج CAD.
                             awaitEachGesture {
                                 awaitFirstDown(requireUnconsumed = false)
+                                var travelled = 0f
+                                var pinched = false
                                 while (true) {
                                     val event = awaitPointerEvent()
                                     val down = event.changes.filter { it.pressed }
                                     if (down.isEmpty()) break
                                     if (down.size >= 2) {
+                                        pinched = true
                                         val zoomChange = event.calculateZoom()
                                         val panChange = event.calculatePan()
                                         val centroid = event.calculateCentroid()
@@ -1306,6 +1318,7 @@ fun TakeoffEditorScreen(
                                         val change = down.first()
                                         val delta = change.position - change.previousPosition
                                         if (delta != Offset.Zero) {
+                                            travelled += delta.getDistance()
                                             val base = cursorPos
                                                 ?: Offset(size.width / 2f, size.height / 2f)
                                             val next = Offset(
@@ -1318,6 +1331,12 @@ fun TakeoffEditorScreen(
                                         }
                                     }
                                     event.changes.forEach { it.consume() }
+                                }
+                                // لمسة = ضغطة من غير حركة تُذكر، وهي دلوقتي
+                                // فعل "ضع" نفسه. زرار منفصل كان معناه إن إيدك
+                                // تسيب الرسمة عشان تحط نقطة عليها.
+                                if (!pinched && travelled <= viewConfiguration.touchSlop) {
+                                    cursorPlace()
                                 }
                             }
                         }
@@ -1384,23 +1403,6 @@ fun TakeoffEditorScreen(
                     .align(Alignment.CenterEnd)
                     .padding(Space.md)
             )
-
-            if (settings.virtualCursor) {
-                ExtendedFloatingActionButton(
-                    onClick = { cursorPlace() },
-                    containerColor = if (cursorHolding) c.warning.fg else c.accent,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = Space.md, bottom = 150.dp)
-                ) {
-                    Icon(
-                        if (cursorHolding) Icons.Filled.Check else Icons.Filled.Add,
-                        contentDescription = null
-                    )
-                    Spacer(Modifier.width(Space.xs))
-                    Text(if (cursorHolding) "سيب" else "ضع")
-                }
-            }
 
             Column(
                 Modifier
