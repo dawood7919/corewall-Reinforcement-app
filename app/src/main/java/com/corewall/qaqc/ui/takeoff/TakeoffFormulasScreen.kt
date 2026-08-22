@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
@@ -105,14 +108,17 @@ fun TakeoffFormulasScreen(
         }
     }
 
+    // الشاشة كلها LTR عن قصد: الصيغة تعبير رياضي بيتقرا من الشمال لليمين،
+    // ومحاذاتها يمين كانت بتقلب ترتيب الأقواس والعوامل بصريًا.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Surface(modifier.fillMaxSize(), color = c.background) {
         Box(Modifier.fillMaxSize()) {
             if (evaluated.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CwEmptyState(
                         icon = Icons.Filled.Functions,
-                        title = "مفيش صيغ لسه",
-                        detail = "دوس + عشان تكتب أول صيغة تجمع بين القياسات"
+                        title = "No formulas yet",
+                        detail = "Tap + to combine measurements into a formula"
                     )
                 }
             } else {
@@ -147,8 +153,9 @@ fun TakeoffFormulasScreen(
                     .align(Alignment.BottomStart)
                     .navigationBarsPadding()
                     .padding(Space.lg)
-            ) { Icon(Icons.Filled.Add, contentDescription = "صيغة جديدة") }
+            ) { Icon(Icons.Filled.Add, contentDescription = "New formula") }
         }
+    }
     }
 
     if (creating || editing != null) {
@@ -205,8 +212,8 @@ private fun FormulaCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            CwIconButton(Icons.Filled.Edit, "تعديل", onEdit)
-            CwIconButton(Icons.Filled.Delete, "حذف", onDelete, tint = c.danger.fg)
+            CwIconButton(Icons.Filled.Edit, "Edit", onEdit)
+            CwIconButton(Icons.Filled.Delete, "Delete", onDelete, tint = c.danger.fg)
         }
     }
 }
@@ -242,10 +249,10 @@ private fun FormulaEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "صيغة جديدة" else "تعديل الصيغة") },
+        title = { Text(if (initial == null) "New formula" else "Edit formula") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                CwField(value = name, onValueChange = { name = it }, label = "اسم الصيغة")
+                CwField(value = name, onValueChange = { name = it }, label = "Formula name")
 
                 Row(
                     Modifier.fillMaxWidth(),
@@ -255,25 +262,25 @@ private fun FormulaEditorDialog(
                     CwField(
                         value = expr,
                         onValueChange = { expr = it },
-                        label = "الصيغة",
+                        label = "Expression",
                         placeholder = "slab_area * bar_count",
                         minLines = 2,
                         modifier = Modifier.weight(1f)
                     )
                     // الزرار الصغير: بيفتح كل القياسات وبيحط اللي تختاره بالاسم.
-                    CwIconButton(Icons.Filled.Functions, "استدعِ قياس", { picking = true })
+                    CwIconButton(Icons.Filled.Functions, "Insert measurement", { picking = true })
                 }
 
                 CwField(
                     value = unit, onValueChange = { unit = it },
-                    label = "الوحدة (اختياري)", placeholder = "m3"
+                    label = "Unit (optional)", placeholder = "m3"
                 )
 
                 Text(
                     preview.error ?: preview.value?.let {
                         "= " + "%.${roundTo.coerceIn(0, 6)}f".format(it) +
                             if (unit.isNotBlank()) " $unit" else ""
-                    } ?: "اكتب الصيغة أو استدعِ قياس",
+                    } ?: "Write an expression or insert a measurement",
                     style = CwText.codeSmall,
                     color = if (preview.error != null) c.danger.fg else c.accent
                 )
@@ -297,9 +304,9 @@ private fun FormulaEditorDialog(
                         )
                     )
                 }
-            ) { Text("حفظ") }
+            ) { Text("Save") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 
     if (picking) {
@@ -336,10 +343,10 @@ private fun MeasurementPickerDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("اختر قياس") },
+        title = { Text("Pick a measurement") },
         text = {
             if (referencable.isEmpty()) {
-                Text("مفيش قياسات في الرسمة دي لسه", color = c.textTertiary)
+                Text("No measurements on this drawing yet", color = c.textTertiary)
             } else {
                 LazyColumn(Modifier.heightIn(max = 340.dp)) {
                     items(referencable, key = { it.id }) { item ->
@@ -368,7 +375,7 @@ private fun MeasurementPickerDialog(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            "صفحة ${item.page + 1}",
+                                            "page ${item.page + 1}",
                                             style = CwText.codeSmall,
                                             color = c.textTertiary
                                         )
@@ -386,7 +393,7 @@ private fun MeasurementPickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("تمام") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 

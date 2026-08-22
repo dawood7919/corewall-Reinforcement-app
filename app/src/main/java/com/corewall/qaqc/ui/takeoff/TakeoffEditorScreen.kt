@@ -1342,6 +1342,27 @@ fun TakeoffEditorScreen(
                         hasDraft = if (usesV2Workspace) pendingV2Measurement != null else draft.isNotEmpty() || annotationDraft.isNotEmpty(),
                         expanded = dockExpanded,
                         onToggleExpanded = { dockExpanded = !dockExpanded },
+                        canDeduct = selectedItem != null &&
+                            (selectedItem.tool == TakeoffTool.AREA || selectedItem.tool == TakeoffTool.VOLUME) &&
+                            deductFor == null,
+                        vertexMode = mode == EditorMode.VERTEX,
+                        onVertexEdit = {
+                            // التحديد لازم يفضل — وضع الرؤوس بيشتغل على البند
+                            // المحدّد، و`clearDrafts` بتمسحه.
+                            val keep = selectedId
+                            clearDrafts()
+                            selectedId = keep
+                            mode = if (mode == EditorMode.VERTEX) EditorMode.POINTER else EditorMode.VERTEX
+                        },
+                        onDeduct = {
+                            val parent = pageItems.firstOrNull { it.id == selectedId }
+                            if (parent != null) {
+                                draft.clear(); draftPage.intValue = -1
+                                deductFor = parent
+                                mode = EditorMode.DRAW
+                                tool = TakeoffTool.AREA
+                            }
+                        },
                         selected = selectedId != null,
                         canAddToShape = selectedItem?.tool.let {
                             it == TakeoffTool.AREA || it == TakeoffTool.VOLUME || it == TakeoffTool.LENGTH

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -80,6 +81,8 @@ fun S25MeasurementDock(
     addingToShape: Boolean,
     canAddToShape: Boolean,
     canDeleteVertex: Boolean,
+    canDeduct: Boolean,
+    vertexMode: Boolean,
     multiCount: Int,
     onPointer: () -> Unit,
     onUndo: () -> Unit,
@@ -90,6 +93,8 @@ fun S25MeasurementDock(
     onAddToShape: () -> Unit,
     onToggleVisible: () -> Unit,
     onDeleteVertex: () -> Unit,
+    onVertexEdit: () -> Unit,
+    onDeduct: () -> Unit,
     onDeleteSelected: () -> Unit,
     onDeleteMulti: () -> Unit,
     onEditSelected: () -> Unit,
@@ -191,9 +196,24 @@ fun S25MeasurementDock(
                 ) {
                     if (addingToShape) DockAction(Icons.Filled.Square, "جزء جديد", c.accent, onPointer)
                     if (canDeleteVertex) DockAction(Icons.Filled.Delete, "حذف الرأس", c.danger.fg, onDeleteVertex)
+                    // الرؤوس والخصم كانوا مدفونين في شيت "أدوات". الاتنين
+                    // بيتعملوا **على بند محدّد**، فمكانهم الطبيعي هو الصف اللي
+                    // بيظهر أول ما تحدّد — مش قايمة تانية بتتفتح بعد التحديد.
+                    if (selected && !addingToShape) {
+                        DockAction(
+                            Icons.Filled.OpenWith,
+                            "الرؤوس",
+                            if (vertexMode) c.accent else c.textPrimary,
+                            onVertexEdit
+                        )
+                    }
+                    if (canDeduct) DockAction(Icons.Filled.ContentCut, "خصم", c.warning.fg, onDeduct)
                     if (selected && !addingToShape && canAddToShape) DockAction(Icons.Filled.AddCircleOutline, "أضف جزءاً", c.accent, onAddToShape)
                     if (selected && !addingToShape) {
-                        DockAction(Icons.Filled.OpenWith, "تحرير", c.textPrimary, onEditSelected)
+                        // أيقونة مختلفة عن الرؤوس عن قصد: الاتنين كانوا
+                        // `OpenWith`، فالضغط على "تحرير" كان بيفتح تعديل الاسم
+                        // وانت مستني تعديل الشكل.
+                        DockAction(Icons.Filled.Edit, "تحرير", c.textPrimary, onEditSelected)
                         DockAction(Icons.Filled.Visibility, "إخفاء", c.textPrimary, onToggleVisible)
                         DockAction(Icons.Filled.Delete, "حذف", c.danger.fg, onDeleteSelected)
                     }
