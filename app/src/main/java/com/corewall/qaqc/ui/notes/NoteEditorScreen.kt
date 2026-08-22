@@ -3,73 +3,57 @@ package com.corewall.qaqc.ui.notes
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.automirrored.filled.Redo
-import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.FormatBold
-import androidx.compose.material.icons.filled.FormatItalic
-import androidx.compose.material.icons.filled.FormatListNumbered
-import androidx.compose.material.icons.filled.FormatQuote
-import androidx.compose.material.icons.filled.FormatStrikethrough
-import androidx.compose.material.icons.filled.FormatUnderlined
-import androidx.compose.material.icons.filled.HorizontalRule
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Notes
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.TableChart
-import androidx.compose.material.icons.filled.Title
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -77,470 +61,346 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.data.db.NoteEntity
-import com.corewall.qaqc.domain.NotesLogic
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.debounce
-import java.io.File
-import com.corewall.qaqc.ui.design.CwIconButton
+import com.corewall.qaqc.notes.NotesBlock
+import com.corewall.qaqc.notes.NotesDocument
+import com.corewall.qaqc.notes.NotesStore
+import com.corewall.qaqc.notes.TextSpan
+import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
-private enum class Mode { EDIT, PREVIEW, SPLIT }
-
-/**
- * محرّر الملاحظات الهندسي — كامل الشاشة، أوضاع تحرير/معاينة/مقسّم، شريط
- * تنسيق ثابت فوق الكيبورد، تنسيق حيّ، حفظ تلقائي، صور وكاميرا وملفات inline،
- * وإكمال تلقائي للوسوم (#) والمنشن (@).
- */
-@OptIn(FlowPreview::class, ExperimentalMaterial3Api::class)
+/** محرر صفحات ميدانية: يركز على الكتابة أولاً، ثم الخصائص والوسائط عند الحاجة. */
+@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun NoteEditorScreen(vm: MainViewModel, note: NoteEntity, onClose: () -> Unit) {
-    val markName = vm.markFor(note.elementId) ?: note.elementId
-
-    // الملاحظة بتتغيّر من برّه المحرّر كمان (لون، تثبيت، تصنيف من ورقة
-    // الخيارات). `rememberUpdatedState` بيخلّي الحفظ التلقائي يكتب آخر نسخة
-    // — من غيرها كان الحفظ هيرجّع اللون القديم فوق الجديد.
+    val store = vm.notesStore
     val liveNote by rememberUpdatedState(note)
-
+    val c = LocalCwColors.current
     var title by remember(note.id) { mutableStateOf(note.title) }
-    var body by remember(note.id) { mutableStateOf(TextFieldValue(note.body)) }
-    var savedNoteId by remember(note.id) { mutableIntStateOf(note.id.toInt()) }
-    var mode by remember { mutableStateOf(Mode.EDIT) }
-    var savedState by remember { mutableStateOf("محفوظ") }
-    var showSearch by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
-    var overflow by remember { mutableStateOf(false) }
-    var optionsOpen by remember { mutableStateOf(false) }
-    // النوع محفوظ محلياً كمان: التحويل بيغيّر النص في نفس اللحظة، والانتظار
-    // لحد ما القاعدة ترجّع الملاحظة كان بيعمل رفّة.
-    var kind by remember(note.id) { mutableStateOf(note.kind) }
-    val checklist = kind == NoteEntity.KIND_CHECKLIST
-
-    // Undo / Redo
-    val undo = remember(note.id) { ArrayDeque<TextFieldValue>() }
-    val redo = remember(note.id) { ArrayDeque<TextFieldValue>() }
-
-    fun edit(newValue: TextFieldValue) {
-        if (newValue.text != body.text) {
-            undo.addLast(body); if (undo.size > 60) undo.removeFirst(); redo.clear()
-            savedState = "بيحفظ…"
-        }
-        body = newValue
-    }
-
-    fun currentNote() = liveNote.copy(
-        id = savedNoteId.toLong(),
-        title = title.trim(),
-        body = body.text,
-        kind = kind,
-        imagePathsJson = encodeImagePaths(allMediaPaths(body.text))
-    )
-
-    /** تحويل نص ↔ قايمة مهام. النص بيتحوّل فوراً، والقاعدة بتلحق. */
-    fun convert(to: String) {
-        val converted =
-            if (to == NoteEntity.KIND_CHECKLIST) NotesLogic.toChecklist(body.text)
-            else NotesLogic.toPlainText(body.text)
-        kind = to
-        // قايمة المهام مالهاش "معاينة"، فلو المستخدم كان واقف عليها لازم
-        // يرجع للتحرير — غير كده الشاشة بتفضل فاضية من غير طريق رجوع.
-        if (to == NoteEntity.KIND_CHECKLIST) mode = Mode.EDIT
-        body = TextFieldValue(converted, androidx.compose.ui.text.TextRange(converted.length))
-        savedState = "بيحفظ…"
-        vm.notesStore.setKind(currentNote().copy(body = converted), to)
-    }
-
-    // حفظ تلقائي بعد سكون بسيط
-    LaunchedEffect(note.id) {
-        snapshotFlow { title to body.text }.debounce(900).collect {
-            vm.autosaveNote(currentNote()) { id -> savedNoteId = id.toInt() }
-            savedState = "محفوظ ✓"
-        }
-    }
-
-    // ---- إدراج ----
-    fun insert(textToInsert: String) {
-        val sel = body.selection
-        val t = body.text
-        val newText = t.substring(0, sel.min) + textToInsert + t.substring(sel.max)
-        edit(TextFieldValue(newText, androidx.compose.ui.text.TextRange(sel.min + textToInsert.length)))
-    }
-    fun wrap(token: String) {
-        val sel = body.selection; val t = body.text
-        val selected = t.substring(sel.min, sel.max).ifEmpty { "نص" }
-        val newText = t.substring(0, sel.min) + token + selected + token + t.substring(sel.max)
-        edit(TextFieldValue(newText, androidx.compose.ui.text.TextRange(sel.min + token.length + selected.length + token.length)))
-    }
-    fun linePrefix(prefix: String) {
-        val sel = body.selection; val t = body.text
-        val ls = t.lastIndexOf('\n', (sel.min - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
-        val newText = t.substring(0, ls) + prefix + t.substring(ls)
-        edit(TextFieldValue(newText, androidx.compose.ui.text.TextRange(sel.min + prefix.length)))
-    }
-    fun insertBlock(block: String) = insert("\n$block\n")
-
-    // ---- الصور / الملفات ----
+    var document by remember(note.id) { mutableStateOf(store.documentOf(note)) }
+    var focusedBlock by remember(note.id) { mutableStateOf<String?>(null) }
+    var showMore by remember { mutableStateOf(false) }
+    var showLabels by remember { mutableStateOf(false) }
+    var showInsert by remember { mutableStateOf(false) }
+    var drawingFile by remember(note.id) { mutableStateOf<File?>(null) }
+    var audioFile by remember(note.id) { mutableStateOf<File?>(null) }
     var pendingCamera by remember { mutableStateOf<File?>(null) }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
-        if (uris.isNotEmpty()) {
-            vm.files.importNoteImages(uris, note.level, note.elementId).also { vm.registerFiles(it, note.level) }.forEach {
-                insert("\n![](${it.absolutePath})\n")
-            }
-        }
+    var exporting by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val undo = remember(note.id) { ArrayDeque<NotesDocument>() }
+    val redo = remember(note.id) { ArrayDeque<NotesDocument>() }
+
+    fun apply(next: NotesDocument) {
+        if (next == document) return
+        undo.addLast(document)
+        if (undo.size > 80) undo.removeFirst()
+        redo.clear()
+        document = next
     }
-    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        val f = pendingCamera
-        if (ok && f != null && f.exists()) insert("\n![](${f.absolutePath})\n") else f?.delete()
+    fun replace(block: NotesBlock) = apply(document.copy(blocks = document.blocks.map { if (it.id == block.id) block else it }))
+    fun add(block: NotesBlock) = apply(document.copy(blocks = document.blocks + block))
+    fun appendAndFocus(block: NotesBlock) { add(block); focusedBlock = block.id }
+    fun remove(id: String) = apply(document.copy(blocks = document.blocks.filterNot { it.id == id }))
+    fun move(id: String, direction: Int) {
+        val index = document.blocks.indexOfFirst { it.id == id }
+        val target = (index + direction).coerceIn(0, document.blocks.lastIndex)
+        if (index < 0 || index == target) return
+        val blocks = document.blocks.toMutableList()
+        blocks.add(target, blocks.removeAt(index))
+        apply(document.copy(blocks = blocks))
+    }
+    fun persist() = store.saveDocument(liveNote.copy(title = title), document)
+    fun focusedOrFirst() = document.blocks.firstOrNull { it.id == focusedBlock }
+        ?: document.blocks.firstOrNull { it.type in setOf(NotesBlock.TEXT, NotesBlock.HEADING, NotesBlock.QUOTE, NotesBlock.CHECKLIST) }
+    fun styleFocused(transform: (NotesBlock) -> NotesBlock) = focusedOrFirst()?.let { block -> replace(transform(block)); focusedBlock = block.id }
+    fun mutateSpan(transform: (TextSpan) -> TextSpan) = styleFocused { block ->
+        val span = block.spans.firstOrNull { it.start == 0 && it.end == block.text.length } ?: TextSpan(0, block.text.length)
+        block.copy(spans = listOf(transform(span)))
+    }
+
+    LaunchedEffect(note.id) { snapshotFlow { title to document }.debounce(650).collect { persist() } }
+
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        vm.files.importNoteImages(uris, note.level, note.elementId).forEach { appendAndFocus(NotesBlock.image(it.absolutePath)) }
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
+        pendingCamera?.let { file -> if (captured && file.exists()) appendAndFocus(NotesBlock.image(file.absolutePath)) else file.delete() }
         pendingCamera = null
     }
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
-        if (uris.isNotEmpty()) {
-            vm.files.importNoteImages(uris, note.level, note.elementId).also { vm.registerFiles(it, note.level) }.forEach {
-                insert("\n[[file:${it.absolutePath}]]\n")
-            }
+    LaunchedEffect(note.id) {
+        when (store.consumeCapture()) {
+            NotesStore.CaptureAction.IMAGE -> gallery.launch(arrayOf("image/*"))
+            NotesStore.CaptureAction.DRAWING -> drawingFile = vm.files.newNoteSketchFile(note.level, note.elementId)
+            NotesStore.CaptureAction.AUDIO -> audioFile = vm.files.newNoteAudioFile(note.level, note.elementId)
+            null -> Unit
         }
     }
 
-    val colors = rememberInlineColors()
-    val accent = MaterialTheme.colorScheme.primary
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    val transform = liveMarkdownTransformation(colors, accent, muted, if (showSearch) query else "")
+    val attachmentCount = remember(document) { document.blocks.count { it.type in setOf(NotesBlock.IMAGE, NotesBlock.DRAWING, NotesBlock.AUDIO) } }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = Color.Transparent,
+        unfocusedContainerColor = Color.Transparent,
+        focusedBorderColor = Color.Transparent,
+        unfocusedBorderColor = Color.Transparent,
+        focusedTextColor = c.textPrimary,
+        unfocusedTextColor = c.textPrimary,
+        cursorColor = c.accent
+    )
 
-    // إكمال تلقائي (@ / #)
-    val trigger = activeTrigger(body)
-
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(Modifier.fillMaxSize(), color = c.background) {
         Column(Modifier.fillMaxSize()) {
-            // ===== الشريط العلوي =====
-            Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 2.dp) {
-                Column(Modifier.statusBarsPadding()) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = Space.xs, vertical = Space.xs),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { vm.saveNote(currentNote()); onClose() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text("$markName · دور ${note.level}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-                            Text(savedState, style = MaterialTheme.typography.labelSmall, color = muted)
-                        }
-                        IconButton(onClick = { showSearch = !showSearch }) {
-                            Icon(Icons.Filled.Search, contentDescription = "بحث")
-                        }
-                        // التثبيت أكتر فعل بيتكرّر، فليه زرار مباشر. الباقي
-                        // في ورقة واحدة — مفيش زرار "حفظ" لأن الحفظ تلقائي.
-                        CwIconButton(
-                            Icons.Filled.PushPin,
-                            if (liveNote.pinned) "إلغاء التثبيت" else "تثبيت",
-                            { vm.notesStore.togglePin(currentNote()) },
-                            active = liveNote.pinned
-                        )
-                        Box {
-                            IconButton(onClick = { overflow = true }) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "خيارات")
-                            }
-                            DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
-                                DropdownMenuItem(
-                                    text = { Text(if (checklist) "حوّلها نص" else "حوّلها قايمة مهام") },
-                                    leadingIcon = {
-                                        Icon(
-                                            if (checklist) Icons.Filled.Notes else Icons.Filled.Checklist,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    onClick = {
-                                        overflow = false
-                                        convert(
-                                            if (checklist) NoteEntity.KIND_TEXT
-                                            else NoteEntity.KIND_CHECKLIST
-                                        )
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("لون · تصنيفات · تذكير · أرشفة · حذف") },
-                                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                                    onClick = { overflow = false; optionsOpen = true }
-                                )
-                            }
-                        }
+            Surface(color = c.background) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { persist(); onClose() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") }
+                    Column(Modifier.weight(1f)) {
+                        Text("صفحة ميدانية", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text(if (exporting) "جارٍ إنشاء ملف PDF…" else "يُحفظ محلياً", style = MaterialTheme.typography.labelSmall, color = c.textSecondary)
                     }
-                    // أوضاع العرض — قايمة المهام مالهاش "معاينة": المحرّر
-                    // نفسه هو المعاينة (مربّعات بتتضغط).
-                    if (!checklist) SingleChoiceSegmentedButtonRow(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = Space.md, vertical = Space.sm)
-                    ) {
-                        val modes = listOf(Mode.EDIT to "تحرير", Mode.PREVIEW to "معاينة", Mode.SPLIT to "مقسّم")
-                        modes.forEachIndexed { i, (m, label) ->
-                            SegmentedButton(
-                                selected = mode == m,
-                                onClick = { mode = m },
-                                shape = SegmentedButtonDefaults.itemShape(i, modes.size),
-                                icon = {}
-                            ) { Text(label) }
+                    IconButton(onClick = { undo.removeLastOrNull()?.let { redo.addLast(document); document = it } }, enabled = undo.isNotEmpty()) { Icon(Icons.Filled.Undo, "تراجع") }
+                    IconButton(onClick = { redo.removeLastOrNull()?.let { undo.addLast(document); document = it } }, enabled = redo.isNotEmpty()) { Icon(Icons.Filled.Redo, "إعادة") }
+                    IconButton(onClick = {
+                        if (exporting) return@IconButton
+                        exporting = true
+                        val frozen = document
+                        val name = title
+                        scope.launch(Dispatchers.IO) {
+                            val pdf = vm.files.newNotePdfFile(note.level, note.elementId)
+                            val ok = NotesPdfExporter.export(pdf, name, frozen)
+                            withContext(Dispatchers.Main) { exporting = false; if (ok) vm.files.share(pdf) }
                         }
+                    }) { Icon(Icons.Filled.Share, "مشاركة PDF") }
+                    IconButton(onClick = { showMore = true }) { Icon(Icons.Filled.MoreVert, "خيارات الصفحة") }
+                }
+            }
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(start = Space.xl, end = Space.xl, top = Space.md, bottom = 100.dp),
+                verticalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
+                item("page-title") {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        placeholder = { Text("بدون عنوان") },
+                        textStyle = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                        colors = fieldColors,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                item("page-properties") {
+                    Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                        PageProperty("الموقع", note.level.ifBlank { "المشروع الحالي" })
+                        PageProperty("المحتوى", if (attachmentCount == 0) "نص فقط" else "$attachmentCount مرفق")
                     }
-                    AnimatedVisibility(visible = showSearch) {
-                        Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(Space.md), shape = Radius.shapeMd) {
-                            Row(Modifier.padding(horizontal = Space.md), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Search, contentDescription = null, tint = muted)
-                                Spacer(Modifier.width(Space.sm))
-                                BasicTextField(
-                                    value = query, onValueChange = { query = it }, singleLine = true,
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                                    cursorBrush = SolidColor(accent),
-                                    decorationBox = { inner -> Box(Modifier.padding(vertical = Space.md)) { if (query.isEmpty()) Text("بحث داخل الملاحظة…", color = muted, style = MaterialTheme.typography.bodyMedium); inner() } },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                val count = if (query.isBlank()) 0 else Regex(Regex.escape(query), RegexOption.IGNORE_CASE).findAll(body.text).count()
-                                if (query.isNotBlank()) Text("$count", style = MaterialTheme.typography.labelMedium, color = accent)
-                            }
+                }
+                item("page-divider") { DocumentDivider() }
+                items(document.blocks, key = { it.id }) { block ->
+                    NotionDocumentBlock(
+                        block = block,
+                        focused = focusedBlock == block.id,
+                        onFocus = { focusedBlock = block.id },
+                        onChange = ::replace,
+                        onToggle = { replace(block.copy(checked = !block.checked)) },
+                        onDelete = { remove(block.id) },
+                        onMoveUp = { move(block.id, -1) },
+                        onMoveDown = { move(block.id, 1) },
+                        onOpenImage = { vm.openImage(block.mediaPath) },
+                        colors = fieldColors
+                    )
+                }
+                item("continue-writing") {
+                    Surface(onClick = { appendAndFocus(NotesBlock.text()) }, color = Color.Transparent, shape = Radius.shapeMd, modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
+                            Text("+", style = MaterialTheme.typography.titleLarge, color = c.textSecondary)
+                            Spacer(Modifier.width(Space.sm))
+                            Text("اكتب شيئاً أو أضف كتلة", style = MaterialTheme.typography.bodyLarge, color = c.textSecondary)
                         }
                     }
                 }
             }
 
-            // ===== المحتوى =====
-            Box(Modifier.weight(1f)) {
-                Row(Modifier.fillMaxSize()) {
-                    if (mode == Mode.EDIT || mode == Mode.SPLIT) {
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .verticalScroll(rememberScrollState())
-                                .padding(Space.lg)
-                        ) {
-                            BasicTextField(
-                                value = title, onValueChange = { title = it }, singleLine = true,
-                                textStyle = MaterialTheme.typography.headlineSmall.copy(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold),
-                                cursorBrush = SolidColor(accent),
-                                decorationBox = { inner -> if (title.isEmpty()) Text("عنوان الملاحظة", style = MaterialTheme.typography.headlineSmall, color = muted, fontWeight = FontWeight.Bold); inner() },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(Space.md))
-                            if (checklist) {
-                                ChecklistEditor(
-                                    body = body.text,
-                                    onBodyChange = { next ->
-                                        edit(TextFieldValue(next, androidx.compose.ui.text.TextRange(next.length)))
-                                    }
-                                )
-                            } else {
-                                BasicTextField(
-                                    value = body, onValueChange = { edit(it) },
-                                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                                    cursorBrush = SolidColor(accent),
-                                    visualTransformation = transform,
-                                    decorationBox = { inner -> if (body.text.isEmpty()) Text("ابدأ الكتابة… استخدم شريط الأدوات تحت للتنسيق والصور.", style = MaterialTheme.typography.bodyLarge, color = muted); inner() },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(if (mode == Mode.SPLIT) 1000.dp else 1200.dp)
-                                )
-                            }
-                        }
+            BottomAppBar(Modifier.imePadding(), containerColor = c.surface) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    listOf(1, 2, 3).forEach { level ->
+                        EditorTextTool("H$level", active = focusedOrFirst()?.style?.headingLevel == level) { styleFocused { it.copy(style = it.style.copy(headingLevel = level)) } }
                     }
-                    if (mode == Mode.SPLIT) {
-                        Box(Modifier.width(Space.xxs).fillMaxSize().padding(vertical = Space.sm)) {
-                            Surface(color = MaterialTheme.colorScheme.outline, modifier = Modifier.fillMaxSize()) {}
-                        }
-                    }
-                    if (mode == Mode.PREVIEW || mode == Mode.SPLIT) {
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .verticalScroll(rememberScrollState())
-                                .padding(Space.lg)
-                        ) {
-                            if (title.isNotBlank()) {
-                                Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.height(Space.md))
-                            }
-                            NoteContent(
-                                markdown = body.text,
-                                onToggleCheck = { line -> edit(TextFieldValue(toggleCheckLine(body.text, line))) },
-                                onOpenImage = { vm.openImage(it) },
-                                onOpenFile = { p ->
-                                    val f = File(p)
-                                    if (f.extension.equals("pdf", true)) vm.openPdf(f.absolutePath) else vm.files.openExternally(f)
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // ===== الإكمال التلقائي =====
-            if (trigger != null && mode != Mode.PREVIEW) {
-                val (symbol, partial) = trigger
-                val suggestions = remember(symbol, partial, body.text) {
-                    if (symbol == '@') vm.allMarks().filter { it.contains(partial, true) }.take(20)
-                    else listOf("Concrete", "Rebar", "WIR", "Inspection", "Formwork", "Approved", "Rejected")
-                        .filter { it.contains(partial, true) || partial.isEmpty() }
-                }
-                if (suggestions.isNotEmpty()) {
-                    Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
-                        LazyRow(
-                            Modifier.fillMaxWidth().padding(Space.sm),
-                            horizontalArrangement = Arrangement.spacedBy(Space.sm)
-                        ) {
-                            items(suggestions) { s ->
-                                Surface(
-                                    onClick = { edit(applySuggestion(body, symbol, partial, s)) },
-                                    color = if (symbol == '@') MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
-                                    shape = Radius.shapeMd
-                                ) {
-                                    Text("$symbol$s", Modifier.padding(horizontal = Space.md, vertical = Space.sm), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ===== شريط الأدوات (فوق الكيبورد) =====
-            if (mode != Mode.PREVIEW) {
-                var calloutMenu by remember { mutableStateOf(false) }
-                Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, shadowElevation = 8.dp) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .imePadding()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = Space.xs, vertical = Space.xs),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Tb(Icons.AutoMirrored.Filled.Undo, "تراجع", enabled = undo.isNotEmpty()) {
-                            undo.removeLastOrNull()?.let { redo.addLast(body); body = it }
-                        }
-                        Tb(Icons.AutoMirrored.Filled.Redo, "إعادة", enabled = redo.isNotEmpty()) {
-                            redo.removeLastOrNull()?.let { undo.addLast(body); body = it }
-                        }
-                        TbDivider()
-                        if (!checklist) {
-                            Tb(Icons.Filled.Title, "عنوان") { linePrefix("## ") }
-                            Tb(Icons.Filled.FormatBold, "غامق") { wrap("**") }
-                            Tb(Icons.Filled.FormatItalic, "مائل") { wrap("*") }
-                            Tb(Icons.Filled.FormatUnderlined, "تحته خط") { wrap("__") }
-                            Tb(Icons.Filled.FormatStrikethrough, "شطب") { wrap("~~") }
-                            Tb(Icons.Filled.Edit, "تظليل") { wrap("==") }
-                            TbDivider()
-                            Tb(Icons.AutoMirrored.Filled.FormatListBulleted, "نقاط") { linePrefix("- ") }
-                            Tb(Icons.Filled.FormatListNumbered, "ترقيم") { linePrefix("1. ") }
-                            Tb(Icons.Filled.CheckBox, "تشيك ليست") { linePrefix("- [ ] ") }
-                            Tb(Icons.Filled.FormatQuote, "اقتباس") { linePrefix("> ") }
-                            Tb(Icons.Filled.Code, "كود") { insertBlock("```\n\n```") }
-                            Tb(Icons.Filled.HorizontalRule, "فاصل") { insertBlock("---") }
-                            Tb(Icons.Filled.TableChart, "جدول") { insertBlock("| عمود | عمود |\n| --- | --- |\n| قيمة | قيمة |") }
-                            Box {
-                                Tb(Icons.Filled.WarningAmber, "تنبيه") { calloutMenu = true }
-                                DropdownMenu(expanded = calloutMenu, onDismissRequest = { calloutMenu = false }) {
-                                    CalloutKind.entries.forEach { k ->
-                                        DropdownMenuItem(
-                                            text = { Text(k.label) },
-                                            onClick = { calloutMenu = false; insertBlock("> [!${k.token}] ${k.label}\n> ") }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        TbDivider()
-                        Tb(Icons.Filled.PhotoLibrary, "صور", tint = accent) { gallery.launch(arrayOf("image/*")) }
-                        Tb(Icons.Filled.PhotoCamera, "كاميرا", tint = accent) {
-                            val f = vm.files.newImageFile(note.level, note.elementId)
-                            pendingCamera = f; camera.launch(vm.files.uriFor(f))
-                        }
-                        Tb(Icons.Filled.AttachFile, "ملف", tint = accent) { filePicker.launch(arrayOf("*/*")) }
-                    }
+                    EditorIconTool(Icons.Filled.FormatBold, "غامق") { mutateSpan { it.copy(bold = !it.bold) } }
+                    EditorTextTool("مائل") { mutateSpan { it.copy(italic = !it.italic) } }
+                    listOf(c.textPrimary, c.accent, c.danger.fg).forEach { swatch -> EditorColorTool(swatch) { mutateSpan { it.copy(foregroundArgb = swatch.value.toLong()) } } }
+                    EditorIconTool(Icons.AutoMirrored.Filled.FormatListBulleted, "قائمة نقطية") { styleFocused { it.copy(style = it.style.copy(bullet = !it.style.bullet, numbered = false)) } }
+                    EditorIconTool(Icons.Filled.Image, "إضافة صورة") { gallery.launch(arrayOf("image/*")) }
+                    EditorIconTool(Icons.Filled.CheckBox, "قائمة تحقق") { appendAndFocus(NotesBlock.checklist()) }
+                    EditorIconTool(Icons.Filled.MoreHoriz, "إضافة محتوى") { showInsert = true }
                 }
             }
         }
     }
 
-    if (optionsOpen) {
-        NoteOptionsSheet(
-            vm = vm,
-            note = currentNote(),
-            onDismiss = { optionsOpen = false },
-            onNoteGone = { optionsOpen = false; onClose() }
+    if (showMore) NoteActionsSheet(note = liveNote.copy(title = title), vm = vm, onDismiss = { showMore = false }, onLabels = { showMore = false; showLabels = true }, onClose = onClose)
+    if (showLabels) NoteLabelsSheetNew(note = liveNote, vm = vm, onDismiss = { showLabels = false })
+    if (showInsert) {
+        InsertContentSheet(
+            onDismiss = { showInsert = false },
+            onCamera = { showInsert = false; val file = vm.files.newImageFile(note.level, note.elementId); pendingCamera = file; camera.launch(vm.files.uriFor(file)) },
+            onDrawing = { showInsert = false; drawingFile = vm.files.newNoteSketchFile(note.level, note.elementId) },
+            onAudio = { showInsert = false; audioFile = vm.files.newNoteAudioFile(note.level, note.elementId) },
+            onDivider = { showInsert = false; appendAndFocus(NotesBlock.divider()) }
         )
     }
+    drawingFile?.let { file -> NotesDrawingSheet(file = file, onDismiss = { file.delete(); drawingFile = null }, onSaved = { saved -> appendAndFocus(NotesBlock.drawing(saved.absolutePath)); drawingFile = null }) }
+    audioFile?.let { file -> NotesVoiceSheet(file = file, onDismiss = { file.delete(); audioFile = null }, onSaved = { saved, duration -> appendAndFocus(NotesBlock.audio(saved.absolutePath, duration)); audioFile = null }) }
 }
 
 @Composable
-private fun Tb(icon: ImageVector, desc: String, enabled: Boolean = true, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled) {
-        Icon(icon, contentDescription = desc, tint = if (enabled) tint else tint.copy(alpha = 0.35f))
+private fun PageProperty(label: String, value: String) {
+    val c = LocalCwColors.current
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = c.textSecondary, modifier = Modifier.width(72.dp))
+        Surface(color = c.surfaceAlt, shape = Radius.pill) { Text(value, Modifier.padding(horizontal = Space.sm, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, color = c.textPrimary) }
     }
 }
 
 @Composable
-private fun TbDivider() {
-    Box(
-        Modifier
-            .padding(horizontal = Space.xs)
-            .width(Space.xxs)
-            .height(Space.xl)
-    ) { Surface(color = MaterialTheme.colorScheme.outline, modifier = Modifier.fillMaxSize()) {} }
-}
-
-// ---------------------------------------------------------------- Helpers
-
-/** كل مسارات الصور/الملفات المضمّنة في النص (للتنظيف عند الحذف). */
-private fun allMediaPaths(md: String): List<String> {
-    val imgs = Regex("""!\[.*?]\((.+?)\)""").findAll(md).map { it.groupValues[1] }
-    val files = Regex("""\[\[file:(.+?)]]""").findAll(md).map { it.groupValues[1] }
-    return (imgs + files).toList()
-}
-
-/** يبدّل حالة سطر تشيك ليست معيّن. */
-private fun toggleCheckLine(md: String, lineIndex: Int): String {
-    val lines = md.split("\n").toMutableList()
-    if (lineIndex !in lines.indices) return md
-    val l = lines[lineIndex]
-    lines[lineIndex] = when {
-        Regex("""\[ ]""").containsMatchIn(l) -> l.replaceFirst("[ ]", "[x]")
-        Regex("""\[[xX]]""").containsMatchIn(l) -> l.replaceFirst(Regex("""\[[xX]]"""), "[ ]")
-        else -> l
+private fun NotionDocumentBlock(
+    block: NotesBlock,
+    focused: Boolean,
+    onFocus: () -> Unit,
+    onChange: (NotesBlock) -> Unit,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onOpenImage: () -> Unit,
+    colors: androidx.compose.material3.TextFieldColors
+) {
+    val c = LocalCwColors.current
+    val fullSpan = block.spans.firstOrNull { it.start == 0 && it.end == block.text.length }
+    val base = when {
+        block.style.headingLevel == 1 -> MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
+        block.style.headingLevel == 2 -> MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+        block.style.headingLevel == 3 -> MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+        block.type == NotesBlock.QUOTE -> MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)
+        else -> MaterialTheme.typography.bodyLarge
     }
-    return lines.joinToString("\n")
-}
-
-/** يكتشف وسم/منشن نشط قبل المؤشر (للإكمال التلقائي). */
-private fun activeTrigger(v: TextFieldValue): Pair<Char, String>? {
-    val cursor = v.selection.min
-    if (cursor == 0) return null
-    val text = v.text.substring(0, cursor)
-    var i = text.length - 1
-    while (i >= 0) {
-        val ch = text[i]
-        if (ch == '@' || ch == '#') {
-            val partial = text.substring(i + 1)
-            if (partial.any { it.isWhitespace() }) return null
-            return ch to partial
+    val textStyle = base.copy(
+        fontWeight = if (fullSpan?.bold == true) FontWeight.Bold else base.fontWeight,
+        fontStyle = if (fullSpan?.italic == true) FontStyle.Italic else base.fontStyle,
+        color = fullSpan?.foregroundArgb?.let { Color(it) } ?: c.textPrimary
+    )
+    Surface(color = if (focused) c.surfaceAlt else Color.Transparent, shape = Radius.shapeMd, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(if (focused) Space.sm else 0.dp), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            when (block.type) {
+                NotesBlock.IMAGE, NotesBlock.DRAWING -> DocumentImageBlock(block, onOpen = onOpenImage)
+                NotesBlock.AUDIO -> DocumentAudioBlock(block)
+                NotesBlock.DIVIDER -> DocumentDivider()
+                NotesBlock.CHECKLIST -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = block.checked, onCheckedChange = { onToggle() })
+                    OutlinedTextField(
+                        value = block.text,
+                        onValueChange = { onChange(block.copy(text = it)) },
+                        placeholder = { Text("عنصر قائمة") },
+                        colors = colors,
+                        modifier = Modifier.weight(1f).onFocusChanged { if (it.isFocused) onFocus() },
+                        singleLine = true
+                    )
+                }
+                else -> Row(verticalAlignment = Alignment.Top) {
+                    if (block.style.bullet || block.style.numbered) {
+                        Text(if (block.style.numbered) "1." else "•", style = textStyle, modifier = Modifier.padding(top = Space.sm, end = Space.sm))
+                    }
+                    OutlinedTextField(
+                        value = block.text,
+                        onValueChange = { onChange(block.copy(text = it)) },
+                        placeholder = { Text("اكتب شيئاً…") },
+                        textStyle = textStyle,
+                        colors = colors,
+                        modifier = Modifier.weight(1f).onFocusChanged { if (it.isFocused) onFocus() }
+                    )
+                }
+            }
+            if (focused) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    IconButton(onClick = onMoveUp, modifier = Modifier.size(34.dp)) { Icon(Icons.Filled.KeyboardArrowUp, "نقل لأعلى", tint = c.textSecondary) }
+                    IconButton(onClick = onMoveDown, modifier = Modifier.size(34.dp)) { Icon(Icons.Filled.KeyboardArrowDown, "نقل لأسفل", tint = c.textSecondary) }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) { Icon(Icons.Filled.DeleteOutline, "حذف الكتلة", tint = c.danger.fg) }
+                }
+            }
         }
-        if (ch.isWhitespace()) return null
-        i--
     }
-    return null
 }
 
-private fun applySuggestion(v: TextFieldValue, symbol: Char, partial: String, picked: String): TextFieldValue {
-    val cursor = v.selection.min
-    val start = cursor - partial.length - 1 // -1 للرمز
-    val newText = v.text.substring(0, start) + symbol + picked + " " + v.text.substring(cursor)
-    val newCursor = start + 1 + picked.length + 1
-    return TextFieldValue(newText, androidx.compose.ui.text.TextRange(newCursor))
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InsertContentSheet(onDismiss: () -> Unit, onCamera: () -> Unit, onDrawing: () -> Unit, onAudio: () -> Unit, onDivider: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            Text("إضافة إلى الصفحة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("اختر نوع المحتوى الذي تريد إدراجه.", style = MaterialTheme.typography.bodySmall, color = LocalCwColors.current.textSecondary)
+            NoteAction("التقاط صورة", Icons.Filled.CameraAlt, onClick = onCamera)
+            NoteAction("رسم ميداني", Icons.Filled.Draw, onClick = onDrawing)
+            NoteAction("تسجيل صوتي", Icons.Filled.Mic, onClick = onAudio)
+            NoteAction("فاصل", Icons.Filled.MoreHoriz, onClick = onDivider)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteActionsSheet(note: NoteEntity, vm: MainViewModel, onDismiss: () -> Unit, onLabels: () -> Unit, onClose: () -> Unit) {
+    val store = vm.notesStore
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            Text("خيارات الصفحة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            NoteAction(if (note.pinned) "إلغاء التثبيت" else "تثبيت الصفحة", Icons.Filled.Add) { store.togglePin(note); onDismiss() }
+            NoteAction("إضافة وسوم", Icons.Filled.Add) { onLabels() }
+            NoteAction("أرشفة", Icons.Filled.Archive) { store.setArchived(note, true); onDismiss(); onClose() }
+            NoteAction("حذف", Icons.Filled.DeleteOutline, danger = true) { store.trash(note); onDismiss(); onClose() }
+        }
+    }
+}
+
+@Composable
+private fun NoteAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, danger: Boolean = false, onClick: () -> Unit) {
+    Surface(onClick = onClick, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = if (danger) LocalCwColors.current.danger.fg else LocalCwColors.current.accent)
+            Spacer(Modifier.width(Space.md))
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteLabelsSheetNew(note: NoteEntity, vm: MainViewModel, onDismiss: () -> Unit) {
+    val labels by vm.notesStore.noteLabels.collectAsStateWithLifecycle()
+    val attached by vm.notesStore.labelsByNote.collectAsStateWithLifecycle()
+    val selected = attached[note.id].orEmpty().map { it.id }.toSet()
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Text("وسوم الصفحة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            labels.forEach { label ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = label.id in selected, onCheckedChange = { vm.notesStore.setLabel(note.id, label.id, it) })
+                    Text(label.name, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+    }
 }

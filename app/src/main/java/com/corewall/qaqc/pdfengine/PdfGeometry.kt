@@ -183,22 +183,66 @@ data class PageSlot(
 class PageLayout(
     val slots: List<PageSlot>,
     val contentWidth: Float,
-    val contentHeight: Float
+    val contentHeight: Float,
+    private val flow: PageFlow = PageFlow.VERTICAL
 ) {
     fun slotAt(index: Int): PageSlot? = slots.getOrNull(index)
 
-    /** الصفحات المرئية في مستطيل من مساحة المستند. */
-    fun visible(l: Float, t: Float, r: Float, b: Float): List<PageSlot> =
-        slots.filter { it.intersects(l, t, r, b) }
+    /**
+     * الصفحات المرئية في مستطيل من مساحة المستند.
+     *
+     * الصفحات مرتبة على محور واحد؛ لذلك لا نمسح مستنداً من مئات الصفحات مع
+     * كل إطار لمس. البحث الثنائي يحدد نافذة صغيرة ثم يفحص تقاطعها فقط.
+     */
+    fun visible(l: Float, t: Float, r: Float, b: Float): List<PageSlot> {
+        if (slots.isEmpty()) return emptyList()
+        val start = when (flow) {
+            PageFlow.VERTICAL -> firstGreaterThan(t) { it.bottom }
+            PageFlow.HORIZONTAL -> firstGreaterThan(l) { it.right }
+        }
+        val end = when (flow) {
+            PageFlow.VERTICAL -> firstAtLeast(b) { it.top }
+            PageFlow.HORIZONTAL -> firstAtLeast(r) { it.left }
+        }
+        if (start >= end) return emptyList()
+        return slots.subList(start, end).filter { it.intersects(l, t, r, b) }
+    }
 
-    /** الصفحة اللي مركز الشاشة واقع فيها — دي اللي بنعتبرها "الصفحة الحالية". */
-    fun pageAt(x: Float, y: Float): Int =
-        slots.firstOrNull { x >= it.left && x <= it.right && y >= it.top && y <= it.bottom }?.index
-            ?: slots.minByOrNull { slot ->
-                val dx = (x - (slot.left + slot.size.width / 2))
-                val dy = (y - (slot.top + slot.size.height / 2))
-                dx * dx + dy * dy
-            }?.index ?: 0
+    /** الصفحة التي يقع فيها مركز الشاشة، مع فحص الجيران فقط بدلاً من مسح كل المستند. */
+    fun pageAt(x: Float, y: Float): Int {
+        if (slots.isEmpty()) return 0
+        val pivot = when (flow) {
+            PageFlow.VERTICAL -> firstGreaterThan(y) { it.bottom }
+            PageFlow.HORIZONTAL -> firstGreaterThan(x) { it.right }
+        }.coerceIn(0, slots.lastIndex)
+        val from = (pivot - 1).coerceAtLeast(0)
+        val to = (pivot + 1).coerceAtMost(slots.lastIndex)
+        for (i in from..to) {
+            val slot = slots[i]
+            if (x >= slot.left && x <= slot.right && y >= slot.top && y <= slot.bottom) return slot.index
+        }
+        return slots[pivot].index
+    }
+
+    private fun firstAtLeast(value: Float, coordinate: (PageSlot) -> Float): Int {
+        var low = 0
+        var high = slots.size
+        while (low < high) {
+            val mid = (low + high) ushr 1
+            if (coordinate(slots[mid]) < value) low = mid + 1 else high = mid
+        }
+        return low
+    }
+
+    private fun firstGreaterThan(value: Float, coordinate: (PageSlot) -> Float): Int {
+        var low = 0
+        var high = slots.size
+        while (low < high) {
+            val mid = (low + high) ushr 1
+            if (coordinate(slots[mid]) <= value) low = mid + 1 else high = mid
+        }
+        return low
+    }
 
     companion object {
         const val GAP_PT = 16f
@@ -221,7 +265,7 @@ class PageLayout(
                 y += s.height + GAP_PT
                 slot
             }
-            return PageLayout(slots, width, (y - GAP_PT).coerceAtLeast(0f))
+            return PageLayout(slots, width, (y - GAP_PT).coerceAtLeast(0f), PageFlow.VERTICAL)
         }
 
         /** أفقي: الصفحات متمركزة رأسياً على أطول صفحة. */
@@ -233,7 +277,7 @@ class PageLayout(
                 x += s.width + GAP_PT
                 slot
             }
-            return PageLayout(slots, (x - GAP_PT).coerceAtLeast(0f), height)
+            return PageLayout(slots, (x - GAP_PT).coerceAtLeast(0f), height, PageFlow.HORIZONTAL)
         }
 
         /**
@@ -277,7 +321,9 @@ class PageLayout(
                 }
                 y += spreadHeight + GAP_PT
             }
-            return PageLayout(slots, maxWidth, (y - GAP_PT).coerceAtLeast(0f))
+            return PageLayout(slots, maxWidth, (y - GAP_PT).coerceAtLeast(0f), PageFlow.VERTICAL)
         }
     }
 }
+
+enum class PageFlow { VERTICAL, HORIZONTAL }

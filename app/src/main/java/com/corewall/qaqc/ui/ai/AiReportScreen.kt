@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.ai.model.ReportKind
-import com.corewall.qaqc.ui.notes.NoteContent
 import com.corewall.qaqc.ui.theme.LocalSrtColors
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
@@ -143,8 +142,7 @@ fun AiReportScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.padding(Space.lg)) {
-                    // نعرضه بالماركداون الموجود في التطبيق
-                    NoteContent(markdown = r.markdown)
+                    Text(r.markdown, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             Spacer(Modifier.height(Space.xl))

@@ -374,6 +374,81 @@ interface AiAnalysisDao {
 }
 
 @Dao
+interface AgentExecutionDao {
+    @Query("SELECT * FROM agent_execution_plans WHERE level = :level ORDER BY updatedAt DESC")
+    fun observePlans(level: String): Flow<List<AgentExecutionPlanEntity>>
+
+    @Query("SELECT * FROM agent_execution_steps WHERE planId = :planId ORDER BY ordinal, id")
+    fun observeSteps(planId: Long): Flow<List<AgentExecutionStepEntity>>
+
+    @Query("SELECT * FROM agent_execution_steps WHERE id = :id LIMIT 1")
+    suspend fun step(id: Long): AgentExecutionStepEntity?
+
+    @Query("SELECT * FROM agent_execution_steps WHERE planId = :planId ORDER BY ordinal, id")
+    suspend fun stepsForPlan(planId: Long): List<AgentExecutionStepEntity>
+
+    @Insert
+    suspend fun insertPlan(entity: AgentExecutionPlanEntity): Long
+
+    @Insert
+    suspend fun insertSteps(entities: List<AgentExecutionStepEntity>): List<Long>
+
+    @Insert
+    suspend fun insertAudit(entity: AgentActionAuditEntity): Long
+
+    @Query("UPDATE agent_execution_plans SET status = :status, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updatePlanStatus(id: Long, status: String, updatedAt: Long)
+
+    @Query("UPDATE agent_execution_steps SET status = :status, result = :result, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateStepStatus(id: Long, status: String, result: String, updatedAt: Long)
+
+    @Query("SELECT * FROM agent_action_audit WHERE level = :level ORDER BY at DESC LIMIT :limit")
+    suspend fun latestAudit(level: String, limit: Int): List<AgentActionAuditEntity>
+}
+
+@Dao
+interface CreativeDocumentDao {
+    @Query("SELECT * FROM creative_documents WHERE level = :level AND status != 'ARCHIVED' ORDER BY updatedAt DESC")
+    fun observeForLevel(level: String): Flow<List<CreativeDocumentEntity>>
+
+    @Query("SELECT * FROM creative_documents WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): CreativeDocumentEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: CreativeDocumentEntity): Long
+
+    @Insert
+    suspend fun insertExport(entity: CreativeDocumentExportEntity): Long
+
+    @Query("SELECT * FROM creative_document_exports WHERE documentId = :documentId ORDER BY createdAt DESC")
+    suspend fun exportsForDocument(documentId: Long): List<CreativeDocumentExportEntity>
+
+    @Query("UPDATE creative_documents SET status = :status, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String, updatedAt: Long)
+}
+
+@Dao
+interface CadMeasurementDao {
+    @Query("SELECT * FROM cad_measurements WHERE filePath = :filePath ORDER BY id")
+    fun observeMeasurements(filePath: String): Flow<List<CadMeasurementEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMeasurement(entity: CadMeasurementEntity): Long
+
+    @Query("DELETE FROM cad_measurements WHERE id = :id")
+    suspend fun deleteMeasurement(id: Long)
+
+    @Query("DELETE FROM cad_measurements WHERE filePath = :filePath")
+    suspend fun deleteAllMeasurements(filePath: String)
+
+    @Query("SELECT * FROM cad_drawing_settings WHERE filePath = :filePath LIMIT 1")
+    suspend fun settings(filePath: String): CadDrawingSettingsEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSettings(entity: CadDrawingSettingsEntity)
+}
+
+@Dao
 interface DocumentDao {
     @Query("SELECT * FROM documents ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<DocumentEntity>>

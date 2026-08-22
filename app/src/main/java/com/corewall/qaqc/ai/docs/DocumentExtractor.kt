@@ -5,6 +5,8 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.util.Base64
 import com.corewall.qaqc.ui.cad.DxfParser
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -25,6 +27,8 @@ object DocumentExtractor {
 
     /** حدود الصور: عدد الصفحات ودقّتها وميزانية الحجم الكلي للطلب. */
     private const val MAX_PDF_PAGES = 4
+    private const val MAX_TEXT_PDF_PAGES = 20
+    private const val MIN_PDF_TEXT_CHARS = 80
     private const val RENDER_WIDTH = 1100
     private const val JPEG_QUALITY = 65
 
@@ -53,7 +57,11 @@ object DocumentExtractor {
                 .getOrElse { Content.Unsupported("تعذّر قراءة ملف الوورد") }
             "dxf" -> runCatching { Content.Text(readDxf(file).take(MAX_CHARS), "DRAWING") as Content }
                 .getOrElse { Content.Unsupported("تعذّر قراءة ملف DXF") }
-            "pdf" -> runCatching { Content.Images(renderPdf(file), "PDF") as Content }
+            "pdf" -> runCatching {
+                val text = runCatching { extractPdfText(file) }.getOrDefault("")
+                if (text.length >= MIN_PDF_TEXT_CHARS) Content.Text(text, "PDF_TEXT") as Content
+                else Content.Images(renderPdf(file), "PDF_SCAN") as Content
+            }
                 .getOrElse { Content.Unsupported("تعذّر فتح الـPDF") }
             in IMAGE_EXT -> runCatching { Content.Images(listOf(encodeImage(file)), "PHOTO") as Content }
                 .getOrElse { Content.Unsupported("تعذّر قراءة الصورة") }
@@ -140,7 +148,7 @@ object DocumentExtractor {
     // ---------------------------------------------------------------- PDF / صور
 
     /**
-     * بنرندر أول صفحات بس، وبنقف لو تعدّينا ميزانية الحجم —
+     * بنرندر صفحات ممثلة من بداية ووسط ونهاية الملف، وبنقف لو تعدّينا ميزانية الحجم —
      * الطلب اللي بيتخطّى الميزانية بيوقّع الذاكرة بدل ما يتحلّل.
      */
     private fun renderPdf(file: File): List<String> {
@@ -148,7 +156,12 @@ object DocumentExtractor {
         return PdfRenderer(pfd).use { renderer ->
             val pages = mutableListOf<String>()
             var budget = IMAGE_BUDGET_CHARS
-            for (i in 0 until minOf(renderer.pageCount, MAX_PDF_PAGES)) {
+            val pageIndices = if (renderer.pageCount <= MAX_PDF_PAGES) {
+                (0 until renderer.pageCount).toList()
+            } else {
+                listOf(0, renderer.pageCount / 3, (renderer.pageCount * 2) / 3, renderer.pageCount - 1).distinct()
+            }
+            for (i in pageIndices) {
                 if (budget <= 0) break
                 val encoded = renderer.openPage(i).use { page ->
                     val h = (RENDER_WIDTH.toFloat() / page.width * page.height).toInt().coerceAtLeast(1)
@@ -164,6 +177,15 @@ object DocumentExtractor {
             if (pages.isEmpty()) error("مفيش صفحات اتقرت من الـPDF")
             pages
         }.also { runCatching { pfd.close() } }
+    }
+
+    /** PDF النصي لا يحتاج رؤية: نحفظ أول 20 صفحة كحد آمن للذاكرة والطلب. */
+    private fun extractPdfText(file: File): String = PDDocument.load(file).use { document ->
+        PDFTextStripper().apply {
+            startPage = 1
+            endPage = minOf(document.numberOfPages, MAX_TEXT_PDF_PAGES)
+            sortByPosition = true
+        }.getText(document).trim().take(MAX_CHARS)
     }
 
     private fun encodeImage(file: File): String {

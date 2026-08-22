@@ -68,7 +68,10 @@ data class PendingAction(
     val id: Long,
     val action: AgentAction,
     val tool: AgentTool,
-    val label: String
+    val label: String,
+    /** رابط اختياري إلى الخطة الدائمة التي نشأ منها الإجراء. */
+    val planId: Long? = null,
+    val stepId: Long? = null
 )
 
 /** سطر في سجل الإجراءات — كل حاجة الوكيل عملها، ظاهرة وقابلة للمراجعة. */

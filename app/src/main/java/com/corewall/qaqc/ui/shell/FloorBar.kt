@@ -1,6 +1,7 @@
 package com.corewall.qaqc.ui.shell
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,14 +65,17 @@ fun FloorBar(
     onNotifications: (() -> Unit)? = null
 ) {
     val c = LocalCwColors.current
-    Surface(color = c.surface, modifier = modifier.fillMaxWidth()) {
+    Surface(color = c.background, modifier = modifier.fillMaxWidth()) {
         Column {
+            Spacer(Modifier.statusBarsPadding())
+            Surface(
+                color = c.surface,
+                shape = Radius.shapeXl,
+                border = BorderStroke(Stroke.hair, c.outline.copy(alpha = 0.78f)),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Space.screen, vertical = Space.xs)
+            ) {
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .heightIn(min = Sizes.topBar)
-                    .padding(horizontal = Space.sm),
+                Modifier.fillMaxWidth().heightIn(min = Sizes.topBar).padding(horizontal = Space.sm),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Space.xs)
             ) {
@@ -145,12 +149,7 @@ fun FloorBar(
                     }
                 }
             }
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(Stroke.hair)
-                    .background(c.divider)
-            )
+            }
         }
     }
 }
@@ -171,10 +170,10 @@ private fun LevelChip(
     val c = LocalCwColors.current
     Row(
         modifier
-            .clip(Radius.shapeMd)
+            .clip(Radius.shapeLg)
             .clickable(role = Role.Button, onClick = onClick)
             .heightIn(min = Sizes.touch)
-            .padding(horizontal = Space.sm),
+            .padding(horizontal = Space.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.xs)
     ) {

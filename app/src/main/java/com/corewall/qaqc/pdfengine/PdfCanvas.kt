@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -105,16 +106,36 @@ fun PdfCanvas(
      * لازم نعيد الحساب من الأول بمقاسات حقيقية.
      */
     LaunchedEffect(engine, session, measured) {
-        snapshotFlow { state.revision to state.mode }
+        var settledViewportRevision = -1
+        var lastInteractiveSyncMs = Long.MIN_VALUE
+        // وصول بلاطة يرسم نفسه من SnapshotStateMap داخل Canvas، لكنه لا
+        // يغير viewport ولا يحتاج إعادة جدولة حساب الطلبات.
+        snapshotFlow { PdfRenderDemand(state.revision, state.mode, state.interacting) }
             .conflate()
-            .collect {
-                // المعاينة الأول في الطابور: صفحة طرية أحسن من صفحة بيضا
-                val previews = previewTilesFor(state, session)
-                val required = state.requiredTiles(session)
-                val all = ArrayList<TileKey>(previews.size + required.size)
-                all.addAll(previews)
-                all.addAll(required)
-                engine.sync(all)
+            .collectLatest { demand ->
+                if (demand.interacting) {
+                    // الحركة تصل 60–120 مرة في الثانية. حساب grids + Set + إلغاء طابور في كل مرة
+                    // يزاحم Compose على خيط الواجهة؛ نحدّث المعاينة عند بدء اللمس ثم دورياً فقط.
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (now - lastInteractiveSyncMs >= PREVIEW_SYNC_INTERVAL_MS) {
+                        engine.sync(previewTilesFor(state, session), maxQueued = MAX_QUEUED_PREVIEW)
+                        lastInteractiveSyncMs = now
+                    }
+                    settledViewportRevision = -1
+                } else {
+                    // المعاينة الأول في الطابور: صفحة طرية أحسن من صفحة بيضا.
+                    val previews = previewTilesFor(state, session)
+                    // يترك الإيماءة تنتهي فعلاً قبل طلب البلاطات الحادة. وصول بلاطة لاحقة لا يعيد التأخير.
+                    if (demand.viewportRevision != settledViewportRevision) {
+                        kotlinx.coroutines.delay(SHARP_RENDER_SETTLE_MS)
+                        settledViewportRevision = demand.viewportRevision
+                    }
+                    val required = state.requiredTiles(session)
+                    val all = ArrayList<TileKey>(previews.size + required.size)
+                    all.addAll(previews)
+                    all.addAll(required)
+                    engine.sync(all)
+                }
             }
     }
 
@@ -217,6 +238,15 @@ private suspend fun fling(state: PdfViewerState, vx: Float, vy: Float) = corouti
 }
 
 private const val MIN_FLING = 80f
+private const val SHARP_RENDER_SETTLE_MS = 90L
+private const val MAX_QUEUED_PREVIEW = 4
+private const val PREVIEW_SYNC_INTERVAL_MS = 72L
+
+private data class PdfRenderDemand(
+    val viewportRevision: Int,
+    val mode: ViewMode,
+    val interacting: Boolean
+)
 
 /**
  * نقرتين = دورة تكبير: ملء العرض ← ١٠٠٪ ← ٢٠٠٪ ← ملء العرض.
@@ -299,7 +329,18 @@ private fun DrawScope.drawPages(
             pageLeft, pageTop, state.zoom, FilterQuality.Low
         )
 
-        // ٢) الحادّة فوقها (لو مستوى مختلف)
+        // ٢) مستوى وسيط: عند عبور حد تكبير، بلاطات المستوى السابق تكون غالباً
+        // جاهزة في الكاش. رسمها فوق المعاينة يعطي وضوحاً فورياً بدلاً من انتظار
+        // المستوى الجديد، ثم يستبدله المستوى الحاد عند وصوله.
+        val transitionalLevel = (sharpLevel - 1).coerceAtLeast(previewLevel)
+        if (transitionalLevel != previewLevel && transitionalLevel != sharpLevel) {
+            drawTileLayer(
+                engine, slot.index, transitionalLevel, size,
+                pageLeft, pageTop, state.zoom, FilterQuality.Low
+            )
+        }
+
+        // ٣) الحادّة فوقها (لو مستوى مختلف)
         if (sharpLevel != previewLevel) {
             drawTileLayer(
                 engine, slot.index, sharpLevel, size,

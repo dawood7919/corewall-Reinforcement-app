@@ -2,6 +2,7 @@ package com.corewall.qaqc.ui.cad
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -11,37 +12,82 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /** نقطة في إحداثيات الرسم (وحدات CAD — عادة متر أو مم حسب الملف). */
+@Serializable
 data class CadPoint(val x: Double, val y: Double) {
     fun toOffset() = Offset(x.toFloat(), y.toFloat())
     fun distanceTo(o: CadPoint) = hypot(o.x - x, o.y - y)
 }
 
+/** خصائص العرض المنقولة من CAD؛ لا تدخل في حساب الإحداثيات أو دقة القياس. */
+data class CadVisualStyle(
+    val colorIndex: Int = 256,
+    val trueColor: Long? = null,
+    val lineType: String = "BYLAYER",
+    val lineWeight: Int = 0
+)
+
 sealed class CadEntity {
     abstract val layer: String
-    data class Line(val a: CadPoint, val b: CadPoint, override val layer: String) : CadEntity()
+    abstract val style: CadVisualStyle
+    data class Line(
+        val a: CadPoint,
+        val b: CadPoint,
+        override val layer: String,
+        override val style: CadVisualStyle = CadVisualStyle()
+    ) : CadEntity()
     data class Polyline(
         val points: List<CadPoint>,
         val closed: Boolean,
-        override val layer: String
+        override val layer: String,
+        override val style: CadVisualStyle = CadVisualStyle()
     ) : CadEntity()
-    data class Circle(val center: CadPoint, val radius: Double, override val layer: String) : CadEntity()
+    data class Circle(
+        val center: CadPoint,
+        val radius: Double,
+        override val layer: String,
+        override val style: CadVisualStyle = CadVisualStyle()
+    ) : CadEntity()
     data class Arc(
         val center: CadPoint,
         val radius: Double,
         val startDeg: Double,
         val endDeg: Double,
-        override val layer: String
+        override val layer: String,
+        override val style: CadVisualStyle = CadVisualStyle()
+    ) : CadEntity()
+    /** محوران متجهان، لذلك تبقى القطوع الناقصة صحيحة بعد INSERT غير منتظم المقياس. */
+    data class Ellipse(
+        val center: CadPoint,
+        val majorAxis: CadPoint,
+        val minorAxis: CadPoint,
+        val startRad: Double = 0.0,
+        val endRad: Double = Math.PI * 2,
+        override val layer: String,
+        override val style: CadVisualStyle = CadVisualStyle()
+    ) : CadEntity()
+    data class PointEnt(
+        val point: CadPoint,
+        override val layer: String,
+        override val style: CadVisualStyle = CadVisualStyle()
     ) : CadEntity()
     data class TextEnt(
         val position: CadPoint,
         val height: Double,
         val value: String,
         val rotationDeg: Double,
-        override val layer: String
+        override val layer: String,
+        override val style: CadVisualStyle = CadVisualStyle()
     ) : CadEntity()
 }
 
-data class CadLayer(val name: String, val colorIndex: Int = 7, var visible: Boolean = true)
+data class CadLayer(
+    val name: String,
+    val colorIndex: Int = 7,
+    val trueColor: Long? = null,
+    val lineType: String = "CONTINUOUS",
+    val lineWeight: Int = 0,
+    var visible: Boolean = true
+)
 
 data class CadDrawing(
     val entities: List<CadEntity>,
@@ -49,9 +95,23 @@ data class CadDrawing(
     val bounds: Rect,
     val insUnits: Int = 0
 ) {
-    fun visibleEntities(): List<CadEntity> {
-        val vis = layers.filter { it.visible }.map { it.name }.toSet()
-        return entities.filter { it.layer in vis || layers.none { l -> l.name == it.layer } }
+    fun visibleEntities(activeLayers: List<CadLayer> = layers): List<CadEntity> {
+        val vis = activeLayers.filter { it.visible }.map { it.name }.toSet()
+        return entities.filter { it.layer in vis || activeLayers.none { layer -> layer.name == it.layer } }
+    }
+
+    fun resolvedStyle(entity: CadEntity): CadVisualStyle {
+        val layerStyle = layers.firstOrNull { it.name == entity.layer }
+        val direct = entity.style
+        val usesLayerColor = direct.colorIndex == 0 || direct.colorIndex == 256
+        val usesLayerType = direct.lineType.equals("BYLAYER", ignoreCase = true) ||
+            direct.lineType.equals("BYBLOCK", ignoreCase = true) || direct.lineType.isBlank()
+        return direct.copy(
+            colorIndex = if (usesLayerColor) layerStyle?.colorIndex ?: 7 else direct.colorIndex,
+            trueColor = if (usesLayerColor) layerStyle?.trueColor ?: direct.trueColor else direct.trueColor,
+            lineType = if (usesLayerType) layerStyle?.lineType ?: "CONTINUOUS" else direct.lineType,
+            lineWeight = if (direct.lineWeight <= 0) layerStyle?.lineWeight ?: 0 else direct.lineWeight
+        )
     }
 }
 
@@ -198,6 +258,18 @@ fun computeBounds(entities: List<CadEntity>): Rect {
                 acc(CadPoint(e.center.x - e.radius, e.center.y - e.radius))
                 acc(CadPoint(e.center.x + e.radius, e.center.y + e.radius))
             }
+            is CadEntity.Ellipse -> {
+                var end = e.endRad
+                if (end < e.startRad) end += Math.PI * 2
+                repeat(37) { step ->
+                    val a = e.startRad + (end - e.startRad) * step / 36.0
+                    acc(CadPoint(
+                        e.center.x + e.majorAxis.x * cos(a) + e.minorAxis.x * sin(a),
+                        e.center.y + e.majorAxis.y * cos(a) + e.minorAxis.y * sin(a)
+                    ))
+                }
+            }
+            is CadEntity.PointEnt -> acc(e.point)
             is CadEntity.TextEnt -> acc(e.position)
         }
     }

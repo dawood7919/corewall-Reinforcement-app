@@ -21,6 +21,9 @@ import com.corewall.qaqc.data.db.PdfMeasurementEntity
 import com.corewall.qaqc.data.db.PdfScaleEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
+import com.corewall.qaqc.creative.CreativeDocumentContent
+import com.corewall.qaqc.creative.CreativePdfExporter
+import com.corewall.qaqc.creative.CreativeTemplate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.corewall.qaqc.data.model.PlanElement
@@ -43,6 +46,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -106,6 +110,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val repo: AppRepository = (app as CoreWallApp).repository
     val files: FilesManager = (app as CoreWallApp).filesManager
+    private val agentExecutionStore = (app as CoreWallApp).agentExecutionStore
+    private val creativeDocumentStore = (app as CoreWallApp).creativeDocumentStore
     private val settingsStore: SettingsStore = (app as CoreWallApp).settingsStore
 
     val planData = repo.planData
@@ -398,6 +404,117 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openTakeoffEditor(drawingId: Long, path: String, name: String) =
         navigator.push(Dest.TakeoffEditor(drawingId, path, name))
 
+    // ══════════════════════════════════════════════ استوديو الإنشاء
+
+    val creativeDocuments by lazy {
+        currentLevel
+            .flatMapLatest { creativeDocumentStore.documents(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+
+    private val _editingCreativeDocument = MutableStateFlow<com.corewall.qaqc.data.db.CreativeDocumentEntity?>(null)
+    val editingCreativeDocument: StateFlow<com.corewall.qaqc.data.db.CreativeDocumentEntity?> = _editingCreativeDocument
+    private val _creativeExportState = MutableStateFlow<String?>(null)
+    val creativeExportState: StateFlow<String?> = _creativeExportState
+
+    fun openCreativeStudio() = navigator.push(Dest.CreativeStudio)
+
+    fun createCreativeDocument(template: String, title: String = CreativeTemplate.label(template)) {
+        viewModelScope.launch {
+            val id = creativeDocumentStore.create(_currentLevel.value, template, title)
+            openCreativeDocument(id)
+        }
+    }
+
+    fun openCreativeDocument(id: Long) {
+        viewModelScope.launch {
+            _editingCreativeDocument.value = creativeDocumentStore.document(id)
+            if (_editingCreativeDocument.value != null) navigator.push(Dest.CreativeEditor)
+        }
+    }
+
+    fun closeCreativeDocument() {
+        _editingCreativeDocument.value = null
+        _creativeExportState.value = null
+        navigator.dismiss(Dest.CreativeEditor)
+    }
+
+    fun saveCreativeDocument(content: CreativeDocumentContent) {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            creativeDocumentStore.update(current, content)
+            _editingCreativeDocument.value = creativeDocumentStore.document(current.id)
+        }
+    }
+
+    fun creativeDocumentContent(entity: com.corewall.qaqc.data.db.CreativeDocumentEntity): CreativeDocumentContent =
+        creativeDocumentStore.decode(entity)
+
+    fun exportCreativeDocumentPdf() {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            _creativeExportState.value = "جارٍ إنشاء PDF…"
+            val content = creativeDocumentStore.decode(current)
+            CreativePdfExporter.export(appContext, current.id, content)
+                .onSuccess { file ->
+                    creativeDocumentStore.recordExport(current.id, "PDF", file.absolutePath)
+                    _creativeExportState.value = "تم حفظ PDF: ${file.name}"
+                }
+                .onFailure { error -> _creativeExportState.value = "تعذّر التصدير: ${error.message ?: "خطأ غير معروف"}" }
+        }
+    }
+
+    fun exportCreativeDocumentImage() = exportCreative("IMAGE") { _, content ->
+        com.corewall.qaqc.creative.CreativeSecondaryExporters.image(appContext, content).getOrThrow()
+    }
+
+    fun exportCreativeDocumentWord() = exportCreative("WORD") { _, content ->
+        com.corewall.qaqc.creative.CreativeSecondaryExporters.wordCompatible(appContext, content).getOrThrow()
+    }
+
+    fun exportCreativeDocumentPackage() {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            _creativeExportState.value = "جارٍ إنشاء الحزمة…"
+            val exports = creativeDocumentStore.exports(current.id).map { java.io.File(it.path) }
+            com.corewall.qaqc.creative.CreativeSecondaryExporters.packageFiles(appContext, current.title, exports)
+                .onSuccess { file ->
+                    creativeDocumentStore.recordExport(current.id, "ZIP", file.absolutePath)
+                    _creativeExportState.value = "تم حفظ الحزمة: ${file.name}"
+                }
+                .onFailure { error -> _creativeExportState.value = "تعذّر إنشاء الحزمة: ${error.message ?: "خطأ غير معروف"}" }
+        }
+    }
+
+    fun shareLatestCreativeExport() {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            val latest = creativeDocumentStore.exports(current.id).firstOrNull()
+            if (latest == null) {
+                _creativeExportState.value = "صدّر ملفاً أولاً ثم شاركه"
+                return@launch
+            }
+            val shared = files.share(java.io.File(latest.path))
+            _creativeExportState.value = if (shared) "تم فتح شاشة المشاركة" else "تعذّر فتح شاشة المشاركة"
+        }
+    }
+
+    private fun exportCreative(
+        format: String,
+        work: suspend (com.corewall.qaqc.data.db.CreativeDocumentEntity, CreativeDocumentContent) -> java.io.File
+    ) {
+        val current = _editingCreativeDocument.value ?: return
+        viewModelScope.launch {
+            _creativeExportState.value = "جارٍ إنشاء الملف…"
+            runCatching { work(current, creativeDocumentStore.decode(current)) }
+                .onSuccess { file ->
+                    creativeDocumentStore.recordExport(current.id, format, file.absolutePath)
+                    _creativeExportState.value = "تم حفظ ${if (format == "IMAGE") "الصورة" else "مستند Word"}: ${file.name}"
+                }
+                .onFailure { error -> _creativeExportState.value = "تعذّر التصدير: ${error.message ?: "خطأ غير معروف"}" }
+        }
+    }
+
     // ══════════════════════════════════════════════ نظام الملاحظات
 
     /**
@@ -438,6 +555,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _editingNote.value = draft.copy(id = id)
             navigator.push(Dest.NoteEditor)
         }
+    }
+
+    fun createNoteForCapture(action: NotesStore.CaptureAction, elementId: String = FLOOR_NOTE_ID) {
+        notesStore.requestCapture(action)
+        createNote(NoteEntity.KIND_TEXT, elementId)
     }
 
     private val _editingNote = MutableStateFlow<NoteEntity?>(null)
@@ -711,12 +833,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!cfg.isConfigured) { onDone("ضيف مفتاح API من إعدادات المساعد الذكي الأول."); return }
         viewModelScope.launch {
             _analyzing.value = _analyzing.value + 1
-            val id = runCatching { aiEngine.register(file, _currentLevel.value) }.getOrNull()
+            // التحليل اليدوي قرار صريح: النتيجة تبقى في ذاكرة الدور المفتوح
+            // حتى لو ملف PDF نفسه يذكر دوراً آخر في عنوانه أو محتواه.
+            val id = runCatching { aiEngine.register(file, _currentLevel.value, forceLevel = true) }.getOrNull()
             if (id == null) { _analyzing.value = 0; onDone("تعذّر تسجيل الملف."); return@launch }
             // موجود قبل كده؟ رجّعه لقائمة الانتظار عشان يتحلّل من أول وجديد
             runCatching { aiEngine.reset(id) }
             val choice = resolvePrompt(promptId)
-            val result = runCatching { aiEngine.analyze(cfg, id, levels, choice) }.getOrNull()
+            val result = runCatching { aiEngine.analyze(cfg, id, levels, choice, preserveLevel = true) }.getOrNull()
             _analyzing.value = 0
             loadKnowledge()
             loadProjectKnowledge()
@@ -856,7 +980,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val choice = if (promptId != null) resolvePrompt(promptId)
             else aiEngine.promptFor(remembered)
             runCatching { aiEngine.reset(docId) }
-            runCatching { aiEngine.analyze(cfg, docId, levels, choice) }
+            runCatching { aiEngine.analyze(cfg, docId, levels, choice, preserveLevel = true) }
             _analyzing.value = 0
             loadKnowledge()
         }
@@ -990,8 +1114,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 aiEngine.saveTurn(level, q, run.answer)
                 if (run.executed.isNotEmpty()) {
                     _actionLog.value = (run.executed.reversed() + _actionLog.value).take(60)
+                    run.executed.forEach { action ->
+                        agentExecutionStore.audit(
+                            level = level,
+                            tool = action.tool,
+                            detail = action.detail,
+                            result = if (action.ok) "تمت القراءة أو التنقل" else "تعذّر التنفيذ",
+                            ok = action.ok,
+                            auto = action.auto
+                        )
+                    }
                 }
-                _pendingActions.value = run.pending
+                val created = if (run.pending.isNotEmpty()) {
+                    agentExecutionStore.createPlan(level, q, run.pending)
+                } else null
+                _pendingActions.value = created?.let { plan ->
+                    run.pending.mapIndexed { index, pending ->
+                        pending.copy(planId = plan.planId, stepId = plan.stepIds.getOrNull(index))
+                    }
+                } ?: emptyList()
+                if (created != null) _agentStatus.value = "خطة تنفيذ جاهزة للمراجعة"
+                loadAgentAudit()
             }.onFailure { e ->
                 _chatError.value = e.aiMessage()
             }
@@ -1063,12 +1206,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }.isSuccess
 
-        override suspend fun addComment(elementId: String, text: String): Boolean = runCatching {
-            repo.addComment(elementId, _currentLevel.value, text)
-        }.isSuccess
+        override suspend fun completeTask(id: Long): Boolean = runCatching {
+            val task = this@MainViewModel.tasks.value.firstOrNull { it.id == id } ?: return@runCatching false
+            repo.upsertTask(task.copy(done = true, completedAt = System.currentTimeMillis()))
+            true
+        }.getOrDefault(false)
 
-        override suspend fun setInspection(elementId: String, status: String): Boolean = runCatching {
-            repo.setInspection(elementId, _currentLevel.value, status)
+        override suspend fun addNote(title: String, body: String, level: String): Boolean = runCatching {
+            val now = System.currentTimeMillis()
+            repo.saveNote(
+                NoteEntity(
+                    elementId = FLOOR_NOTE_ID,
+                    level = level,
+                    title = title,
+                    body = body,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            )
+            true
+        }.getOrDefault(false)
+
+        override suspend fun createCreativeDocument(title: String, template: String, level: String): Long? = runCatching {
+            creativeDocumentStore.create(level, template, title)
+        }.getOrNull()
+
+        override suspend fun exportCreativeDocumentPdf(documentId: Long): String? = runCatching {
+            val document = creativeDocumentStore.document(documentId) ?: return@runCatching null
+            CreativePdfExporter.export(appContext, document.id, creativeDocumentStore.decode(document)).getOrThrow().also { file ->
+                creativeDocumentStore.recordExport(document.id, "PDF", file.absolutePath)
+            }.absolutePath
+        }.getOrNull()
+
+        override suspend fun addComment(elementId: String, text: String, level: String): Boolean = runCatching {
+            repo.addComment(elementId, level, text)
+            }.isSuccess
+
+        override suspend fun setInspection(elementId: String, status: String, level: String): Boolean = runCatching {
+            repo.setInspection(elementId, level, status)
         }.isSuccess
 
         override suspend fun deleteTask(id: Long): Boolean = runCatching { repo.deleteTask(id) }.isSuccess
@@ -1097,6 +1272,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         MutableStateFlow<List<com.corewall.qaqc.ai.agent.ActionLogEntry>>(emptyList())
     val actionLog: StateFlow<List<com.corewall.qaqc.ai.agent.ActionLogEntry>> = _actionLog
 
+    /** خطط قابلة للمراجعة تعيش في Room ولا تختفي عند إغلاق التطبيق. */
+    val executionPlans by lazy {
+        currentLevel
+            .flatMapLatest { agentExecutionStore.plans(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+
+    fun executionSteps(planId: Long) = agentExecutionStore.steps(planId)
+
+    private val _agentAudit = MutableStateFlow<List<com.corewall.qaqc.data.db.AgentActionAuditEntity>>(emptyList())
+    val agentAudit: StateFlow<List<com.corewall.qaqc.data.db.AgentActionAuditEntity>> = _agentAudit
+
+    fun loadAgentAudit() {
+        viewModelScope.launch {
+            _agentAudit.value = withContext(Dispatchers.IO) {
+                agentExecutionStore.latestAudit(_currentLevel.value)
+            }
+        }
+    }
+
     private val _copilotOpen = MutableStateFlow(false)
     val copilotOpen: StateFlow<Boolean> = _copilotOpen
     fun setCopilotOpen(open: Boolean) { _copilotOpen.value = open }
@@ -1123,6 +1318,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun confirmAction(id: Long) {
         val p = _pendingActions.value.firstOrNull { it.id == id } ?: return
         _pendingActions.value = _pendingActions.value.filterNot { it.id == id }
+        if (p.planId != null && p.stepId != null) {
+            executePlanStep(p.planId, p.stepId)
+            return
+        }
         viewModelScope.launch {
             val executor = com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine)
             val outcome = executor.run(p.action)
@@ -1141,6 +1340,72 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             loadKnowledge()
             refreshSuggestions()
         }
+    }
+
+    /** موافقة صريحة على خطوة واحدة؛ الحذف لا يدخل في تنفيذ جماعي. */
+    fun executePlanStep(planId: Long, stepId: Long) {
+        viewModelScope.launch {
+            executePersistedStep(planId, stepId)
+            loadKnowledge(); loadAgentAudit(); refreshSuggestions()
+        }
+    }
+
+    /** اعتماد الخطة ينفذ الأوامر الكتابية فقط؛ الأوامر الحساسة والحذف تبقى منفصلة. */
+    fun executePlan(planId: Long) {
+        viewModelScope.launch {
+            val steps = agentExecutionStore.stepsForPlan(planId)
+            val eligible = steps.filter { it.status == "PENDING" && it.risk == com.corewall.qaqc.ai.agent.ToolRisk.WRITE.name }
+            agentExecutionStore.markPlan(planId, "APPROVED")
+            eligible.forEach { step -> executePersistedStep(planId, step.id) }
+            if (eligible.isEmpty()) finishPlan(planId)
+            loadKnowledge(); loadAgentAudit(); refreshSuggestions()
+        }
+    }
+
+    fun dismissPlan(planId: Long) {
+        viewModelScope.launch {
+            agentExecutionStore.markPlan(planId, "DISMISSED")
+            agentExecutionStore.stepsForPlan(planId).filter { it.status == "PENDING" }.forEach {
+                agentExecutionStore.markStep(it.id, "DISMISSED", "ألغى المستخدم الخطة")
+            }
+            loadAgentAudit()
+        }
+    }
+
+    private suspend fun finishPlan(planId: Long) {
+        val steps = agentExecutionStore.stepsForPlan(planId)
+        val status = when {
+            steps.isEmpty() || steps.all { it.status == "DONE" || it.status == "DISMISSED" } -> "DONE"
+            steps.any { it.status == "FAILED" } -> "PARTIAL"
+            else -> "APPROVED"
+        }
+        agentExecutionStore.markPlan(planId, status)
+    }
+
+    private suspend fun executePersistedStep(planId: Long, stepId: Long) {
+        val action = agentExecutionStore.actionForStep(stepId) ?: return
+        val tool = com.corewall.qaqc.ai.agent.AgentTools.find(action.tool) ?: return
+        agentExecutionStore.markPlan(planId, "RUNNING")
+        agentExecutionStore.markStep(stepId, "RUNNING", "جاري التنفيذ")
+        val outcome = com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine).run(action)
+        agentExecutionStore.markStep(stepId, if (outcome.ok) "DONE" else "FAILED", outcome.userMessage.ifBlank { outcome.observation })
+        agentExecutionStore.audit(
+            level = _currentLevel.value,
+            tool = tool.name,
+            detail = action.describe(),
+            result = outcome.userMessage.ifBlank { outcome.observation },
+            ok = outcome.ok,
+            auto = false,
+            planId = planId,
+            stepId = stepId
+        )
+        finishPlan(planId)
+        _actionLog.value = listOf(
+            com.corewall.qaqc.ai.agent.ActionLogEntry(
+                at = System.currentTimeMillis(), tool = tool.name, detail = action.describe(), ok = outcome.ok, auto = false
+            )
+        ) + _actionLog.value
+        _agentStatus.value = outcome.userMessage.ifBlank { null }
     }
 
     fun dismissAction(id: Long) {

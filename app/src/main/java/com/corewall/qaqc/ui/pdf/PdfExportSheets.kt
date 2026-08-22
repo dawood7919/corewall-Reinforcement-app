@@ -59,6 +59,45 @@ import java.io.File
 /** نطاق العملية: الصفحة اللي انت فيها ولا المستند كله. */
 enum class PageScope(val label: String) { CURRENT("الصفحة الحالية"), ALL("كل الصفحات") }
 
+// ══════════════════════════════════════════════════════════ تقسيم الملف
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SplitPdfSheet(
+    pageCount: Int,
+    running: Boolean,
+    onSplit: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = LocalCwColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = c.surface,
+        shape = Radius.sheet
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.lg)
+                .padding(bottom = Space.lg)
+        ) {
+            SheetTitle("تقسيم الملف", "سيتم إنشاء $pageCount ملفاً مستقلاً، ملف واحد لكل صفحة، بجانب المستند الأصلي.")
+            Spacer(Modifier.height(Space.md))
+            CwButton(
+                label = if (running) "بيتم التقسيم…" else "قسّم إلى صفحات",
+                onClick = onSplit,
+                enabled = !running && pageCount > 1,
+                fillWidth = true
+            )
+            if (pageCount <= 1) {
+                Text("الملف يحتوي على صفحة واحدة بالفعل.", style = MaterialTheme.typography.bodySmall, color = c.textTertiary, modifier = Modifier.padding(top = Space.sm))
+            }
+        }
+    }
+}
+
 // ══════════════════════════════════════════════════════════ تصدير صور
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -2,10 +2,12 @@ package com.corewall.qaqc
 
 import com.corewall.qaqc.takeoff.PageGeometry
 import com.corewall.qaqc.takeoff.TakeoffCategory
+import com.corewall.qaqc.takeoff.TakeoffGeometryPart
 import com.corewall.qaqc.takeoff.TakeoffItem
 import com.corewall.qaqc.takeoff.TakeoffMath
 import com.corewall.qaqc.takeoff.TakeoffPoint
 import com.corewall.qaqc.takeoff.TakeoffTool
+import com.corewall.qaqc.takeoff.TakeoffVertexTarget
 import com.corewall.qaqc.takeoff.ViewTransform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -60,6 +62,17 @@ class TakeoffMathTest {
         TakeoffPoint(origin + side, origin + side),
         TakeoffPoint(origin, origin + side)
     )
+
+    @Test
+    fun `measurement completion requires the minimum number of points without clearing valid drafts`() {
+        assertTrue(!TakeoffMath.canCommitMeasurement(TakeoffTool.AREA, 2))
+        assertTrue(TakeoffMath.canCommitMeasurement(TakeoffTool.AREA, 3))
+        assertTrue(!TakeoffMath.canCommitMeasurement(TakeoffTool.LENGTH, 1))
+        assertTrue(TakeoffMath.canCommitMeasurement(TakeoffTool.LENGTH, 2))
+        assertTrue(!TakeoffMath.canCommitMeasurement(TakeoffTool.DIMENSION, 2))
+        assertTrue(TakeoffMath.canCommitMeasurement(TakeoffTool.DIMENSION, 3))
+        assertTrue(TakeoffMath.canCommitMeasurement(TakeoffTool.COUNT, 1))
+    }
 
     // ═════════════════════════════ ١) ثبات القيمة مع التكبير
 
@@ -291,6 +304,12 @@ class TakeoffMathTest {
         assertTrue(!TakeoffMath.pointInRing(TakeoffPoint(0.4, 0.4), lShape))  // في الفراغ جوّه الـL
     }
 
+    @Test
+    fun `area hit test accepts a touch on the visible polygon boundary`() {
+        val shape = item(TakeoffTool.AREA, square(0.20, 0.30))
+        assertTrue(TakeoffMath.hitTest(shape, TakeoffPoint(0.35, 0.20), page, tapRadiusPt = 8.0))
+    }
+
     // ═════════════════════════════ ٦) تعديل الرؤوس
 
     @Test
@@ -307,6 +326,53 @@ class TakeoffMathTest {
         assertEquals(null, TakeoffMath.nearestVertexIndex(shape, TakeoffPoint(0.35, 0.35), page, tapRadiusPt = 10.0))
     }
 
+    @Test
+    fun `vertex target finds a vertex in an accumulated ring`() {
+        val main = square(0.10, 0.10)
+        val added = square(0.60, 0.10)
+        val shape = item(TakeoffTool.AREA, main, extraRings = listOf(added))
+
+        val target = TakeoffMath.nearestVertexTarget(
+            shape, TakeoffPoint(0.60 + 3.0 / page.widthPt, 0.60), page, tapRadiusPt = 10.0
+        )
+
+        assertEquals(TakeoffGeometryPart.EXTRA_RING, target?.part)
+        assertEquals(0, target?.partIndex)
+        assertEquals(0, target?.vertexIndex)
+    }
+
+    @Test
+    fun `editing an added segment preserves the main geometry and other parts`() {
+        val main = listOf(TakeoffPoint(0.10, 0.20), TakeoffPoint(0.20, 0.20))
+        val firstExtra = listOf(TakeoffPoint(0.40, 0.20), TakeoffPoint(0.50, 0.20))
+        val secondExtra = listOf(TakeoffPoint(0.70, 0.20), TakeoffPoint(0.80, 0.20))
+        val line = item(TakeoffTool.LENGTH, main, extraSegments = listOf(firstExtra, secondExtra))
+        val edited = listOf(TakeoffPoint(0.40, 0.30), TakeoffPoint(0.50, 0.30))
+
+        val result = TakeoffMath.withVertices(
+            line, TakeoffVertexTarget(TakeoffGeometryPart.EXTRA_SEGMENT, 0, 0), edited
+        )
+
+        assertEquals(main, result.verts)
+        assertEquals(edited, result.extraSegments[0])
+        assertEquals(secondExtra, result.extraSegments[1])
+    }
+
+    @Test
+    fun `edge insert target resolves the disconnected measurement segment`() {
+        val main = listOf(TakeoffPoint(0.10, 0.20), TakeoffPoint(0.20, 0.20))
+        val added = listOf(TakeoffPoint(0.60, 0.70), TakeoffPoint(0.80, 0.70))
+        val line = item(TakeoffTool.LENGTH, main, extraSegments = listOf(added))
+
+        val target = TakeoffMath.nearestEdgeInsertTarget(
+            line, TakeoffPoint(0.70, 0.70 + 2.0 / page.heightPt), page, radiusPt = 10.0
+        )
+
+        assertEquals(TakeoffGeometryPart.EXTRA_SEGMENT, target?.part)
+        assertEquals(0, target?.partIndex)
+        assertEquals(1, target?.vertexIndex)
+    }
+
     // ═════════════════════════════ ٧) تحديد بمستطيل
 
     @Test
@@ -315,6 +381,17 @@ class TakeoffMathTest {
         assertTrue(TakeoffMath.fullyInside(shape, TakeoffPoint(0.1, 0.1), TakeoffPoint(0.5, 0.5)))
         // نفس المستطيل بس مقطوع نص الشكل — رأس واحد بره يكفي يرفض التحديد.
         assertTrue(!TakeoffMath.fullyInside(shape, TakeoffPoint(0.1, 0.1), TakeoffPoint(0.3, 0.5)))
+    }
+
+    @Test
+    fun `crossing box includes the closing edge of a polygon`() {
+        // نافذة صغيرة تقطع ضلع الإغلاق الأيسر فقط، وكل الرؤوس خارجها.
+        val shape = item(TakeoffTool.AREA, square(0.20, 0.40))
+        assertTrue(
+            TakeoffMath.crossesBox(
+                shape, TakeoffPoint(0.15, 0.45), TakeoffPoint(0.25, 0.55)
+            )
+        )
     }
 
     // ═════════════════════════════ ٨) التكلفة (سعر × هالك)

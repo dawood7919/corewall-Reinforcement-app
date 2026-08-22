@@ -8,13 +8,13 @@ package com.corewall.qaqc.takeoff
  * الـBOQ أو مراجع الصيغ — فصله في نموذج مستقل بيمنع أي مكان بيلف على
  * بنود الحصر إنه "ينسى" يستبعده، لأنه أصلاً مش موجود في نفس القايمة.
  */
-enum class TakeoffAnnotationType { CLOUD, ARROW, TEXT }
+enum class TakeoffAnnotationType { CLOUD, ARROW, TEXT, INK }
 
 data class TakeoffAnnotation(
     val id: String,
     val type: TakeoffAnnotationType,
     val page: Int,
-    /** مضلّع مقفول (سحابة) أو نقطتين (سهم) أو نقطة واحدة (نص). */
+    /** مضلّع مقفول (سحابة) أو نقطتين (سهم) أو نقطة واحدة (نص) أو مسار قلم. */
     val verts: List<TakeoffPoint>,
     val colorArgb: Long,
     val text: String = "",

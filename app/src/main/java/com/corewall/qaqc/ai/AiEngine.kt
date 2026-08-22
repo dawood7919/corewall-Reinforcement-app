@@ -1,5 +1,6 @@
 package com.corewall.qaqc.ai
 
+import android.content.Context
 import com.corewall.qaqc.ai.docs.DocumentExtractor
 import com.corewall.qaqc.ai.remote.providerFor
 import com.corewall.qaqc.data.db.ChatMessageDao
@@ -9,6 +10,7 @@ import com.corewall.qaqc.data.db.DocFactEntity
 import com.corewall.qaqc.data.db.DocumentDao
 import com.corewall.qaqc.data.db.DocumentEntity
 import com.corewall.qaqc.data.db.PromptDao
+import com.corewall.qaqc.pdfengine.PdfOps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -78,6 +80,7 @@ data class ExtractedFact(
  * مفيش أي اتصال بالشبكة من غير مفتاح API.
  */
 class AiEngine(
+    private val appContext: Context,
     private val documentDao: DocumentDao,
     private val factDao: DocFactDao,
     private val chatDao: ChatMessageDao,
@@ -94,8 +97,11 @@ class AiEngine(
     // ---------------------------------------------------------------- تسجيل وتحليل
 
     /** بيسجّل الملف كـ"بانتظار التحليل" فور رفعه (من غير شبكة). */
-    suspend fun register(file: File, level: String): Long = withContext(Dispatchers.IO) {
-        documentDao.byPath(file.absolutePath)?.let { return@withContext it.id }
+    suspend fun register(file: File, level: String, forceLevel: Boolean = false): Long = withContext(Dispatchers.IO) {
+        documentDao.byPath(file.absolutePath)?.let { existing ->
+            if (forceLevel && existing.level != level) documentDao.upsert(existing.copy(level = level))
+            return@withContext existing.id
+        }
         val now = System.currentTimeMillis()
         documentDao.upsert(
             DocumentEntity(
@@ -117,7 +123,8 @@ class AiEngine(
         docId: Long,
         knownLevels: List<String>,
         /** برومبت المستخدم لنوع المستند ده — فاضي = التحليل الافتراضي. */
-        prompt: PromptChoice = PromptChoice.Default
+        prompt: PromptChoice = PromptChoice.Default,
+        preserveLevel: Boolean = false
     ): DocumentEntity? {
         val doc = withContext(Dispatchers.IO) { documentDao.byId(docId) } ?: return null
         if (!config.isConfigured) return doc
@@ -126,7 +133,10 @@ class AiEngine(
         save(doc.copy(status = "ANALYZING", error = ""))
 
         val file = File(doc.filePath)
-        val content = runCatching { DocumentExtractor.extract(file) }.getOrElse { e ->
+        val content = runCatching {
+            if (file.extension.equals("pdf", ignoreCase = true)) PdfOps.ensureInit(appContext)
+            DocumentExtractor.extract(file)
+        }.getOrElse { e ->
             return save(doc.copy(status = "FAILED", error = "تعذّر قراءة الملف — ${describe(e)}",
                 analyzedAt = System.currentTimeMillis()))
         }
@@ -179,7 +189,7 @@ class AiEngine(
         // بس ملفات مكتبة المشروع بتفضل مشتركة مهما قال المستند — المستخدم
         // حطّها هناك عن قصد، والموديل مالوش حق ينقلها لدور واحد.
         val detected = extraction.level.trim()
-        val finalLevel = if (KnowledgeScope.isProject(doc.level)) KnowledgeScope.PROJECT
+        val finalLevel = if (preserveLevel || KnowledgeScope.isProject(doc.level)) doc.level
         else knownLevels.firstOrNull { it.equals(detected, ignoreCase = true) }
             ?: knownLevels.firstOrNull { detected.isNotBlank() && it.contains(detected, ignoreCase = true) }
             ?: doc.level

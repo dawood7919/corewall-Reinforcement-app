@@ -60,8 +60,12 @@ class AgentExecutor(
                 "open_file" -> openFile(action.str("path"))
 
                 "add_task" -> addTask(action.str("title"), level(action))
-                "add_comment" -> addComment(action.str("mark"), action.str("text"))
-                "set_inspection" -> setInspection(action.str("mark"), action.str("status"))
+                "complete_task" -> completeTask(action.num("id")?.toLong())
+                "add_note" -> addNote(action.str("title"), action.str("body"), level(action))
+                "create_document" -> createDocument(action.str("title"), action.str("template"), level(action))
+                "export_document_pdf" -> exportDocumentPdf(action.num("documentId")?.toLong())
+                "add_comment" -> addComment(action.str("mark"), action.str("text"), level(action))
+                "set_inspection" -> setInspection(action.str("mark"), action.str("status"), level(action))
                 "create_folder" -> createFolder(level(action), action.str("path"), action.str("name"))
                 "rename_file" -> renameFile(action.str("path"), action.str("newName"))
                 "delete_file" -> deleteFile(action.str("path"))
@@ -496,19 +500,50 @@ class AgentExecutor(
         else fail("add_task", "تعذّرت الإضافة")
     }
 
-    private suspend fun addComment(mark: String, text: String): ToolOutcome {
+    private suspend fun completeTask(id: Long?): ToolOutcome {
+        if (id == null) return fail("complete_task", "لازم id")
+        return if (host.completeTask(id)) ok("complete_task", "تمت المهمة", "علّمت المهمة #$id كمكتملة")
+        else fail("complete_task", "تعذّر إتمام المهمة")
+    }
+
+    private suspend fun addNote(title: String, body: String, level: String): ToolOutcome {
+        if (title.isBlank()) return fail("add_note", "لازم عنوان للملاحظة")
+        return if (host.addNote(title.trim(), body.trim(), level))
+            ok("add_note", "اتضافت الملاحظة", "ضفت ملاحظة: $title")
+        else fail("add_note", "تعذّر إنشاء الملاحظة")
+    }
+
+    private suspend fun createDocument(title: String, template: String, level: String): ToolOutcome {
+        if (title.isBlank()) return fail("create_document", "لازم عنوان للتقرير")
+        val key = template.trim().uppercase()
+        if (key !in setOf("QUALITY", "TAKEOFF", "DAILY", "MEETING", "LETTER")) {
+            return fail("create_document", "القالب غير متاح: $template")
+        }
+        val id = host.createCreativeDocument(title.trim(), key, level)
+        return if (id != null) ok("create_document", "اتعملت مسودة التقرير", "أنشأت مسودة #$id: $title")
+        else fail("create_document", "تعذّر إنشاء مسودة التقرير")
+    }
+
+    private suspend fun exportDocumentPdf(documentId: Long?): ToolOutcome {
+        if (documentId == null) return fail("export_document_pdf", "لازم رقم المستند")
+        val path = host.exportCreativeDocumentPdf(documentId)
+        return if (path != null) ok("export_document_pdf", "تم تصدير PDF", "تم حفظ نسخة PDF: $path")
+        else fail("export_document_pdf", "تعذّر تصدير PDF")
+    }
+
+    private suspend fun addComment(mark: String, text: String, level: String): ToolOutcome {
         if (text.isBlank()) return fail("add_comment", "لازم نص للكومنت")
         val id = host.elementIdForMark(mark) ?: return fail("add_comment", "مفيش عنصر بالكود $mark")
-        return if (host.addComment(id, text.trim()))
+        return if (host.addComment(id, text.trim(), level))
             ok("add_comment", "اتضاف الكومنت على $mark", "ضفت كومنت على $mark")
         else fail("add_comment", "تعذّرت الإضافة")
     }
 
-    private suspend fun setInspection(mark: String, status: String): ToolOutcome {
+    private suspend fun setInspection(mark: String, status: String, level: String): ToolOutcome {
         val st = InspectionStatus.entries.firstOrNull { it.name.equals(status.trim(), true) }
             ?: return fail("set_inspection", "حالة غير معروفة: $status")
         val id = host.elementIdForMark(mark) ?: return fail("set_inspection", "مفيش عنصر بالكود $mark")
-        return if (host.setInspection(id, st.name))
+        return if (host.setInspection(id, st.name, level))
             ok("set_inspection", "حالة $mark بقت ${st.label}", "غيّرت حالة $mark لـ${st.label}")
         else fail("set_inspection", "تعذّر التغيير")
     }

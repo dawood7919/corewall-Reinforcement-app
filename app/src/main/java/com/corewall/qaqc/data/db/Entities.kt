@@ -143,6 +143,8 @@ data class NoteEntity(
     val title: String = "",
     val body: String = "",
     val imagePathsJson: String = "[]",
+    /** وثيقة الملاحظة متعددة الكتل؛ body ملخص نصي متوافق مع البيانات القديمة. */
+    val documentJson: String = "",
     val createdAt: Long,
     val updatedAt: Long,
 
@@ -402,6 +404,120 @@ data class AiAnalysisEntity(
     @PrimaryKey val level: String,
     val json: String,
     val model: String,
+    val createdAt: Long
+)
+
+/**
+ * خطة ينشئها عقل التطبيق من طلب المستخدم. الخطة مستقلة عن المحادثة حتى تظل
+ * نتيجة المراجعة والتنفيذ متاحة بعد إغلاق التطبيق.
+ */
+@Entity(
+    tableName = "agent_execution_plans",
+    indices = [Index(value = ["level"]), Index(value = ["status"])]
+)
+data class AgentExecutionPlanEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val level: String,
+    val title: String,
+    val sourceQuestion: String,
+    /** DRAFT | APPROVED | RUNNING | DONE | PARTIAL | DISMISSED */
+    val status: String = "DRAFT",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** خطوة حتمية ضمن خطة الوكيل؛ المعاملات محفوظة JSON لمراجعتها قبل التنفيذ. */
+@Entity(
+    tableName = "agent_execution_steps",
+    indices = [Index(value = ["planId"]), Index(value = ["status"])]
+)
+data class AgentExecutionStepEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val planId: Long,
+    val ordinal: Int,
+    val tool: String,
+    val argsJson: String,
+    val label: String,
+    val risk: String,
+    val requiresApproval: Boolean,
+    /** PENDING | RUNNING | DONE | FAILED | DISMISSED */
+    val status: String = "PENDING",
+    val result: String = "",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** إيصال دائم لكل قراءة أو تنفيذ أو فشل صادر عن عقل التطبيق. */
+@Entity(
+    tableName = "agent_action_audit",
+    indices = [Index(value = ["level"]), Index(value = ["planId"]), Index(value = ["at"])]
+)
+data class AgentActionAuditEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val planId: Long? = null,
+    val stepId: Long? = null,
+    val level: String,
+    val tool: String,
+    val detail: String,
+    val result: String,
+    val ok: Boolean,
+    val auto: Boolean,
+    val at: Long
+)
+
+/** مسودة تقرير تنشأ من الاستوديو أو من خطة الذكاء؛ المحتوى يبقى JSON قابل لإعادة التصدير. */
+@Entity(
+    tableName = "creative_documents",
+    indices = [Index(value = ["level"]), Index(value = ["updatedAt"]), Index(value = ["status"])]
+)
+data class CreativeDocumentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val level: String,
+    /** QUALITY | TAKEOFF | DAILY | MEETING | LETTER */
+    val templateKey: String,
+    val title: String,
+    val contentJson: String,
+    /** مصادر المحتوى بصيغة JSON، مثل ملفات PDF أو ملاحظات أو بنود حصر. */
+    val sourceJson: String = "[]",
+    /** DRAFT | READY | EXPORTED | ARCHIVED */
+    val status: String = "DRAFT",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/** نسخة خرجت من مسودة التقرير؛ لا نكتب فوق النسخ السابقة حتى تظل قابلة للمراجعة. */
+@Entity(
+    tableName = "creative_document_exports",
+    indices = [Index(value = ["documentId"]), Index(value = ["createdAt"])]
+)
+data class CreativeDocumentExportEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val documentId: Long,
+    /** PDF | IMAGE | ZIP */
+    val format: String,
+    val path: String,
+    val createdAt: Long
+)
+
+/** إعدادات معايرة CAD مرتبطة بمسار الرسم نفسه، لا بحالة الشاشة المؤقتة. */
+@Entity(tableName = "cad_drawing_settings")
+data class CadDrawingSettingsEntity(
+    @PrimaryKey val filePath: String,
+    val unitsPerMeter: Double,
+    val displayUnit: String,
+    val updatedAt: Long
+)
+
+/** علامة قياس مستقلة؛ هندستها محفوظة في إحداثيات CAD الأصلية كي تبقى ثابتة مع الزوم. */
+@Entity(
+    tableName = "cad_measurements",
+    indices = [Index(value = ["filePath"]), Index(value = ["createdAt"])]
+)
+data class CadMeasurementEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val filePath: String,
+    val kind: String,
+    val pointsJson: String,
     val createdAt: Long
 )
 

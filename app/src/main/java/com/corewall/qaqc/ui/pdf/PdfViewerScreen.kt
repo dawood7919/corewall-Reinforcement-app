@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.CallMerge
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Reorder
@@ -88,6 +89,7 @@ import com.corewall.qaqc.pdfengine.PdfSearchState
 import com.corewall.qaqc.pdfengine.PdfSelectionState
 import com.corewall.qaqc.pdfengine.PdfSessionStore
 import com.corewall.qaqc.pdfengine.PdfViewerState
+import com.corewall.qaqc.pdfengine.PdfPerfMetrics
 import com.corewall.qaqc.pdfengine.Scale
 import com.corewall.qaqc.pdfengine.SearchHit
 import com.corewall.qaqc.pdfengine.TextQuad
@@ -104,7 +106,9 @@ import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -156,6 +160,15 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     // ── المحرّك والحالة
     val engine = remember(active) { TileEngine(active, TileEngine.budgetFor(context)) }
     val thumbs = remember(active) { ThumbnailCache(active) }
+    var perfSnapshot by remember(active) { mutableStateOf(engine.performanceSnapshot()) }
+    var perfVisible by remember(path) { mutableStateOf(true) }
+    LaunchedEffect(engine, perfVisible) {
+        if (!perfVisible) return@LaunchedEffect
+        while (isActive) {
+            delay(PERF_SAMPLE_INTERVAL_MS)
+            perfSnapshot = engine.performanceSnapshot()
+        }
+    }
     DisposableEffect(active) {
         onDispose { engine.clear(); thumbs.clear() }
     }
@@ -252,6 +265,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     var imagesOpen by remember(path) { mutableStateOf(false) }
     var watermarkOpen by remember(path) { mutableStateOf(false) }
     var mergeOpen by remember(path) { mutableStateOf(false) }
+    var splitOpen by remember(path) { mutableStateOf(false) }
     var opRunning by remember(path) { mutableStateOf(false) }
     var opProgress by remember(path) { mutableStateOf<Pair<Int, Int>?>(null) }
 
@@ -305,6 +319,22 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     // ── التعليقات والأدوات
     val fileAnnotations by remember(path) { vm.pdfAnnotationsFor(path) }
         .collectAsStateWithLifecycle(emptyList())
+
+    // فك نقاط التعليقات والقياسات كان يحصل من JSON داخل Canvas في كل إطار
+    // تكبير. مستند فيه عشرات العناصر يحول السحب إلى مئات عمليات parsing في
+    // الثانية؛ نخزنها هنا ولا نعيدها إلا عند تغير بيانات Room فعلاً.
+    val annotationPoints = remember(fileAnnotations) {
+        fileAnnotations.associate { item ->
+            item.id to runCatching { json.decodeFromString<List<Float>>(item.pointsJson) }.getOrDefault(emptyList())
+        }
+    }
+    val annotationsByPage = remember(fileAnnotations) { fileAnnotations.groupBy { it.page } }
+    val measurementPoints = remember(fileMeasurements) {
+        fileMeasurements.associate { item ->
+            item.id to runCatching { json.decodeFromString<List<Float>>(item.pointsJson) }.getOrDefault(emptyList())
+        }
+    }
+    val measurementsByPage = remember(fileMeasurements) { fileMeasurements.groupBy { it.page } }
 
     val settings by vm.settings.collectAsStateWithLifecycle()
 
@@ -619,7 +649,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     if (searchOpen) {
                         drawSearchLayer(s, hitsByPage, search.activeHit, c.warning.solid, c.accent)
                     }
-                    drawAnnotations(s, fileAnnotations)
+                    drawAnnotations(s, annotationsByPage, annotationPoints)
                     if (draft.size >= 2) {
                         drawAnnotation(
                             tool, Color(style.colorArgb), draft,
@@ -632,11 +662,8 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     // ولو تعليق غطّاه بيبقى الرقم موجود ومش مقروء.
                     drawMeasurements(
                         state = s,
-                        items = fileMeasurements,
-                        pointsOf = { m ->
-                            runCatching { json.decodeFromString<List<Float>>(m.pointsJson) }
-                                .getOrDefault(emptyList())
-                        },
+                        itemsByPage = measurementsByPage,
+                        pointsOf = { m -> measurementPoints[m.id].orEmpty() },
                         scaleOf = { page -> scaleFor(page) }
                     )
                     if (measure.enabled) {
@@ -644,6 +671,16 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     }
                 }
             )
+
+            if (perfVisible) {
+                PdfPerfHud(
+                    snapshot = perfSnapshot,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(Space.md)
+                )
+            }
 
             SelectionHandles(
                 state = state,
@@ -689,6 +726,9 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     onImages = { imagesOpen = true },
                     onWatermark = { watermarkOpen = true },
                     onMerge = { mergeOpen = true },
+                    onSplit = { splitOpen = true },
+                    perfVisible = perfVisible,
+                    onTogglePerf = { perfVisible = !perfVisible },
                     onToggleRail = { railVisible = !railVisible },
                     onToggleMode = {
                         state.setMode(
@@ -753,7 +793,9 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
 
             // ── الخريطة المصغّرة: عند التكبير العالي بس
             AnimatedVisibility(
-                visible = chromeVisible && state.zoom > MINIMAP_FROM_ZOOM,
+                // رسم المصغرة يمر عبر نفس خيط PDFium المستخدم للبلاطات؛ لا
+                // نسمح له بمنافسة التكبير الحي ثم نعيده بمجرد رفع الأصابع.
+                visible = chromeVisible && !state.interacting && state.zoom > MINIMAP_FROM_ZOOM,
                 enter = fadeIn(), exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -948,6 +990,28 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 )
             }
 
+            if (splitOpen) {
+                SplitPdfSheet(
+                    pageCount = active.pageCount,
+                    running = opRunning,
+                    onSplit = {
+                        splitOpen = false
+                        opRunning = true
+                        scope.launch {
+                            val outDir = File(file.parentFile, "${file.nameWithoutExtension} — صفحات")
+                            val result = PdfOps.splitIntoPages(file, outDir, file.nameWithoutExtension)
+                            opRunning = false
+                            result.onSuccess { pages ->
+                                Toast.makeText(context, "اتقسم الملف إلى ${pages.size} صفحة في ${outDir.name}", Toast.LENGTH_LONG).show()
+                            }.onFailure { error ->
+                                Toast.makeText(context, "فشل التقسيم: ${error.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    onDismiss = { if (!opRunning) splitOpen = false }
+                )
+            }
+
             if (ocrOpen) {
                 OcrSheet(
                     currentPage = state.currentPage,
@@ -1110,6 +1174,30 @@ private const val OCR_MAX_PIXELS = 40_000_000L
 
 /** الخريطة بتظهر لما تبقى شايف جزء صغير من الصفحة فعلاً. */
 private const val MINIMAP_FROM_ZOOM = 2.5f
+private const val PERF_SAMPLE_INTERVAL_MS = 1_000L
+
+@Composable
+private fun PdfPerfHud(snapshot: PdfPerfMetrics.Snapshot, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = Color(0xE6101216),
+        shape = Radius.shapeMd
+    ) {
+        Column(Modifier.padding(horizontal = Space.sm, vertical = Space.xs)) {
+            Text("PDF PERF", style = CwText.codeSmall, color = Color(0xFF6BE4B5))
+            Text(
+                "Tile ${snapshot.averageTileMs}/${snapshot.p95TileMs}ms · hit ${(snapshot.cacheHitRate * 100).toInt()}%",
+                style = CwText.codeSmall,
+                color = Color.White
+            )
+            Text(
+                "${snapshot.cachedTiles} cache · ${snapshot.queuedTiles} queue · ${(snapshot.bitmapBytes / 1_048_576)}MB",
+                style = CwText.codeSmall,
+                color = Color(0xFFBAC3CE)
+            )
+        }
+    }
+}
 
 /** تحت الشريط العلوي — عشان ماتغطّيهوش. */
 private val MINIMAP_TOP_PAD = Space.huge + Space.xl
@@ -1146,18 +1234,15 @@ private fun DrawScope.drawSearchLayer(
 /** بيرسم تعليقات كل صفحة مرئية في مكانها الصح. */
 private fun DrawScope.drawAnnotations(
     state: PdfViewerState,
-    annotations: List<PdfAnnotationEntity>
+    annotationsByPage: Map<Int, List<PdfAnnotationEntity>>,
+    pointsById: Map<Long, List<Float>>
 ) {
-    if (annotations.isEmpty()) return
+    if (annotationsByPage.isEmpty()) return
     val rect = state.visibleDocRect()
-    val visiblePages = state.layout
-        .visible(rect.left, rect.top, rect.right, rect.bottom)
-        .map { it.index }
-        .toSet()
-
-    for (a in annotations) {
-        if (a.page !in visiblePages) continue
-        val flat = runCatching { json.decodeFromString<List<Float>>(a.pointsJson) }.getOrNull() ?: continue
+    for (slot in state.layout.visible(rect.left, rect.top, rect.right, rect.bottom)) {
+        for (a in annotationsByPage[slot.index].orEmpty()) {
+        val flat = pointsById[a.id].orEmpty()
+        if (flat.isEmpty()) continue
         val points = (flat.indices step 2).mapNotNull { i ->
             if (i + 1 >= flat.size) null
             else state.pagePointToScreen(a.page, flat[i], flat[i + 1])
@@ -1166,6 +1251,7 @@ private fun DrawScope.drawAnnotations(
             PdfTool.fromId(a.tool), Color(a.color), points,
             a.strokeWidth, a.opacity, state.zoom
         )
+        }
     }
 }
 
@@ -1210,6 +1296,9 @@ private fun TopChrome(
     onImages: () -> Unit,
     onWatermark: () -> Unit,
     onMerge: () -> Unit,
+    onSplit: () -> Unit,
+    perfVisible: Boolean,
+    onTogglePerf: () -> Unit,
     onToggleRail: () -> Unit,
     onToggleMode: () -> Unit,
     onExport: () -> Unit
@@ -1277,6 +1366,10 @@ private fun TopChrome(
                         onClick = { menuOpen = false; onToggleMode() }
                     )
                     DropdownMenuItem(
+                        text = { Text(if (perfVisible) "إخفاء مؤشرات الأداء" else "إظهار مؤشرات الأداء") },
+                        onClick = { menuOpen = false; onTogglePerf() }
+                    )
+                    DropdownMenuItem(
                         text = { Text("تنظيم الصفحات") },
                         leadingIcon = { Icon(Icons.Filled.Reorder, contentDescription = null) },
                         onClick = { menuOpen = false; onOrganize() }
@@ -1300,6 +1393,11 @@ private fun TopChrome(
                         text = { Text("دمج مع ملفات تانية") },
                         leadingIcon = { Icon(Icons.Filled.CallMerge, contentDescription = null) },
                         onClick = { menuOpen = false; onMerge() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("تقسيم إلى صفحات") },
+                        leadingIcon = { Icon(Icons.Filled.CallSplit, contentDescription = null) },
+                        onClick = { menuOpen = false; onSplit() }
                     )
                     DropdownMenuItem(
                         text = { Text("صدّر نسخة معلّقة") },

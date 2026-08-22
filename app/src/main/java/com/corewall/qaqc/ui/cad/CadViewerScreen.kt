@@ -33,7 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corewall.qaqc.CoreWallApp
 import com.corewall.qaqc.data.FilesManager
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -54,13 +56,14 @@ private val CadDim = Color(0xFF8B9BB4)
 fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
     val context = LocalContext.current
     val file = remember(path) { File(path) }
-    val parseResult by produceState<DxfParser.ParseResult?>(null, path) {
+    val cadStore = remember { (context.applicationContext as CoreWallApp).cadMeasurementStore }
+    val scope = rememberCoroutineScope()
+    val parseResult by produceState<CadLoadResult?>(null, path) {
         value = null
-        value = withContext(Dispatchers.IO) { DxfParser.parseFile(file) }
+        value = withContext(Dispatchers.IO) { CadDocumentLoader.load(file) }
     }
     var layers by remember { mutableStateOf<List<CadLayer>>(emptyList()) }
-    var measurements by remember { mutableStateOf<List<CadMeasurement>>(emptyList()) }
-    var nextId by remember { mutableLongStateOf(1L) }
+    val measurements by cadStore.measurements(path).collectAsState(initial = emptyList())
     var tool by remember { mutableStateOf(CadMeasureTool.PAN) }
     var unit by remember { mutableStateOf(MeasureUnit.M) }
     var unitsPerMeter by remember { mutableFloatStateOf(1f) }
@@ -68,65 +71,45 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
     var showLayers by remember { mutableStateOf(false) }
     var calibrateDialog by remember { mutableStateOf<Pair<CadPoint, CadPoint>?>(null) }
     var calibrateInput by remember { mutableStateOf("") }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
-    var fitted by remember { mutableStateOf(false) }
+    val viewport = remember(path) { CadViewport() }
+    val labelPaint = remember {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.argb(200, 180, 200, 230)
+            isAntiAlias = true
+        }
+    }
 
-    LaunchedEffect(parseResult) {
+    LaunchedEffect(parseResult, path) {
         val d = parseResult?.drawing ?: return@LaunchedEffect
         layers = d.layers.map { it.copy() }
-        unitsPerMeter = DxfParser.unitsPerMeterFromInsUnits(d.insUnits).toFloat()
-        unit = when (d.insUnits) { 4 -> MeasureUnit.MM; 5 -> MeasureUnit.CM; else -> MeasureUnit.M }
-        fitted = false
+        val saved = cadStore.settings(path)
+        unitsPerMeter = (saved?.unitsPerMeter ?: DxfParser.unitsPerMeterFromInsUnits(d.insUnits)).toFloat()
+        unit = saved?.displayUnit?.let { runCatching { MeasureUnit.valueOf(it) }.getOrNull() }
+            ?: when (d.insUnits) { 4 -> MeasureUnit.MM; 5 -> MeasureUnit.CM; else -> MeasureUnit.M }
+        viewport.reset()
     }
 
-    fun fitDrawing(d: CadDrawing, size: IntSize) {
-        if (size.width <= 0 || size.height <= 0) return
-        val b = d.bounds
-        val sx = size.width / max(b.width, 1f) * 0.9f
-        val sy = size.height / max(b.height, 1f) * 0.9f
-        scale = min(sx, sy)
-        offsetX = size.width / 2f - (b.left + b.width / 2f) * scale
-        offsetY = size.height / 2f + (b.top + b.height / 2f) * scale
-        fitted = true
-    }
+    fun screenToWorld(o: Offset) = viewport.screenToWorld(o.x, o.y)
+    fun worldToScreen(p: CadPoint): Offset { viewport.revision; return viewport.worldToScreen(p).let { Offset(it.first, it.second) } }
 
-    fun screenToWorld(o: Offset) = CadPoint(((o.x - offsetX) / scale).toDouble(), ((offsetY - o.y) / scale).toDouble())
-    fun worldToScreen(p: CadPoint) = Offset((p.x * scale + offsetX).toFloat(), (offsetY - p.y * scale).toFloat())
-
-    fun snap(p: CadPoint, drawing: CadDrawing): CadPoint {
-        val tol = 12.0 / scale
-        var best: CadPoint? = null; var bestD = tol
-        fun consider(q: CadPoint) { val d = p.distanceTo(q); if (d < bestD) { bestD = d; best = q } }
-        for (e in drawing.visibleEntities()) when (e) {
-            is CadEntity.Line -> { consider(e.a); consider(e.b) }
-            is CadEntity.Polyline -> e.points.forEach(::consider)
-            is CadEntity.Circle -> consider(e.center)
-            is CadEntity.Arc -> consider(e.center)
-            is CadEntity.TextEnt -> consider(e.position)
-        }
-        return best ?: p
-    }
-
-    fun handleTap(world: CadPoint, drawing: CadDrawing) {
-        val p = snap(world, drawing)
+    fun handleTap(world: CadPoint, snapIndex: CadSnapIndex) {
+        val p = snapIndex.nearest(world, 12.0 / viewport.scale) ?: world
         when (tool) {
             CadMeasureTool.PAN -> Unit
             CadMeasureTool.DISTANCE -> {
                 val pts = draftPoints + p
-                if (pts.size >= 2) { measurements = measurements + CadMeasurement.Distance(nextId++, pts[0], pts[1]); draftPoints = emptyList() }
+                if (pts.size >= 2) { scope.launch { cadStore.save(path, CadMeasurement.Distance(0, pts[0], pts[1])) }; draftPoints = emptyList() }
                 else draftPoints = pts
             }
             CadMeasureTool.CONTINUOUS, CadMeasureTool.AREA -> draftPoints = draftPoints + p
             CadMeasureTool.ANGLE -> {
                 val pts = draftPoints + p
-                if (pts.size >= 3) { measurements = measurements + CadMeasurement.Angle(nextId++, pts[1], pts[0], pts[2]); draftPoints = emptyList() }
+                if (pts.size >= 3) { scope.launch { cadStore.save(path, CadMeasurement.Angle(0, pts[1], pts[0], pts[2])) }; draftPoints = emptyList() }
                 else draftPoints = pts
             }
             CadMeasureTool.RADIUS -> {
                 val pts = draftPoints + p
-                if (pts.size >= 2) { measurements = measurements + CadMeasurement.Radius(nextId++, pts[0], pts[1]); draftPoints = emptyList() }
+                if (pts.size >= 2) { scope.launch { cadStore.save(path, CadMeasurement.Radius(0, pts[0], pts[1])) }; draftPoints = emptyList() }
                 else draftPoints = pts
             }
             CadMeasureTool.CALIBRATE -> {
@@ -139,8 +122,8 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
 
     fun finishPoly() {
         when (tool) {
-            CadMeasureTool.CONTINUOUS -> if (draftPoints.size >= 2) measurements = measurements + CadMeasurement.Continuous(nextId++, draftPoints)
-            CadMeasureTool.AREA -> if (draftPoints.size >= 3) measurements = measurements + CadMeasurement.AreaPoly(nextId++, draftPoints)
+            CadMeasureTool.CONTINUOUS -> if (draftPoints.size >= 2) scope.launch { cadStore.save(path, CadMeasurement.Continuous(0, draftPoints)) }
+            CadMeasureTool.AREA -> if (draftPoints.size >= 3) scope.launch { cadStore.save(path, CadMeasurement.AreaPoly(0, draftPoints)) }
             else -> Unit
         }
         draftPoints = emptyList()
@@ -155,26 +138,35 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                 Text(file.name, color = CadLine, fontWeight = FontWeight.Bold)
                 Text(parseResult!!.error ?: "تعذّر الفتح", color = CadDim)
                 Spacer(Modifier.height(Space.lg))
-                if (parseResult!!.isBinaryDwg) TextButton(onClick = { if (!files.openExternally(file)) Toast.makeText(context, "مفيش تطبيق CAD", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Filled.OpenInNew, null); Spacer(Modifier.width(Space.sm)); Text("فتح خارجي") }
                 TextButton(onClick = onClose) { Text("إغلاق") }
             }
             else -> {
                 val base = parseResult!!.drawing!!
                 val drawing = remember(base, layers) { base.copy(layers = layers) }
+                val visibleEntities = remember(drawing, layers) { drawing.visibleEntities(layers) }
+                val scene by produceState<CadPreparedScene?>(null, visibleEntities, drawing.bounds) {
+                    value = withContext(Dispatchers.Default) {
+                        CadStaticPath.build(drawing, visibleEntities)
+                    }
+                }
+                var canvasSize by remember(drawing) { mutableStateOf(IntSize.Zero) }
+                LaunchedEffect(drawing, canvasSize) {
+                    if (!viewport.fitted) viewport.fit(drawing.bounds, canvasSize)
+                }
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "إغلاق", tint = CadLine) }
                         Column(Modifier.weight(1f)) {
                             Text(file.name, color = CadLine, fontWeight = FontWeight.Bold, maxLines = 1, style = MaterialTheme.typography.titleSmall)
-                            Text("${drawing.entities.size} كيان · ${layers.count { it.visible }}/${layers.size} طبقة", color = CadDim, style = MaterialTheme.typography.labelSmall)
+                            Text("${scene?.visibleEntityCount ?: 0}/${drawing.entities.size} كيان · ${layers.count { it.visible }}/${layers.size} طبقة", color = CadDim, style = MaterialTheme.typography.labelSmall)
                         }
-                        IconButton(onClick = { if (measurements.isNotEmpty()) measurements = measurements.dropLast(1) else if (draftPoints.isNotEmpty()) draftPoints = draftPoints.dropLast(1) }) { Icon(Icons.AutoMirrored.Filled.Undo, "تراجع", tint = CadLine) }
-                        IconButton(onClick = { measurements = emptyList(); draftPoints = emptyList() }) { Icon(Icons.Filled.Delete, "مسح", tint = CadLine) }
+                        IconButton(onClick = { if (measurements.isNotEmpty()) scope.launch { cadStore.delete(measurements.last().id) } else if (draftPoints.isNotEmpty()) draftPoints = draftPoints.dropLast(1) }) { Icon(Icons.AutoMirrored.Filled.Undo, "تراجع", tint = CadLine) }
+                        IconButton(onClick = { scope.launch { cadStore.clear(path) }; draftPoints = emptyList() }) { Icon(Icons.Filled.Delete, "مسح", tint = CadLine) }
                         IconButton(onClick = { showLayers = !showLayers }) { Icon(Icons.Filled.Layers, "طبقات", tint = CadLine) }
                     }
                     val hint = when (tool) {
                         CadMeasureTool.PAN -> "إصبعين للزوم · اسحب للتحريك"
-                        CadMeasureTool.DISTANCE -> if (draftPoints.isEmpty()) "نقطة البداية" else "نقطة النهاية"
+                        CadMeasureTool.DISTANCE -> if (draftPoints.isEmpty()) "التقط نقطة البداية" else "التقط نقطة النهاية"
                         CadMeasureTool.CONTINUOUS -> "نقاط متتالية · دبل تاب إنهاء"
                         CadMeasureTool.AREA -> "رؤوس المضلع · دبل تاب إنهاء"
                         CadMeasureTool.ANGLE -> listOf("ضلع 1", "الرأس", "ضلع 2").getOrElse(draftPoints.size) { "" }
@@ -182,32 +174,36 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                         CadMeasureTool.CALIBRATE -> if (draftPoints.isEmpty()) "طول معروف — نقطة 1" else "نقطة 2"
                     }
                     Text(hint, color = CadDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().background(Color(0xFF0E1628)).padding(Space.md, 6.dp))
-                    Box(Modifier.weight(1f).fillMaxWidth().onSizeChanged { if (!fitted) fitDrawing(drawing, it) }) {
-                        Canvas(Modifier.fillMaxSize().pointerInput(tool, scale, offsetX, offsetY) {
-                            detectTransformGestures { _, pan, zoom, _ -> scale = (scale * zoom).coerceIn(0.01f, 500f); offsetX += pan.x; offsetY += pan.y }
-                        }.pointerInput(tool, scale, offsetX, offsetY, drawing, draftPoints) {
-                            detectTapGestures(onTap = { handleTap(screenToWorld(it), drawing) }, onDoubleTap = { finishPoly() })
+                    Box(Modifier.weight(1f).fillMaxWidth().onSizeChanged { canvasSize = it }) {
+                        Canvas(Modifier.fillMaxSize().pointerInput(Unit) {
+                            detectTransformGestures { centroid, pan, zoom, _ ->
+                                viewport.transform(centroid.x, centroid.y, pan.x, pan.y, zoom)
+                            }
+                        }.pointerInput(tool, scene?.snapIndex, draftPoints) {
+                            detectTapGestures(
+                                onTap = { tap -> scene?.snapIndex?.let { handleTap(screenToWorld(tap), it) } },
+                                onDoubleTap = { finishPoly() }
+                            )
                         }) {
-                            val stroke = Stroke(width = max(1f, 1.3f))
-                            for (e in drawing.visibleEntities()) when (e) {
-                                is CadEntity.Line -> drawLine(CadLine.copy(alpha = 0.9f), worldToScreen(e.a), worldToScreen(e.b), strokeWidth = max(1f, 1.3f))
-                                is CadEntity.Polyline -> {
-                                    if (e.points.size < 2) continue
-                                    val path = Path(); val f = worldToScreen(e.points.first()); path.moveTo(f.x, f.y)
-                                    e.points.drop(1).forEach { path.lineTo(worldToScreen(it).x, worldToScreen(it).y) }
-                                    if (e.closed) path.close(); drawPath(path, CadLine.copy(alpha = 0.9f), style = stroke)
-                                }
-                                is CadEntity.Circle -> drawCircle(CadLine.copy(alpha = 0.85f), (e.radius * scale).toFloat(), worldToScreen(e.center), style = stroke)
-                                is CadEntity.Arc -> {
-                                    val path = Path(); var a = e.startDeg; var end = e.endDeg; if (end < a) end += 360.0
-                                    val steps = max(8, ((end - a) / 6).toInt()); val first = worldToScreen(arcPoint(e.center, e.radius, a))
-                                    path.moveTo(first.x, first.y)
-                                    for (s in 1..steps) { val t = a + (end - a) * s / steps; val pt = worldToScreen(arcPoint(e.center, e.radius, t)); path.lineTo(pt.x, pt.y) }
-                                    drawPath(path, CadLine.copy(alpha = 0.85f), style = stroke)
-                                }
-                                is CadEntity.TextEnt -> {
-                                    val o = worldToScreen(e.position)
-                                    drawContext.canvas.nativeCanvas.drawText(e.value.take(40), o.x, o.y, android.graphics.Paint().apply { color = android.graphics.Color.argb(200, 180, 200, 230); textSize = max(10f, (e.height * scale).toFloat().coerceAtMost(28f)); isAntiAlias = true })
+                            // zoom/pan يعيدان تحويل Picture الجاهزة فقط؛ لا مسح للكيانات ولا إنشاء Path لكل إطار.
+                            viewport.revision
+                            scene?.let { prepared ->
+                                val native = drawContext.canvas.nativeCanvas
+                                native.save()
+                                native.translate(viewport.offsetX, viewport.offsetY)
+                                native.scale(viewport.scale, -viewport.scale)
+                                prepared.strokes.forEach { stroke -> native.drawPath(stroke.path, stroke.paint) }
+                                native.restore()
+                                var labelCount = 0
+                                for (preparedLabel in prepared.labels) {
+                                    if (labelCount >= 750) break
+                                    val label = preparedLabel.label
+                                    val point = worldToScreen(label.position)
+                                    if (point.x !in -80f..size.width + 80f || point.y !in -40f..size.height + 40f) continue
+                                    labelPaint.textSize = max(10f, (label.height * viewport.scale).toFloat().coerceAtMost(28f))
+                                    labelPaint.color = preparedLabel.color
+                                    native.drawText(label.value.take(80), point.x, point.y, labelPaint)
+                                    labelCount++
                                 }
                             }
                             for (m in measurements) drawMeas(m, ::worldToScreen, unit, unitsPerMeter.toDouble())
@@ -216,6 +212,7 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                                 draftPoints.forEach { drawCircle(CadMeasure, 5f, worldToScreen(it)) }
                             }
                         }
+                        if (scene == null) LinearProgressIndicator(Modifier.align(Alignment.TopCenter).fillMaxWidth(), color = CadAccent, trackColor = Color.Transparent)
                         if (showLayers) Surface(Modifier.align(Alignment.TopEnd).padding(Space.sm).width(200.dp), color = Color(0xEE121A2A), shape = Radius.shapeMd) {
                             Column(Modifier.padding(Space.sm)) {
                                 Text("الطبقات", color = CadLine, fontWeight = FontWeight.Bold)
@@ -243,17 +240,13 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
                                     }
                                 }
                                 chip("تحريك", Icons.Filled.PanTool, CadMeasureTool.PAN)
-                                chip("مسافة", Icons.Filled.Straighten, CadMeasureTool.DISTANCE)
-                                chip("متصل", Icons.Filled.Timeline, CadMeasureTool.CONTINUOUS)
-                                chip("مساحة", Icons.Filled.SquareFoot, CadMeasureTool.AREA)
-                                chip("زاوية", Icons.Filled.Architecture, CadMeasureTool.ANGLE)
-                                chip("نق", Icons.Filled.RadioButtonUnchecked, CadMeasureTool.RADIUS)
+                                chip("بُعد", Icons.Filled.Straighten, CadMeasureTool.DISTANCE)
                                 chip("معايرة", Icons.Filled.Straighten, CadMeasureTool.CALIBRATE)
                                 if (tool == CadMeasureTool.CONTINUOUS || tool == CadMeasureTool.AREA) TextButton(onClick = { finishPoly() }) { Text("إنهاء", color = CadAccent) }
                             }
                             Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xxs), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                                 Text("الوحدة:", color = CadDim, fontSize = 12.sp)
-                                MeasureUnit.entries.forEach { u -> FilterChip(selected = unit == u, onClick = { unit = u }, label = { Text(u.label, fontSize = 11.sp) }) }
+                                MeasureUnit.entries.forEach { u -> FilterChip(selected = unit == u, onClick = { unit = u; scope.launch { cadStore.saveSettings(path, unitsPerMeter.toDouble(), u) } }, label = { Text(u.label, fontSize = 11.sp) }) }
                             }
                         }
                     }
@@ -268,7 +261,7 @@ fun CadViewerScreen(path: String, files: FilesManager, onClose: () -> Unit) {
         }, confirmButton = {
             TextButton(onClick = {
                 val realM = calibrateInput.toDoubleOrNull(); val dist = a.distanceTo(b)
-                if (realM != null && realM > 0 && dist > 0) { unitsPerMeter = (dist / realM).toFloat(); Toast.makeText(context, "تمت المعايرة ✓", Toast.LENGTH_SHORT).show(); calibrateDialog = null; calibrateInput = "" }
+                if (realM != null && realM > 0 && dist > 0) { unitsPerMeter = (dist / realM).toFloat(); scope.launch { cadStore.saveSettings(path, unitsPerMeter.toDouble(), unit) }; Toast.makeText(context, "تمت المعايرة ✓", Toast.LENGTH_SHORT).show(); calibrateDialog = null; calibrateInput = "" }
             }) { Text("تطبيق") }
         }, dismissButton = { TextButton(onClick = { calibrateDialog = null }) { Text("إلغاء") } })
     }
@@ -279,8 +272,30 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeas(m: CadMeas
     when (m) {
         is CadMeasurement.Distance -> {
             val a = w2s(m.a); val b = w2s(m.b)
-            drawLine(CadMeasure, a, b, strokeWidth = 2.5f); drawCircle(CadMeasure, 4f, a); drawCircle(CadMeasure, 4f, b)
-            drawContext.canvas.nativeCanvas.drawText(unit.format(m.length, upm), (a.x + b.x) / 2, (a.y + b.y) / 2 - 8, paint)
+            val dx = b.x - a.x; val dy = b.y - a.y
+            val length = hypot(dx.toDouble(), dy.toDouble()).toFloat().coerceAtLeast(1f)
+            val nx = -dy / length; val ny = dx / length; val offset = 24f
+            val da = Offset(a.x + nx * offset, a.y + ny * offset)
+            val db = Offset(b.x + nx * offset, b.y + ny * offset)
+            // خطوط الامتداد ثم خط البُعد المنفصل عن الكيان المقاس.
+            drawLine(CadMeasure.copy(alpha = .75f), a, Offset(a.x + nx * (offset + 10f), a.y + ny * (offset + 10f)), strokeWidth = 1.7f)
+            drawLine(CadMeasure.copy(alpha = .75f), b, Offset(b.x + nx * (offset + 10f), b.y + ny * (offset + 10f)), strokeWidth = 1.7f)
+            drawLine(CadMeasure, da, db, strokeWidth = 2.6f)
+            fun arrow(at: Offset, toward: Offset) {
+                val adx = toward.x - at.x; val ady = toward.y - at.y; val al = hypot(adx.toDouble(), ady.toDouble()).toFloat().coerceAtLeast(1f)
+                val ux = adx / al; val uy = ady / al; val px = -uy; val py = ux
+                val p1 = Offset(at.x + ux * 12f + px * 5f, at.y + uy * 12f + py * 5f)
+                val p2 = Offset(at.x + ux * 12f - px * 5f, at.y + uy * 12f - py * 5f)
+                val path = Path().apply { moveTo(at.x, at.y); lineTo(p1.x, p1.y); lineTo(p2.x, p2.y); close() }
+                drawPath(path, CadMeasure)
+            }
+            arrow(da, db); arrow(db, da)
+            drawCircle(CadMeasure, 4f, a); drawCircle(CadMeasure, 4f, b)
+            val label = unit.format(m.length, upm)
+            paint.textAlign = android.graphics.Paint.Align.CENTER
+            val mid = Offset((da.x + db.x) / 2, (da.y + db.y) / 2 - 8f)
+            paint.color = android.graphics.Color.rgb(255, 176, 32)
+            drawContext.canvas.nativeCanvas.drawText(label, mid.x, mid.y, paint)
         }
         is CadMeasurement.Continuous -> {
             for (i in 0 until m.points.lastIndex) drawLine(CadMeasure, w2s(m.points[i]), w2s(m.points[i + 1]), strokeWidth = 2.5f)

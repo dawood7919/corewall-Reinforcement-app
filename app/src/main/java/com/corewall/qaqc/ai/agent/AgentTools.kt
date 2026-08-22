@@ -181,6 +181,34 @@ object AgentTools {
             )
         ),
         AgentTool(
+            "complete_task", ToolRisk.WRITE,
+            "تعليم مهمة قائمة كمكتملة. استخدم رقم المهمة الذي رجع من list_tasks.",
+            listOf(arg("id", "number", "رقم المهمة", required = true))
+        ),
+        AgentTool(
+            "add_note", ToolRisk.WRITE,
+            "إنشاء ملاحظة جديدة ضمن ذاكرة الدور.",
+            listOf(
+                arg("title", "string", "عنوان الملاحظة", required = true),
+                arg("body", "string", "نص الملاحظة", required = true),
+                arg("level", "string", "الدور")
+            )
+        ),
+        AgentTool(
+            "create_document", ToolRisk.WRITE,
+            "إنشاء مسودة تقرير داخل استوديو الإنشاء. القوالب المتاحة: QUALITY أو TAKEOFF أو DAILY أو MEETING أو LETTER.",
+            listOf(
+                arg("title", "string", "عنوان التقرير", required = true),
+                arg("template", "string", "نوع القالب: QUALITY|TAKEOFF|DAILY|MEETING|LETTER", required = true),
+                arg("level", "string", "الدور")
+            )
+        ),
+        AgentTool(
+            "export_document_pdf", ToolRisk.WRITE,
+            "تصدير مسودة تقرير موجودة إلى PDF. استخدم رقم المستند الذي رجع من create_document.",
+            listOf(arg("documentId", "number", "رقم مسودة التقرير", required = true))
+        ),
+        AgentTool(
             "add_comment", ToolRisk.WRITE,
             "إضافة كومنت على عنصر في الدور.",
             listOf(

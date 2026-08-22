@@ -39,7 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.corewall.qaqc.ai.model.AnswerFile
-import com.corewall.qaqc.ui.notes.rememberPdfThumb
+import com.corewall.qaqc.ui.media.rememberPdfPreview
 import com.corewall.qaqc.ui.theme.LocalSrtColors
 import java.io.File
 
@@ -116,7 +116,7 @@ private fun FileRow(af: AnswerFile, onOpen: (String) -> Unit) {
                         modifier = Modifier.fillMaxSize()
                     )
                 } else if (ext == "pdf") {
-                    rememberPdfThumb(af.path, 120)?.let { thumb ->
+                    rememberPdfPreview(af.path, 120)?.let { thumb ->
                         androidx.compose.foundation.Image(
                             bitmap = thumb.asImageBitmap(),
                             contentDescription = null,

@@ -30,21 +30,21 @@ object Space {
     val huge = 48.dp
 
     /** الهامش الجانبي القياسي لكل شاشة. */
-    val screen = lg
+    val screen = 20.dp
 
     /** المسافة بين كروت في نفس القايمة. */
-    val stack = md
+    val stack = lg
 
     /** مسافة أمان تحت آخر عنصر عشان شريط التنقّل ما يغطّيهوش. */
-    val bottomInset = 96.dp
+    val bottomInset = 104.dp
 }
 
 /** أنصاف الأقطار — أربع خطوات + كبسولة. */
 object Radius {
-    val sm = 8.dp
-    val md = 12.dp
-    val lg = 16.dp
-    val xl = 24.dp
+    val sm = 10.dp
+    val md = 14.dp
+    val lg = 20.dp
+    val xl = 28.dp
 
     val shapeSm = RoundedCornerShape(sm)
     val shapeMd = RoundedCornerShape(md)
@@ -82,7 +82,7 @@ object Sizes {
     val avatarLg = 56.dp
 
     /** ارتفاع الشريط العلوي المخصص. */
-    val topBar = 56.dp
+    val topBar = 60.dp
 
     /**
      * ارتفاع خانة جوّه مبدّل مقسّم. أقل من [touch] عن قصد: المبدّل نفسه

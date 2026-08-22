@@ -19,6 +19,14 @@ import kotlin.math.hypot
  * وظيفتهم العرض واللمس، مش الحساب.
  */
 object TakeoffMath {
+    /** أقل عدد نقاط صالح لإنهاء أداة قياس؛ يمنع واجهة المحرر من مسح قياس ناقص. */
+    fun canCommitMeasurement(tool: TakeoffTool, pointCount: Int): Boolean = when (tool) {
+        TakeoffTool.COUNT, TakeoffTool.COLUMN -> pointCount >= 1
+        TakeoffTool.LENGTH -> pointCount >= 2
+        TakeoffTool.DIMENSION -> pointCount == 3
+        TakeoffTool.AREA, TakeoffTool.DEDUCT, TakeoffTool.VOLUME -> pointCount >= 3
+    }
+
 
     // ═══════════════════════════════════════════════ التحويل (وبس)
 
@@ -277,6 +285,94 @@ object TakeoffMath {
     }
 
     /**
+     * أقرب رأس في **أي جزء** من البند. النسخة القديمة من تحرير الرؤوس كانت
+     * تفحص الشكل الأساسي فقط؛ لذلك كانت الحلقات والقطاعات المضافة تظهر
+     * كمحتوى قابل للتحديد لكن غير قابل للتحرير. هذا الهدف يحتفظ بمكان الرأس
+     * بدقة حتى يُعاد حفظ الجزء الصحيح فقط.
+     */
+    fun nearestVertexTarget(
+        item: TakeoffItem,
+        p: TakeoffPoint,
+        page: PageGeometry,
+        tapRadiusPt: Double
+    ): TakeoffVertexTarget? {
+        var best: TakeoffVertexTarget? = null
+        var bestDist = Double.MAX_VALUE
+        editableParts(item).forEach { part ->
+            part.points.forEachIndexed { index, vertex ->
+                val d = hypot((p.x - vertex.x) * page.widthPt, (p.y - vertex.y) * page.heightPt)
+                if (d < bestDist) {
+                    bestDist = d
+                    best = TakeoffVertexTarget(part.kind, part.index, index)
+                }
+            }
+        }
+        return best?.takeIf { bestDist <= tapRadiusPt }
+    }
+
+    /**
+     * أقرب ضلع قابل لإضافة رأس في أي جزء قابل للقياس. النتيجة تحمل موضع
+     * الإدراج داخل الحلقة أو القطعة المناسبة، لا داخل الشكل الأساسي دائماً.
+     */
+    fun nearestEdgeInsertTarget(
+        item: TakeoffItem,
+        p: TakeoffPoint,
+        page: PageGeometry,
+        radiusPt: Double
+    ): TakeoffVertexTarget? {
+        if (!item.tool.isAreaLike && item.tool != TakeoffTool.LENGTH) return null
+        val closed = item.tool.isAreaLike
+        var best: TakeoffVertexTarget? = null
+        var bestDist = Double.MAX_VALUE
+        editableParts(item).forEach { part ->
+            val insertAt = nearestEdgeInsertIndex(part.points, p, page, closed, radiusPt) ?: return@forEach
+            val px = p.x * page.widthPt
+            val py = p.y * page.heightPt
+            val previousIndex = if (insertAt == 0) part.points.lastIndex else insertAt - 1
+            val nextIndex = insertAt % part.points.size
+            val a = part.points[previousIndex]
+            val b = part.points[nextIndex]
+            val distance = distanceToSegment(
+                px, py, a.x * page.widthPt, a.y * page.heightPt,
+                b.x * page.widthPt, b.y * page.heightPt
+            )
+            if (distance < bestDist) {
+                bestDist = distance
+                best = TakeoffVertexTarget(part.kind, part.index, insertAt)
+            }
+        }
+        return best
+    }
+
+    /** الرؤوس التابعة لهدف تحرير معين؛ القائمة الفارغة تعني هدفاً غير صالح. */
+    fun verticesFor(item: TakeoffItem, target: TakeoffVertexTarget): List<TakeoffPoint> = when (target.part) {
+        TakeoffGeometryPart.PRIMARY -> item.verts
+        TakeoffGeometryPart.EXTRA_RING -> item.extraRings.getOrNull(target.partIndex).orEmpty()
+        TakeoffGeometryPart.EXTRA_SEGMENT -> item.extraSegments.getOrNull(target.partIndex).orEmpty()
+    }
+
+    /** يبدّل رؤوس جزء واحد فقط، ويحافظ على باقي هندسة البند دون تغيير. */
+    fun withVertices(
+        item: TakeoffItem,
+        target: TakeoffVertexTarget,
+        vertices: List<TakeoffPoint>
+    ): TakeoffItem = when (target.part) {
+        TakeoffGeometryPart.PRIMARY -> item.copy(verts = vertices)
+        TakeoffGeometryPart.EXTRA_RING -> {
+            if (target.partIndex !in item.extraRings.indices) item
+            else item.copy(extraRings = item.extraRings.mapIndexed { index, ring ->
+                if (index == target.partIndex) vertices else ring
+            })
+        }
+        TakeoffGeometryPart.EXTRA_SEGMENT -> {
+            if (target.partIndex !in item.extraSegments.indices) item
+            else item.copy(extraSegments = item.extraSegments.mapIndexed { index, segment ->
+                if (index == target.partIndex) vertices else segment
+            })
+        }
+    }
+
+    /**
      * فهرس الإدراج لرأس جديد على أقرب ضلع للنقطة — الرأس الجديد بيتحط
      * **قبل** الفهرس المرجوع. `closed=true` بتضيف ضلع الإغلاق (آخر رأس
      * لأول رأس) زي أي مضلّع؛ `false` (الطول) بتوقف عند آخر رأس.
@@ -336,10 +432,12 @@ object TakeoffMath {
         }
         if (rings.isEmpty()) return false
         fun inBox(p: TakeoffPoint) = p.x in min.x..max.x && p.y in min.y..max.y
+        val closed = item.tool.isAreaLike
         for (ring in rings) {
             if (ring.any(::inBox)) return true
-            for (i in 0 until ring.size - 1) {
-                if (segmentCrossesBox(ring[i], ring[i + 1], min, max)) return true
+            val edgeCount = if (closed) ring.size else ring.size - 1
+            for (i in 0 until edgeCount.coerceAtLeast(0)) {
+                if (segmentCrossesBox(ring[i], ring[(i + 1) % ring.size], min, max)) return true
             }
         }
         return false
@@ -386,6 +484,22 @@ object TakeoffMath {
         return hypot(px - (ax + t * dx), py - (ay + t * dy))
     }
 
+    private data class EditablePart(
+        val kind: TakeoffGeometryPart,
+        val index: Int,
+        val points: List<TakeoffPoint>
+    )
+
+    private fun editableParts(item: TakeoffItem): List<EditablePart> = buildList {
+        if (item.verts.isNotEmpty()) add(EditablePart(TakeoffGeometryPart.PRIMARY, 0, item.verts))
+        item.extraRings.forEachIndexed { index, ring ->
+            if (ring.isNotEmpty()) add(EditablePart(TakeoffGeometryPart.EXTRA_RING, index, ring))
+        }
+        item.extraSegments.forEachIndexed { index, segment ->
+            if (segment.isNotEmpty()) add(EditablePart(TakeoffGeometryPart.EXTRA_SEGMENT, index, segment))
+        }
+    }
+
     /**
      * البند ده متلمس؟ — بيفحص **كل** أجزاء البند مش الشكل الأساسي بس.
      *
@@ -401,8 +515,13 @@ object TakeoffMath {
         page: PageGeometry,
         tapRadiusPt: Double
     ): Boolean = when (item.tool) {
-        TakeoffTool.AREA, TakeoffTool.DEDUCT, TakeoffTool.VOLUME ->
-            pointInRing(p, item.verts) || item.extraRings.any { pointInRing(p, it) }
+        TakeoffTool.AREA, TakeoffTool.DEDUCT, TakeoffTool.VOLUME -> {
+            fun hitsRing(ring: List<TakeoffPoint>): Boolean = ring.size >= 3 && (
+                pointInRing(p, ring) ||
+                    distanceToPolylinePt(p, ring + ring.first(), page) <= tapRadiusPt
+                )
+            hitsRing(item.verts) || item.extraRings.any(::hitsRing)
+        }
 
         TakeoffTool.LENGTH ->
             distanceToPolylinePt(p, item.verts, page) <= tapRadiusPt ||
