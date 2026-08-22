@@ -196,6 +196,13 @@ sealed interface Dest {
         override val stateKey = "takeoff-project-$projectId"
     }
 
+    /** بيانات الحصر لرسمة — قياسات وفئات وكميات. شاشة مستقلة عن الرسم. */
+    @Immutable
+    data class TakeoffData(val drawingId: Long, val drawingName: String) : Dest {
+        override val title = "بيانات: $drawingName"
+        override val stateKey = "takeoff-data-$drawingId"
+    }
+
     /** شاشة الحصر نفسها — رسمة مفتوحة بأدواتها. شاشة كاملة. */
     @Immutable
     data class TakeoffEditor(

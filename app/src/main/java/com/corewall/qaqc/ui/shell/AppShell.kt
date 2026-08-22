@@ -305,6 +305,10 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
         // حصر الكميات — قسم مستقل: أقسامه ورسماته مالهاش علاقة بالأدوار.
         Dest.Takeoff -> V2TakeoffProjectsScreen(vm, modifier)
         is Dest.TakeoffProject -> V2TakeoffDrawingsScreen(vm, dest.projectId, modifier)
+        is Dest.TakeoffData -> TakeoffDataScreen(
+            vm = vm, drawingId = dest.drawingId,
+            onOpenDrawing = { vm.back() }, modifier = modifier
+        )
         is Dest.TakeoffEditor -> TakeoffEditorScreen(
             vm = vm, drawingId = dest.drawingId, path = dest.path,
             onClose = { vm.back() }

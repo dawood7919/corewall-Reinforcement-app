@@ -70,6 +70,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -259,8 +260,11 @@ fun TakeoffEditorScreen(
 
     // ── القسم المالك — عشان الفئات (مستوى القسم، مش الرسمة).
     var projectId by remember(drawingId) { mutableStateOf<Long?>(null) }
+    var drawingName by remember(drawingId) { mutableStateOf("") }
     LaunchedEffect(drawingId) {
-        projectId = vm.takeoff.drawingById(drawingId)?.projectId
+        val drawing = vm.takeoff.drawingById(drawingId)
+        projectId = drawing?.projectId
+        drawingName = drawing?.name.orEmpty()
         // بنود اتسمّت في جلسة فاتت وماترسمتش — بتتشال هنا. آمن دلوقتي
         // بالظبط لأن مفيش رسم شغّال لسه عند فتح الرسمة.
         vm.takeoff.purgeEmptyItems(drawingId)
@@ -323,7 +327,8 @@ fun TakeoffEditorScreen(
     var formulasOpen by remember { mutableStateOf(false) }
     var toolsSheetOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
-    var treeOpen by remember { mutableStateOf(false) }
+    /** الدوك السفلي مفرود ولا مطوي — مطوي بيدّي الرسمة الشاشة كلها. */
+    var dockExpanded by rememberSaveable { mutableStateOf(true) }
     var lastUndo by remember { mutableStateOf<UndoAction?>(null) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     /** بند بنضيف له هندسة إضافية (حلقة/قطعة جديدة) بدل إنشاء بند مستقل. */
@@ -714,6 +719,17 @@ fun TakeoffEditorScreen(
             state.zoomToRect(rect, paddingPx = 80f)
         }
         selectedId = item.id
+    }
+
+    // طلب "روح للقياس ده" جاي من شاشة البيانات المنفصلة. بيستنى لحد ما
+    // مقاسات الصفحات تتعرف (`measured`) عشان `zoomToRect` يحسب صح، وبيتستهلك
+    // فورًا بعد التنفيذ عشان مايتكررش مع كل إعادة تركيب.
+    val focusRequest by vm.takeoff.pendingFocusItemId.collectAsStateWithLifecycle()
+    LaunchedEffect(focusRequest, items, measured) {
+        val target = focusRequest ?: return@LaunchedEffect
+        val wanted = items.firstOrNull { it.id == target.toString() } ?: return@LaunchedEffect
+        focusItem(wanted)
+        vm.takeoff.consumeFocusRequest()
     }
 
     fun saveAnnotation(type: TakeoffAnnotationType, page: Int, points: List<TakeoffPoint>, text: String = "") {
@@ -1237,7 +1253,7 @@ fun TakeoffEditorScreen(
                 onTotals = { totalsOpen = true },
                 onCalibrate = { endSession(); calibrating = true },
                 onSettings = { settingsOpen = true },
-                onTree = { treeOpen = true },
+                onTree = { vm.openTakeoffData(drawingId, drawingName) },
                 onFormulas = { formulasOpen = true },
                 undoLabel = lastUndo?.label,
                 onUndo = {
@@ -1327,6 +1343,8 @@ fun TakeoffEditorScreen(
                         snapEnabled = snapEnabled,
                         liveReadout = displayedReadout,
                         hasDraft = if (usesV2Workspace) pendingV2Measurement != null else draft.isNotEmpty() || annotationDraft.isNotEmpty(),
+                        expanded = dockExpanded,
+                        onToggleExpanded = { dockExpanded = !dockExpanded },
                         selected = selectedId != null,
                         canAddToShape = selectedItem?.tool.let {
                             it == TakeoffTool.AREA || it == TakeoffTool.VOLUME || it == TakeoffTool.LENGTH
@@ -1466,48 +1484,6 @@ fun TakeoffEditorScreen(
             settings = settings,
             onUpdate = { transform -> vm.updateSettings(transform) },
             onDismiss = { settingsOpen = false }
-        )
-    }
-
-    if (treeOpen) {
-        val categoryModels = remember(categories) { categories.map { vm.takeoff.categoryToModel(it) } }
-        val groupModels = remember(groups) { groups.map { vm.takeoff.groupToModel(it) } }
-        // `items` كاملة وغير مفلترة عن قصد — التصفية بتاعت الخصومات جوّه
-        // الشيت نفسه بس على قايمة العرض، مش على القايمة اللي بتتحسب منها
-        // الكمية الصافية (netOf محتاج يشوف الخصومات عشان يطرحها).
-        TakeoffMeasurementTreeSheet(
-            allItems = items,
-            categories = categoryModels,
-            groups = groupModels,
-            pageGeometryFor = pageGeometryFor,
-            onSelect = { item -> focusItem(item); treeOpen = false },
-            onToggleVisible = { item ->
-                val itemId = item.id.toLongOrNull()
-                if (itemId != null) {
-                    scope.launch {
-                        vm.takeoff.itemById(itemId)?.let { row ->
-                            vm.takeoff.saveItem(row.copy(visible = !row.visible))
-                        }
-                    }
-                }
-            },
-            onDelete = { item ->
-                val id = item.id.toLongOrNull()
-                if (id != null) {
-                    scope.launch {
-                        val row = vm.takeoff.itemById(id)
-                        val children = vm.takeoff.childrenOf(id)
-                        vm.takeoff.deleteItem(id)
-                        if (row != null) {
-                            lastUndo = UndoAction("حذف \"${row.name}\"") {
-                                vm.takeoff.saveItem(row)
-                                children.forEach { vm.takeoff.saveItem(it) }
-                            }
-                        }
-                    }
-                }
-            },
-            onDismiss = { treeOpen = false }
         )
     }
 

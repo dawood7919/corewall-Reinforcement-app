@@ -14,6 +14,7 @@ import com.corewall.qaqc.data.db.TakeoffScaleEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -229,6 +230,20 @@ class TakeoffStore(
     /** خصومات بند بعينه — للتراجع عن حذف الأب، لازم يرجعوا معاه. */
     suspend fun childrenOf(id: Long): List<TakeoffItemEntity> =
         withContext(Dispatchers.IO) { dao.childrenOf(id) }
+
+    /**
+     * طلب "روح للقياس ده" جاي من شاشة البيانات.
+     *
+     * الشاشتين منفصلتين، وشاشة البيانات ماعندهاش وصول لكاميرا الرسمة —
+     * فبتسيب الطلب هنا والمحرّر بيلقطه أول ما يتفتح ويستهلكه. القيمة
+     * بتترجّع لـnull بعد الاستهلاك عشان ما تتنفّذش تاني مع كل إعادة تركيب.
+     */
+    private val _pendingFocusItemId = MutableStateFlow<Long?>(null)
+    val pendingFocusItemId: StateFlow<Long?> = _pendingFocusItemId
+
+    fun requestFocus(itemId: Long?) { _pendingFocusItemId.value = itemId }
+
+    fun consumeFocusRequest() { _pendingFocusItemId.value = null }
 
     /** تنضيف البنود اللي اتسمّت وماترسمتش — بيتنده مرة عند فتح الرسمة. */
     suspend fun purgeEmptyItems(drawingId: Long) =

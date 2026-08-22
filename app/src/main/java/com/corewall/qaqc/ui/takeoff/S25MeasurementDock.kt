@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -55,9 +57,13 @@ import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
 
 /**
- * مساحة تحكم للقياس تُبقي الوظائف الأساسية في الثلث السفلي من شاشة الهاتف.
- * تصميمها مستقل عن هوية أي منتج خارجي: يقدّم أدوات القياس المباشرة، القراءة
- * الحية، والإجراءات السياقية فقط، بدلاً من عرض وظائف إدارة المشروع هنا.
+ * مساحة تحكم للقياس: أدوات القياس المباشرة، القراءة الحية، والإجراءات
+ * السياقية — من غير أي وظيفة إدارة مشروع.
+ *
+ * [expanded] بيتحكم في الارتفاع. الدوك كان بياخد الثلث السفلي دايمًا، وده
+ * كتير على رسمة: الحصر شغل بصري، والمساحة اللي بتروح من الرسمة أغلى من
+ * زرار ظاهر طول الوقت. مطوي = سطر واحد بالقراءة الحية، فالرسمة بتاخد
+ * الشاشة كلها؛ مفرود = الأدوات بالكامل.
  */
 @Composable
 fun S25MeasurementDock(
@@ -68,6 +74,8 @@ fun S25MeasurementDock(
     snapEnabled: Boolean,
     liveReadout: String?,
     hasDraft: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     selected: Boolean,
     addingToShape: Boolean,
     canAddToShape: Boolean,
@@ -136,8 +144,15 @@ fun S25MeasurementDock(
                     DockCompactAction(Icons.Filled.Undo, "تراجع", c.textPrimary, onUndo)
                     DockCompactAction(Icons.Filled.Check, "إنهاء", c.success.fg, onDone)
                 }
+                DockCompactAction(
+                    if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
+                    if (expanded) "اطوِ" else "افرد",
+                    c.textSecondary,
+                    onToggleExpanded
+                )
             }
 
+            if (expanded) {
             Box(Modifier.padding(top = Space.sm).fillMaxWidth().height(1.dp).background(c.divider))
 
             Row(
@@ -172,6 +187,7 @@ fun S25MeasurementDock(
                     }
                     if (multiCount > 0) DockAction(Icons.Filled.DeleteSweep, "حذف $multiCount", c.danger.fg, onDeleteMulti)
                 }
+            }
             }
         }
     }

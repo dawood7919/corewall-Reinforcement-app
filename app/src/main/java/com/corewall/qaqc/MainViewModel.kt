@@ -403,6 +403,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         navigator.push(Dest.TakeoffProject(id, name))
     fun openTakeoffEditor(drawingId: Long, path: String, name: String) =
         navigator.push(Dest.TakeoffEditor(drawingId, path, name))
+    fun openTakeoffData(drawingId: Long, name: String) =
+        navigator.push(Dest.TakeoffData(drawingId, name))
 
     // ══════════════════════════════════════════════ استوديو الإنشاء
 

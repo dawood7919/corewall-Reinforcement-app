@@ -914,125 +914,14 @@ private fun SettingsSliderRow(
 
 // ═══════════════════════════════════════════════ لوحة القياسات والفئات
 
-/**
- * لوحة القياسات والفئات — شيت بارتفاع شبه كامل، مش شاشة `Dest` منفصلة
- * في الـNavigator عن قصد: نفس القيمة العملية ("شاشة تظهر فيها القياسات")
- * من غير تعقيد وجهة تنقّل جديدة لسياق أصلاً محتاج بيانات الرسمة المفتوحة.
- *
- * كل بند: اسمه ولونه وفئته ومجموعته وكميته وصفحته، وثلاث أفعال — تحديد
- * وقفز ([onSelect])، إخفاء/إظهار، وحذف. مفيش تعديل هنا — ده مكانه
- * [TakeoffEditItemSheet] بعد التحديد.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TakeoffMeasurementTreeSheet(
-    allItems: List<TakeoffItem>,
-    categories: List<TakeoffCategory>,
-    groups: List<TakeoffGroup>,
-    pageGeometryFor: (Int) -> PageGeometry,
-    onSelect: (TakeoffItem) -> Unit,
-    onToggleVisible: (TakeoffItem) -> Unit,
-    onDelete: (TakeoffItem) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val c = LocalCwColors.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var query by remember { mutableStateOf("") }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = c.surface,
-        shape = Radius.sheet
-    ) {
-        Column(
-            Modifier
-                .fillMaxHeight(0.88f)
-                .navigationBarsPadding()
-                .padding(horizontal = Space.lg)
-        ) {
-            Row(
-                Modifier.padding(vertical = Space.sm),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "القياسات والفئات",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = c.textPrimary,
-                    modifier = Modifier.weight(1f)
-                )
-                CwIconButton(Icons.Filled.Close, "إغلاق", onDismiss)
-            }
-
-            CwField(
-                value = query,
-                onValueChange = { query = it },
-                label = "بحث بالاسم",
-                leading = { Icon(Icons.Filled.Search, contentDescription = null, tint = c.textTertiary) }
-            )
-            Spacer(Modifier.height(Space.sm))
-
-            // الخصومات مستبعدة من قايمة العرض بس — بتترسم كفتحة في بندها
-            // الأب مش قياس مستقل، فظهورها كصف منفصل تحت "بلا فئة" مربك.
-            // `allItems` نفسها بتفضل كاملة وواصلة لـ`netOf` تحت عشان الطرح
-            // يشتغل صح.
-            val displayable = remember(allItems, query) {
-                allItems.asSequence()
-                    .filter { it.tool != TakeoffTool.DEDUCT }
-                    .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
-                    .toList()
-            }
-            val rows = remember(displayable, categories, groups) { buildTreeRows(displayable, categories, groups) }
-
-            when {
-                allItems.none { it.tool != TakeoffTool.DEDUCT } -> CwEmptyState(
-                    icon = Icons.Filled.Search,
-                    title = "مفيش قياسات في الرسمة دي لسه",
-                    detail = "ابدأ برسم أول قياس من شريط الأدوات"
-                )
-                rows.isEmpty() -> CwEmptyState(icon = Icons.Filled.Search, title = "مفيش نتايج لـ\"$query\"")
-                else -> LazyColumn(
-                    Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(Space.xxs)
-                ) {
-                    items(
-                        rows,
-                        key = { row ->
-                            when (row) {
-                                is TreeRow.CategoryHeader -> "cat_${row.category?.id ?: "none"}"
-                                is TreeRow.GroupHeader -> "grp_${row.group.id}"
-                                is TreeRow.ItemRow -> "item_${row.item.id}"
-                            }
-                        }
-                    ) { row ->
-                        when (row) {
-                            is TreeRow.CategoryHeader -> CategoryHeaderRow(row.category, row.count)
-                            is TreeRow.GroupHeader -> GroupHeaderRow(row.group)
-                            is TreeRow.ItemRow -> MeasurementRow(
-                                item = row.item,
-                                quantityText = formatQuantity(
-                                    row.item.tool, netOf(row.item, allItems, pageGeometryFor(row.item.page))
-                                ),
-                                onSelect = { onSelect(row.item); onDismiss() },
-                                onToggleVisible = { onToggleVisible(row.item) },
-                                onDelete = { onDelete(row.item) }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private sealed interface TreeRow {
+internal sealed interface TreeRow {
     data class CategoryHeader(val category: TakeoffCategory?, val count: Int) : TreeRow
     data class GroupHeader(val group: TakeoffGroup) : TreeRow
     data class ItemRow(val item: TakeoffItem) : TreeRow
 }
 
 /** فئات (بالاسم، "بلا فئة" آخر حاجة) → مجموعات جوّاها → بنود بالاسم. */
-private fun buildTreeRows(
+internal fun buildTreeRows(
     items: List<TakeoffItem>,
     categories: List<TakeoffCategory>,
     groups: List<TakeoffGroup>
@@ -1055,7 +944,7 @@ private fun buildTreeRows(
 }
 
 @Composable
-private fun CategoryHeaderRow(category: TakeoffCategory?, count: Int) {
+internal fun CategoryHeaderRow(category: TakeoffCategory?, count: Int) {
     val c = LocalCwColors.current
     Row(
         Modifier
@@ -1080,7 +969,7 @@ private fun CategoryHeaderRow(category: TakeoffCategory?, count: Int) {
 }
 
 @Composable
-private fun GroupHeaderRow(group: TakeoffGroup) {
+internal fun GroupHeaderRow(group: TakeoffGroup) {
     val c = LocalCwColors.current
     Text(
         group.name,
@@ -1093,7 +982,7 @@ private fun GroupHeaderRow(group: TakeoffGroup) {
 }
 
 @Composable
-private fun MeasurementRow(
+internal fun MeasurementRow(
     item: TakeoffItem,
     quantityText: String,
     onSelect: () -> Unit,
