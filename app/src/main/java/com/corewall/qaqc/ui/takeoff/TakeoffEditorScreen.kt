@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Calculate
@@ -154,6 +155,16 @@ private enum class EditorMode { POINTER, DRAW, RECT, VERTEX, BOXSELECT }
  */
 private data class PendingNaming(val tool: TakeoffTool, val viaRect: Boolean = false)
 
+/**
+ * تراجع بمستوى واحد — العكس المباشر لآخر تعديل. مقصود إنه مستوى واحد
+ * بس مش تاريخ كامل: تخزين لقطة قبل **كل** تعديل ممكن (سحب، حذف،
+ * إضافة) بيعقّد أي عملية بشكل كبير وبيزوّد فرص الأخطاء، ومستوى واحد
+ * بيغطي الحالة الأكتر شيوعًا فعليًا — "غلطت في آخر حاجة عملتها،
+ * ورّيني رجّعها". [label] بيتعرض في شريط الأدوات عشان يبان بيرجّع
+ * إيه بالظبط.
+ */
+private data class UndoAction(val label: String, val perform: suspend () -> Unit)
+
 /** لون ثابت لخطوط القياس المرجعية — مميّز عن باليت البنود وعن رمادي الخصم. */
 private const val DIMENSION_COLOR = 0xFF42A5F5L
 
@@ -281,6 +292,7 @@ fun TakeoffEditorScreen(
     var toolsSheetOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
     var treeOpen by remember { mutableStateOf(false) }
+    var lastUndo by remember { mutableStateOf<UndoAction?>(null) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     /** بند بنضيف له هندسة إضافية (حلقة/قطعة جديدة) بدل إنشاء بند مستقل. */
     var addToShapeFor by remember { mutableStateOf<TakeoffItem?>(null) }
@@ -378,7 +390,7 @@ fun TakeoffEditorScreen(
         colWidth: Double? = null, colHeight: Double? = null
     ) {
         scope.launch {
-            vm.takeoff.saveItem(
+            val id = vm.takeoff.saveItem(
                 TakeoffItemEntity(
                     drawingId = drawingId,
                     page = page,
@@ -394,6 +406,7 @@ fun TakeoffEditorScreen(
                     createdAt = System.currentTimeMillis()
                 )
             )
+            lastUndo = UndoAction("رسم \"$name\"") { vm.takeoff.deleteItem(id) }
         }
     }
 
@@ -426,7 +439,7 @@ fun TakeoffEditorScreen(
             // الخصم مالوش اسم ولا فئة يختارهم المستخدم — مربوط بأبوه
             // وبطلع رمادي دايمًا، زي ما كان قبل التصنيفات.
             scope.launch {
-                vm.takeoff.saveItem(
+                val id = vm.takeoff.saveItem(
                     TakeoffItemEntity(
                         drawingId = drawingId,
                         page = page,
@@ -438,6 +451,7 @@ fun TakeoffEditorScreen(
                         createdAt = System.currentTimeMillis()
                     )
                 )
+                lastUndo = UndoAction("خصم من \"${parent.name}\"") { vm.takeoff.deleteItem(id) }
             }
             draft.clear(); draftPage.intValue = -1; deductFor = null
             return
@@ -454,12 +468,16 @@ fun TakeoffEditorScreen(
             if (itemId != null && live != null) {
                 scope.launch {
                     vm.takeoff.itemById(itemId)?.let { row ->
+                        // `row` نفسها اللقطة اللي قبل التعديل — التراجع
+                        // بيرجّعها زي ما هي من غير ما يحتاج يحسب رياضيًا
+                        // إيه اتضاف.
                         val updated = if (addTarget.tool == TakeoffTool.LENGTH) {
                             row.copy(extraSegmentsJson = vm.takeoff.encodeRings(live.extraSegments + listOf(points)))
                         } else {
                             row.copy(extraRingsJson = vm.takeoff.encodeRings(live.extraRings + listOf(points)))
                         }
                         vm.takeoff.saveItem(updated)
+                        lastUndo = UndoAction("إضافة لـ \"${row.name}\"") { vm.takeoff.saveItem(row) }
                     }
                 }
             }
@@ -474,6 +492,7 @@ fun TakeoffEditorScreen(
             scope.launch {
                 vm.takeoff.itemById(placeholderId)?.let { row ->
                     vm.takeoff.saveItem(row.copy(page = page, pointsJson = vm.takeoff.encodeRing(points)))
+                    lastUndo = UndoAction("رسم \"${row.name}\"") { vm.takeoff.deleteItem(placeholderId) }
                 }
             }
         }
@@ -532,6 +551,7 @@ fun TakeoffEditorScreen(
             scope.launch {
                 vm.takeoff.itemById(placeholderId)?.let { row ->
                     vm.takeoff.saveItem(row.copy(page = page, pointsJson = vm.takeoff.encodeRing(points)))
+                    lastUndo = UndoAction("رسم \"${row.name}\"") { vm.takeoff.deleteItem(placeholderId) }
                 }
             }
         }
@@ -785,7 +805,9 @@ fun TakeoffEditorScreen(
                                 val snapshot = vertexPoints.toList()
                                 scope.launch {
                                     vm.takeoff.itemById(itemId)?.let { row ->
+                                        // `row` = اللقطة قبل السحب — التراجع بيرجّعها زي ما هي.
                                         vm.takeoff.saveItem(row.copy(pointsJson = vm.takeoff.encodeRing(snapshot)))
+                                        lastUndo = UndoAction("تعديل رؤوس \"${row.name}\"") { vm.takeoff.saveItem(row) }
                                     }
                                 }
                             }
@@ -959,6 +981,14 @@ fun TakeoffEditorScreen(
                 onCalibrate = { endSession(); calibrating = true },
                 onSettings = { settingsOpen = true },
                 onTree = { treeOpen = true },
+                undoLabel = lastUndo?.label,
+                onUndo = {
+                    val action = lastUndo
+                    if (action != null) {
+                        lastUndo = null
+                        scope.launch { action.perform() }
+                    }
+                },
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
@@ -1056,25 +1086,54 @@ fun TakeoffEditorScreen(
                                 scope.launch {
                                     vm.takeoff.itemById(itemId)?.let { row ->
                                         vm.takeoff.saveItem(row.copy(pointsJson = vm.takeoff.encodeRing(updated)))
+                                        lastUndo = UndoAction("حذف رأس من \"${row.name}\"") { vm.takeoff.saveItem(row) }
                                     }
                                 }
                             }
                             vertexFocusIndex = null
                         },
                         onDeleteSelected = {
-                            selectedId?.toLongOrNull()?.let { id ->
-                                scope.launch { vm.takeoff.deleteItem(id) }
+                            val id = selectedId?.toLongOrNull()
+                            if (id != null) {
+                                scope.launch {
+                                    val row = vm.takeoff.itemById(id)
+                                    val children = vm.takeoff.childrenOf(id)
+                                    vm.takeoff.deleteItem(id)
+                                    if (row != null) {
+                                        lastUndo = UndoAction("حذف \"${row.name}\"") {
+                                            vm.takeoff.saveItem(row)
+                                            children.forEach { vm.takeoff.saveItem(it) }
+                                        }
+                                    }
+                                }
                             }
                             selectedId = null
                         },
                         onDeleteMulti = {
                             val ids = multiSelectedIds.mapNotNull { it.toLongOrNull() }
-                            scope.launch { ids.forEach { vm.takeoff.deleteItem(it) } }
+                            scope.launch {
+                                val rows = ids.mapNotNull { vm.takeoff.itemById(it) }
+                                val children = ids.flatMap { vm.takeoff.childrenOf(it) }
+                                ids.forEach { vm.takeoff.deleteItem(it) }
+                                if (rows.isNotEmpty()) {
+                                    lastUndo = UndoAction("حذف ${rows.size} بند") {
+                                        rows.forEach { vm.takeoff.saveItem(it) }
+                                        children.forEach { vm.takeoff.saveItem(it) }
+                                    }
+                                }
+                            }
                             multiSelectedIds = emptySet()
                         },
                         onDeleteAnnotation = {
-                            selectedAnnotationId?.toLongOrNull()?.let { id ->
-                                scope.launch { vm.takeoff.deleteAnnotation(id) }
+                            val annId = selectedAnnotationId?.toLongOrNull()
+                            if (annId != null) {
+                                scope.launch {
+                                    val row = vm.takeoff.annotationById(annId)
+                                    vm.takeoff.deleteAnnotation(annId)
+                                    if (row != null) {
+                                        lastUndo = UndoAction("حذف تعليق") { vm.takeoff.saveAnnotation(row) }
+                                    }
+                                }
                             }
                             selectedAnnotationId = null
                         },
@@ -1169,7 +1228,20 @@ fun TakeoffEditorScreen(
                 }
             },
             onDelete = { item ->
-                item.id.toLongOrNull()?.let { id -> scope.launch { vm.takeoff.deleteItem(id) } }
+                val id = item.id.toLongOrNull()
+                if (id != null) {
+                    scope.launch {
+                        val row = vm.takeoff.itemById(id)
+                        val children = vm.takeoff.childrenOf(id)
+                        vm.takeoff.deleteItem(id)
+                        if (row != null) {
+                            lastUndo = UndoAction("حذف \"${row.name}\"") {
+                                vm.takeoff.saveItem(row)
+                                children.forEach { vm.takeoff.saveItem(it) }
+                            }
+                        }
+                    }
+                }
             },
             onDismiss = { treeOpen = false }
         )
@@ -1322,6 +1394,8 @@ private fun TakeoffTopBar(
     onCalibrate: () -> Unit,
     onSettings: () -> Unit,
     onTree: () -> Unit,
+    undoLabel: String?,
+    onUndo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
@@ -1351,6 +1425,13 @@ private fun TakeoffTopBar(
                 Modifier.horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                CwIconButton(
+                    Icons.AutoMirrored.Filled.Undo,
+                    undoLabel?.let { "تراجع عن: $it" } ?: "مفيش حاجة تتراجع عنها",
+                    onUndo,
+                    tint = if (undoLabel != null) c.warning.fg else null,
+                    enabled = undoLabel != null
+                )
                 CwIconButton(Icons.Filled.Category, "القياسات والفئات", onTree)
                 CwIconButton(Icons.Filled.Straighten, "معايرة المقياس", onCalibrate)
                 CwIconButton(Icons.Filled.Calculate, "الصيغ", onFormulas)

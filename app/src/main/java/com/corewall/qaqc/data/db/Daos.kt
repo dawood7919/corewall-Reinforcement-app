@@ -691,6 +691,10 @@ interface TakeoffDao {
     @Query("SELECT * FROM takeoff_items WHERE id = :id")
     suspend fun item(id: Long): TakeoffItemEntity?
 
+    /** خصومات بند بعينه — للتراجع عن الحذف: لازم نسترجعهم مع الأب. */
+    @Query("SELECT * FROM takeoff_items WHERE parentId = :id")
+    suspend fun childrenOf(id: Long): List<TakeoffItemEntity>
+
     /** حذف بند **وكل خصوماته** — عشان مايفضلش خصم معلّق على أب ميت. */
     @Query("DELETE FROM takeoff_items WHERE id = :id OR parentId = :id")
     suspend fun deleteItemCascade(id: Long)
@@ -717,6 +721,9 @@ interface TakeoffDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAnnotation(entity: TakeoffAnnotationEntity): Long
+
+    @Query("SELECT * FROM takeoff_annotations WHERE id = :id")
+    suspend fun annotation(id: Long): TakeoffAnnotationEntity?
 
     @Query("DELETE FROM takeoff_annotations WHERE id = :id")
     suspend fun deleteAnnotation(id: Long)

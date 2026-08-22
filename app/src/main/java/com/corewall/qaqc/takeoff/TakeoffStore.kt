@@ -226,6 +226,10 @@ class TakeoffStore(
     suspend fun itemById(id: Long): TakeoffItemEntity? =
         withContext(Dispatchers.IO) { dao.item(id) }
 
+    /** خصومات بند بعينه — للتراجع عن حذف الأب، لازم يرجعوا معاه. */
+    suspend fun childrenOf(id: Long): List<TakeoffItemEntity> =
+        withContext(Dispatchers.IO) { dao.childrenOf(id) }
+
     // ═══════════════════════════════════════════════ الصيغ
 
     fun formulas(drawingId: Long): Flow<List<TakeoffFormulaEntity>> = dao.observeFormulas(drawingId)
@@ -243,6 +247,9 @@ class TakeoffStore(
         withContext(Dispatchers.IO) { dao.upsertAnnotation(entity) }
 
     suspend fun deleteAnnotation(id: Long) = withContext(Dispatchers.IO) { dao.deleteAnnotation(id) }
+
+    suspend fun annotationById(id: Long): TakeoffAnnotationEntity? =
+        withContext(Dispatchers.IO) { dao.annotation(id) }
 
     fun annotationToModel(row: TakeoffAnnotationEntity): TakeoffAnnotation = TakeoffAnnotation(
         id = row.id.toString(),
