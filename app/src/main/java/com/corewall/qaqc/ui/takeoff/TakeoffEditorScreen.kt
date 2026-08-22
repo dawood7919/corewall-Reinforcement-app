@@ -931,7 +931,15 @@ fun TakeoffEditorScreen(
                         }
                     },
                     onPersistedInkErased = { annotationId ->
-                        scope.launch { vm.takeoff.deleteAnnotation(annotationId) }
+                        scope.launch {
+                            // اللقطة قبل المسح: الممحاة بتشيل الخط من القاعدة
+                            // نهائيًا، فمن غير دي مسحة غلط مالهاش رجعة.
+                            val row = vm.takeoff.annotationById(annotationId)
+                            vm.takeoff.deleteAnnotation(annotationId)
+                            if (row != null) {
+                                lastUndo = UndoAction("مسح تعليق") { vm.takeoff.saveAnnotation(row); Unit }
+                            }
+                        }
                     }
                 )
             } else PdfCanvas(
@@ -1410,19 +1418,6 @@ fun TakeoffEditorScreen(
                                 }
                             }
                             multiSelectedIds = emptySet()
-                        },
-                        onDeleteAnnotation = {
-                            val annId = selectedAnnotationId?.toLongOrNull()
-                            if (annId != null) {
-                                scope.launch {
-                                    val row = vm.takeoff.annotationById(annId)
-                                    vm.takeoff.deleteAnnotation(annId)
-                                    if (row != null) {
-                                        lastUndo = UndoAction("حذف تعليق") { vm.takeoff.saveAnnotation(row) }
-                                    }
-                                }
-                            }
-                            selectedAnnotationId = null
                         },
                         onEditSelected = { editingItem = selectedItem }
                     )
@@ -1906,112 +1901,6 @@ private fun StatusField(text: String, warn: Boolean = false) {
  * بدل ما تتلمّ تسعة أزرار أيقونة من غير تسمية في شريط واحد مضغوط.
  * الأفعال السياقية (إنهاء/تعديل/حذف) بتفضل هنا لأنها مش اختيار أداة.
  */
-@Composable
-private fun TakeoffToolBar(
-    mode: EditorMode,
-    tool: TakeoffTool,
-    deducting: Boolean,
-    hasDraft: Boolean,
-    selectedId: String?,
-    canAddToShape: Boolean,
-    addingToShape: Boolean,
-    canDeleteVertex: Boolean,
-    multiCount: Int,
-    annotationTool: TakeoffAnnotationType?,
-    selectedAnnotationId: String?,
-    onPointer: () -> Unit,
-    onPick: (TakeoffTool) -> Unit,
-    onMore: () -> Unit,
-    onDone: () -> Unit,
-    onAddToShape: () -> Unit,
-    onToggleVisible: () -> Unit,
-    onDeleteVertex: () -> Unit,
-    onDeleteSelected: () -> Unit,
-    onDeleteMulti: () -> Unit,
-    onDeleteAnnotation: () -> Unit,
-    onEditSelected: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val c = LocalCwColors.current
-    val moreActive = mode == EditorMode.RECT || mode == EditorMode.VERTEX ||
-        mode == EditorMode.BOXSELECT || annotationTool != null || deducting ||
-        (mode == EditorMode.DRAW && tool != TakeoffTool.AREA && tool != TakeoffTool.LENGTH && tool != TakeoffTool.COUNT)
-    val hasContext = hasDraft || selectedId != null || selectedAnnotationId != null || multiCount > 0
-
-    Surface(
-        modifier.padding(Space.md),
-        color = c.surface,
-        shape = Radius.pill,
-        shadowElevation = Elevation.floating
-    ) {
-        Row(
-            Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = Space.sm, vertical = Space.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.xs)
-        ) {
-            CwIconButton(
-                Icons.Filled.PanTool, "تنقّل وتحديد", onPointer,
-                active = mode == EditorMode.POINTER
-            )
-            CwIconButton(
-                Icons.Filled.Square, "مساحة", { onPick(TakeoffTool.AREA) },
-                active = mode == EditorMode.DRAW && !deducting && tool == TakeoffTool.AREA
-            )
-            CwIconButton(
-                Icons.Filled.Timeline, "طول", { onPick(TakeoffTool.LENGTH) },
-                active = mode == EditorMode.DRAW && tool == TakeoffTool.LENGTH
-            )
-            CwIconButton(
-                Icons.Filled.PinDrop, "عدّ", { onPick(TakeoffTool.COUNT) },
-                active = mode == EditorMode.DRAW && tool == TakeoffTool.COUNT
-            )
-            CwIconButton(
-                Icons.Filled.MoreHoriz, "كل الأدوات", onMore,
-                active = moreActive
-            )
-
-            if (hasContext) {
-                Box(
-                    Modifier
-                        .padding(horizontal = Space.xxs)
-                        .size(width = Space.hair, height = Sizes.touch * 0.6f)
-                        .background(c.divider)
-                )
-            }
-            if (addingToShape) {
-                CwIconButton(Icons.Filled.Close, "إلغاء الإضافة", onPointer, tint = c.warning.fg)
-            }
-            if (mode == EditorMode.VERTEX && canDeleteVertex) {
-                CwIconButton(Icons.Filled.Delete, "احذف الرأس المحدّد", onDeleteVertex, tint = c.danger.fg)
-            }
-            if (hasDraft) {
-                CwIconButton(Icons.Filled.Check, "إنهاء الشكل", onDone, tint = c.success.fg)
-            }
-            if (selectedId != null && !addingToShape) {
-                if (canAddToShape) {
-                    CwIconButton(Icons.Filled.AddCircleOutline, "أضف للشكل", onAddToShape)
-                }
-                CwIconButton(Icons.Filled.Visibility, "إخفاء/إظهار", onToggleVisible)
-                CwIconButton(Icons.Filled.Edit, "تعديل البند", onEditSelected)
-                CwIconButton(
-                    Icons.Filled.Delete, "احذف المحدّد", onDeleteSelected, tint = c.danger.fg
-                )
-            }
-            if (selectedAnnotationId != null) {
-                CwIconButton(
-                    Icons.Filled.Delete, "احذف التعليق", onDeleteAnnotation, tint = c.danger.fg
-                )
-            }
-            if (multiCount > 0) {
-                CwIconButton(
-                    Icons.Filled.DeleteSweep, "احذف $multiCount بند", onDeleteMulti, tint = c.danger.fg
-                )
-            }
-        }
-    }
-}
 
 /**
  * "أدوات الحصر" — شيت شبكي مقسّم لأقسام (قياس/تعليق/تحرير)، كل أداة
