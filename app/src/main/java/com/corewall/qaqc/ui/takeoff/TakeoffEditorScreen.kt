@@ -1114,7 +1114,7 @@ fun TakeoffEditorScreen(
             if (cursorHolding) { canvasDrawEnd(); cursorHolding = false }
             else { canvasDrawStart(pos); cursorHolding = true }
         } else {
-            canvasTap(pos, PointerKind.Finger)
+            canvasTap(pos, PointerKind.FINGER)
         }
     }
 
