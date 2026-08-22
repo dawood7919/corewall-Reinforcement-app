@@ -106,6 +106,7 @@ fun S25MeasurementDock(
         border = BorderStroke(1.dp, c.outline.copy(alpha = 0.82f))
     ) {
         Column(Modifier.padding(horizontal = Space.md, vertical = Space.md)) {
+            if (expanded) {
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -144,6 +145,31 @@ fun S25MeasurementDock(
                     DockCompactAction(Icons.Filled.Undo, "تراجع", c.textPrimary, onUndo)
                     DockCompactAction(Icons.Filled.Check, "إنهاء", c.success.fg, onDone)
                 }
+            }
+
+            Box(Modifier.padding(top = Space.sm).fillMaxWidth().height(1.dp).background(c.divider))
+            }
+
+            // صف الأدوات ظاهر في الحالتين: اختيار الأداة هو الفعل الأساسي،
+            // وإخفاؤه كان بيجبرك تفرد الدوك وتطويه مع كل تبديل أداة.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = if (expanded) Space.sm else 0.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.xs)
+            ) {
+                DockTool(Icons.Filled.PanTool, "تحديد", pointerActive, Modifier.weight(1f), onPointer)
+                DockTool(Icons.Filled.Square, "مساحة", !pointerActive && !deducting && activeTool == TakeoffTool.AREA, Modifier.weight(1f)) { onPick(TakeoffTool.AREA) }
+                DockTool(Icons.Filled.Timeline, "طول", !pointerActive && activeTool == TakeoffTool.LENGTH, Modifier.weight(1f)) { onPick(TakeoffTool.LENGTH) }
+                DockTool(Icons.Filled.PinDrop, "عد", !pointerActive && activeTool == TakeoffTool.COUNT, Modifier.weight(1f)) { onPick(TakeoffTool.COUNT) }
+                DockTool(Icons.Filled.MoreHoriz, "أدوات", !pointerActive && (activeTool == TakeoffTool.VOLUME || activeTool == TakeoffTool.COLUMN || activeTool == TakeoffTool.DIMENSION), Modifier.weight(1f), onMore)
+                // مطوي: التراجع والإنهاء لازم يفضلوا في الإيد وسط الرسم،
+                // وهما فوق في صف القراءة اللي مخفي دلوقتي.
+                if (!expanded && hasDraft) {
+                    DockCompactAction(Icons.Filled.Undo, "تراجع", c.textPrimary, onUndo)
+                    DockCompactAction(Icons.Filled.Check, "إنهاء", c.success.fg, onDone)
+                }
                 DockCompactAction(
                     if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
                     if (expanded) "اطوِ" else "افرد",
@@ -152,22 +178,8 @@ fun S25MeasurementDock(
                 )
             }
 
-            if (expanded) {
-            Box(Modifier.padding(top = Space.sm).fillMaxWidth().height(1.dp).background(c.divider))
-
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = Space.sm),
-                horizontalArrangement = Arrangement.spacedBy(Space.xs)
-            ) {
-                DockTool(Icons.Filled.PanTool, "تحديد", pointerActive, Modifier.weight(1f), onPointer)
-                DockTool(Icons.Filled.Square, "مساحة", !pointerActive && !deducting && activeTool == TakeoffTool.AREA, Modifier.weight(1f)) { onPick(TakeoffTool.AREA) }
-                DockTool(Icons.Filled.Timeline, "طول", !pointerActive && activeTool == TakeoffTool.LENGTH, Modifier.weight(1f)) { onPick(TakeoffTool.LENGTH) }
-                DockTool(Icons.Filled.PinDrop, "عد", !pointerActive && activeTool == TakeoffTool.COUNT, Modifier.weight(1f)) { onPick(TakeoffTool.COUNT) }
-                DockTool(Icons.Filled.MoreHoriz, "أدوات", !pointerActive && (activeTool == TakeoffTool.VOLUME || activeTool == TakeoffTool.COLUMN || activeTool == TakeoffTool.DIMENSION), Modifier.weight(1f), onMore)
-            }
-
+            // مش مربوط بالطي: الصف ده أصلاً مابيظهرش إلا لما يبقى فيه
+            // تحديد، وده بالظبط الوقت اللي محتاج فيه الحذف والتحرير.
             if (selected || multiCount > 0 || canDeleteVertex || addingToShape) {
                 Row(
                     Modifier
@@ -187,7 +199,6 @@ fun S25MeasurementDock(
                     }
                     if (multiCount > 0) DockAction(Icons.Filled.DeleteSweep, "حذف $multiCount", c.danger.fg, onDeleteMulti)
                 }
-            }
             }
         }
     }

@@ -328,7 +328,7 @@ fun TakeoffEditorScreen(
     var toolsSheetOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
     /** الدوك السفلي مفرود ولا مطوي — مطوي بيدّي الرسمة الشاشة كلها. */
-    var dockExpanded by rememberSaveable { mutableStateOf(true) }
+    var dockExpanded by rememberSaveable { mutableStateOf(false) }
     var lastUndo by remember { mutableStateOf<UndoAction?>(null) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     /** بند بنضيف له هندسة إضافية (حلقة/قطعة جديدة) بدل إنشاء بند مستقل. */
