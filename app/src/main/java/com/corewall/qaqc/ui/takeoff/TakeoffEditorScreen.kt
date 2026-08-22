@@ -84,6 +84,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
@@ -1238,7 +1239,6 @@ fun TakeoffEditorScreen(
                     addToShapeFor != null -> "إضافة لـ: ${addToShapeFor?.name}"
                     else -> null
                 },
-                calibrated = pageGeometry.calibrated,
                 page = state.currentPage + 1,
                 pageCount = active.pageCount,
                 onBack = onClose,
@@ -1643,7 +1643,6 @@ private fun minVertsFor(tool: TakeoffTool): Int = when (tool) {
 @Composable
 private fun TakeoffTopBar(
     title: String?,
-    calibrated: Boolean,
     page: Int,
     pageCount: Int,
     onBack: () -> Unit,
@@ -1668,21 +1667,29 @@ private fun TakeoffTopBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             CwIconButton(Icons.AutoMirrored.Filled.ArrowBack, "رجوع", onBack)
-            Column(Modifier.weight(1f)) {
-                Text(
-                    title ?: "صفحة $page من $pageCount",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = c.textPrimary
-                )
-                Text(
-                    if (calibrated) "المقياس معاير" else "الصفحة مش معايرة — عاير الأول",
-                    style = CwText.codeSmall,
-                    color = if (calibrated) c.success.fg else c.danger.fg
-                )
-            }
+            // سطر واحد مقصوص — **مش** تجميل.
+            //
+            // العمود ده جنب صف أيقونات فيه `horizontalScroll`. الصف ده كان
+            // بلا وزن، فكان بياخد العرض المتاح كله ويسيب للعنوان صفر. نص
+            // بعرض صفر بيلفّ حرف في كل سطر، فـ"الصفحة مش معايرة — عاير
+            // الأول" كانت بتطلع ٢٨ سطر وتمطّ الشريط لنص الشاشة فوق الرسمة.
+            // الوزن على الاتنين + القص بيمنعوا ده نهائيًا.
+            Text(
+                title ?: "صفحة $page من $pageCount",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = c.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            // حالة المعايرة اتشالت من هنا: هي معروضة أصلاً كشارة في الدوك
+            // السفلي، وتكرارها كان بيكلّف سطر تاني في أغلى مكان في الشاشة.
             Row(
-                Modifier.horizontalScroll(rememberScrollState()),
+                Modifier
+                    .weight(2f)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 CwIconButton(
