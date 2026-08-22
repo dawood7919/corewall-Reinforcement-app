@@ -61,6 +61,7 @@ import com.corewall.qaqc.takeoff.LATIN_NAME_ERROR
 import com.corewall.qaqc.takeoff.isLatinTakeoffName
 import com.corewall.qaqc.ui.design.CwBanner
 import com.corewall.qaqc.ui.design.CwButton
+import com.corewall.qaqc.ui.design.CwSwitchRow
 import com.corewall.qaqc.ui.design.CwButtonStyle
 import com.corewall.qaqc.ui.design.CwChip
 import com.corewall.qaqc.ui.design.CwEmptyState
@@ -860,6 +861,23 @@ fun TakeoffSettingsSheet(
                 )
                 CwIconButton(Icons.Filled.Close, "إغلاق", onDismiss)
             }
+
+            // طريقة الإدخال قبل أي مقاسات: هي اللي بتحدد إزاي هتحط نقطة
+            // أصلاً، والباقي تفاصيل مظهر.
+            CwSwitchRow(
+                title = "مؤشّر بدل اللمس المباشر",
+                subtitle = "للي معهوش S Pen: اسحب بصباعك يتحرّك مؤشّر، والنقطة بتتحط عنده",
+                checked = settings.virtualCursor,
+                onCheckedChange = { on -> onUpdate { it.copy(virtualCursor = on) } }
+            )
+            CwSwitchRow(
+                title = "الرسم بالقلم بس",
+                subtitle = "الصباع للتنقّل والتكبير، والرسم للـS Pen لوحده",
+                checked = settings.stylusOnly,
+                enabled = !settings.virtualCursor,
+                onCheckedChange = { on -> onUpdate { it.copy(stylusOnly = on) } }
+            )
+            Spacer(Modifier.height(Space.xs))
 
             SettingsSliderRow(
                 label = "سُمك خطوط الأشكال",

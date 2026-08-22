@@ -74,6 +74,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -327,6 +335,10 @@ fun TakeoffEditorScreen(
     var settingsOpen by remember { mutableStateOf(false) }
     /** الدوك السفلي مفرود ولا مطوي — مطوي بيدّي الرسمة الشاشة كلها. */
     var dockExpanded by rememberSaveable { mutableStateOf(false) }
+    /** موضع المؤشّر الافتراضي على الشاشة — null يعني لسه ما اتحطّش. */
+    var cursorPos by remember { mutableStateOf<Offset?>(null) }
+    /** المؤشّر ماسك حاجة دلوقتي (سحب مستطيل، أو رأس بيتنقل). */
+    var cursorHolding by remember { mutableStateOf(false) }
     var lastUndo by remember { mutableStateOf<UndoAction?>(null) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     /** بند بنضيف له هندسة إضافية (حلقة/قطعة جديدة) بدل إنشاء بند مستقل. */
@@ -810,7 +822,11 @@ fun TakeoffEditorScreen(
     val draftPoints = draft.toList()
     val activeDraftTool = if (deductFor != null) TakeoffTool.DEDUCT else tool
     val selectedV2Tool = tool.toV2WorkspaceTool()
-    val usesV2Measurement = mode == EditorMode.DRAW &&
+    // المؤشّر بيشتغل على إحداثيات العارض الكلاسيكي. مساحة V2 عندها
+    // تكبير وإزاحة مستقلين، فتشغيل الاتنين مع بعض معناه مؤشّر بيشاور
+    // على مكان غير اللي المستخدم شايفه.
+    val usesV2Measurement = !settings.virtualCursor &&
+        mode == EditorMode.DRAW &&
         !calibrating &&
         annotationTool == null &&
         deductFor == null &&
@@ -913,6 +929,195 @@ fun TakeoffEditorScreen(
         }
     }
 
+    fun canvasDrawStart(screen: Offset) {
+                        when (mode) {
+                            EditorMode.RECT -> {
+                                state.pageHit(screen)?.let { hit ->
+                                    rectPage = hit.page
+                                    val p = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                    rectDraft = p to p
+                                }
+                            }
+                            EditorMode.BOXSELECT -> { boxStart = screen; boxEnd = screen }
+                            EditorMode.VERTEX -> {
+                                val item = pageItems.firstOrNull { it.id == selectedId }
+                                val hit = state.pageHit(screen)
+                                if (item != null && hit != null && hit.page == item.page) {
+                                    val p = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                    val existingTarget = TakeoffMath.nearestVertexTarget(
+                                        item, p, pageGeometry, tapRadiusPt = 16.0
+                                    )
+                                    val target = existingTarget ?: TakeoffMath.nearestEdgeInsertTarget(
+                                        item, p, pageGeometry, radiusPt = 16.0
+                                    )
+                                    if (target != null) {
+                                        vertexItemId = item.id.toLongOrNull()
+                                        vertexTarget = target
+                                        vertexPoints.clear()
+                                        vertexPoints.addAll(TakeoffMath.verticesFor(item, target))
+                                        if (existingTarget == null) {
+                                            vertexPoints.add(target.vertexIndex, p)
+                                        }
+                                        vertexFocusTarget = target
+                                    }
+                                }
+                            }
+                            EditorMode.DRAW -> {
+                                // خط قياس بس — طرفاه بلمستين عاديتين، وده سحب نقطة
+                                // الإزاحة التالتة بعدهم على طول ("لوره أو أدّام").
+                                if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
+                                    state.pageHit(screen)?.let { hit ->
+                                        if (hit.page == draftPage.intValue) {
+                                            dimDragPoint = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                        }
+                                    }
+                                }
+                            }
+                            else -> Unit
+                        }
+    }
+
+    fun canvasDrawMove(screen: Offset) {
+                        when (mode) {
+                            EditorMode.RECT -> {
+                                val start = rectDraft?.first
+                                val hit = state.pageHit(screen)
+                                if (start != null && hit != null && hit.page == rectPage) {
+                                    rectDraft = start to TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                }
+                            }
+                            EditorMode.BOXSELECT -> { boxEnd = screen }
+                            EditorMode.VERTEX -> {
+                                val idx = vertexTarget?.vertexIndex
+                                val hit = state.pageHit(screen)
+                                if (idx != null && hit != null && idx < vertexPoints.size) {
+                                    vertexPoints[idx] = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                }
+                            }
+                            EditorMode.DRAW -> {
+                                if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
+                                    state.pageHit(screen)?.let { hit ->
+                                        if (hit.page == draftPage.intValue) {
+                                            dimDragPoint = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                        }
+                                    }
+                                }
+                            }
+                            else -> Unit
+                        }
+    }
+
+    fun canvasDrawEnd() {
+                        when (mode) {
+                            EditorMode.RECT -> {
+                                val draft2 = rectDraft
+                                if (draft2 != null) finishRect(draft2.first, draft2.second, rectPage)
+                                rectDraft = null; rectPage = -1
+                            }
+                            EditorMode.BOXSELECT -> {
+                                val s = boxStart; val e = boxEnd
+                                if (s != null && e != null) {
+                                    val hs = state.pageHit(s)
+                                    val he = state.pageHit(e)
+                                    if (hs != null && he != null && hs.page == he.page) {
+                                        val minP = TakeoffPoint(
+                                            minOf(hs.nx, he.nx).toDouble(), minOf(hs.ny, he.ny).toDouble()
+                                        )
+                                        val maxP = TakeoffPoint(
+                                            maxOf(hs.nx, he.nx).toDouble(), maxOf(hs.ny, he.ny).toDouble()
+                                        )
+                                        multiSelectedIds = pageItems
+                                            .filter { it.page == hs.page && TakeoffMath.crossesBox(it, minP, maxP) }
+                                            .map { it.id }.toSet()
+                                    }
+                                }
+                                boxStart = null; boxEnd = null
+                            }
+                            EditorMode.VERTEX -> {
+                                val itemId = vertexItemId
+                                val target = vertexTarget
+                                if (itemId != null && target != null && vertexPoints.isNotEmpty()) {
+                                    persistVertexPart(itemId, target, vertexPoints.toList(), "تعديل رؤوس")
+                                }
+                                vertexItemId = null; vertexTarget = null; vertexPoints.clear()
+                            }
+                            EditorMode.DRAW -> {
+                                if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
+                                    dimDragPoint?.let { draft += it }
+                                    dimDragPoint = null
+                                    commit()
+                                }
+                            }
+                            else -> Unit
+                        }
+    }
+
+    /**
+     * لمسة على الرسمة — نقطة **الشاشة** مش الصباع.
+     *
+     * دالة مسمّاة عشان طبقة المؤشّر تقدر تنده نفس المسار بالظبط
+     * بإحداثيات المؤشّر. لو المنطق فضل مكتوب جوّه اللامدا، كان لازم
+     * يتكرر — وأي أداة تتضاف بعد كده تشتغل باللمس وتفضل ميتة بالمؤشّر.
+     */
+    fun canvasTap(point: Offset, kind: PointerKind) {
+                        val penOnly = settings.stylusOnly && mode != EditorMode.POINTER
+                        when {
+                            // في وضع القلم، الصباع بيتنقّل بس — مايرسمش ولا يعاير.
+                            penOnly && !kind.isPen -> Unit
+                            calibrating -> {
+                                state.pageHit(point)?.let { hit ->
+                                    if (calibPoints.size < 2) {
+                                        calibPoints += TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
+                                    }
+                                }
+                            }
+                            // التعليقات طبقة مستقلة — بتاخد الأولوية على وضع
+                            // النقر العادي، وبتفضل شغّالة أيًا كان `mode`.
+                            annotationTool != null -> handleAnnotationTap(point, annotationTool!!)
+                            mode == EditorMode.POINTER || mode == EditorMode.VERTEX -> {
+                                val hit = state.pageHit(point)
+                                val p = hit?.let { h -> TakeoffPoint(h.nx.toDouble(), h.ny.toDouble()) }
+                                selectedId = p?.let { pt ->
+                                    // من الآخر للأول: الشكل اللي اترسم بعدين هو
+                                    // اللي فوق بصرياً، فلازم يكسب اللمسة.
+                                    pageItems.lastOrNull { candidate ->
+                                        candidate.visible && TakeoffMath.hitTest(
+                                            candidate, pt, pageGeometry, tapRadiusPt = 14.0
+                                        )
+                                    }?.id
+                                }
+                                multiSelectedIds = emptySet()
+                                // لمسة ماخدتش بند حصر — جرّب تلاقيها على تعليق
+                                // بدل ما تسيب المستخدم بلا طريقة يشيله بيها.
+                                selectedAnnotationId = if (selectedId == null && p != null) {
+                                    pageAnnotations.lastOrNull { it.visible && annotationHit(it, p, pageGeometry) }?.id
+                                } else null
+                            }
+                            mode == EditorMode.DRAW -> addPoint(point)
+                            else -> Unit
+                        }
+    }
+
+    /**
+     * ضغطة زرار "ضع" — بتترجم موضع المؤشّر لنفس الأحداث بتاعت اللمس.
+     *
+     * الأوضاع اللي بتشتغل بالسحب (مستطيل، تحديد بمستطيل، تحريك رأس)
+     * محتاجة بداية ونهاية، فالزرار بيشتغل ضغطتين: الأولى بتمسك والتانية
+     * بتسيب، وحركة المؤشّر بينهم بتتبعت كسحب. الباقي لمسة واحدة.
+     */
+    fun cursorPlace() {
+        val pos = cursorPos ?: return
+        val dragMode = mode == EditorMode.RECT ||
+            mode == EditorMode.BOXSELECT ||
+            mode == EditorMode.VERTEX
+        if (dragMode) {
+            if (cursorHolding) { canvasDrawEnd(); cursorHolding = false }
+            else { canvasDrawStart(pos); cursorHolding = true }
+        } else {
+            canvasTap(pos, PointerKind.Finger)
+        }
+    }
+
     Surface(Modifier.fillMaxSize(), color = c.background) {
         Box(Modifier.fillMaxSize()) {
             if (usesV2Workspace) {
@@ -964,170 +1169,16 @@ fun TakeoffEditorScreen(
                 gestureAccept = remember(penHasJob) {
                     { kind: PointerKind -> !(penHasJob && kind.isPen) }
                 },
-                onDrawStart = { screen ->
-                    when (mode) {
-                        EditorMode.RECT -> {
-                            state.pageHit(screen)?.let { hit ->
-                                rectPage = hit.page
-                                val p = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
-                                rectDraft = p to p
-                            }
-                        }
-                        EditorMode.BOXSELECT -> { boxStart = screen; boxEnd = screen }
-                        EditorMode.VERTEX -> {
-                            val item = pageItems.firstOrNull { it.id == selectedId }
-                            val hit = state.pageHit(screen)
-                            if (item != null && hit != null && hit.page == item.page) {
-                                val p = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
-                                val existingTarget = TakeoffMath.nearestVertexTarget(
-                                    item, p, pageGeometry, tapRadiusPt = 16.0
-                                )
-                                val target = existingTarget ?: TakeoffMath.nearestEdgeInsertTarget(
-                                    item, p, pageGeometry, radiusPt = 16.0
-                                )
-                                if (target != null) {
-                                    vertexItemId = item.id.toLongOrNull()
-                                    vertexTarget = target
-                                    vertexPoints.clear()
-                                    vertexPoints.addAll(TakeoffMath.verticesFor(item, target))
-                                    if (existingTarget == null) {
-                                        vertexPoints.add(target.vertexIndex, p)
-                                    }
-                                    vertexFocusTarget = target
-                                }
-                            }
-                        }
-                        EditorMode.DRAW -> {
-                            // خط قياس بس — طرفاه بلمستين عاديتين، وده سحب نقطة
-                            // الإزاحة التالتة بعدهم على طول ("لوره أو أدّام").
-                            if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
-                                state.pageHit(screen)?.let { hit ->
-                                    if (hit.page == draftPage.intValue) {
-                                        dimDragPoint = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
-                                    }
-                                }
-                            }
-                        }
-                        else -> Unit
-                    }
-                },
-                onDrawMove = { screen ->
-                    when (mode) {
-                        EditorMode.RECT -> {
-                            val start = rectDraft?.first
-                            val hit = state.pageHit(screen)
-                            if (start != null && hit != null && hit.page == rectPage) {
-                                rectDraft = start to TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
-                            }
-                        }
-                        EditorMode.BOXSELECT -> { boxEnd = screen }
-                        EditorMode.VERTEX -> {
-                            val idx = vertexTarget?.vertexIndex
-                            val hit = state.pageHit(screen)
-                            if (idx != null && hit != null && idx < vertexPoints.size) {
-                                vertexPoints[idx] = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
-                            }
-                        }
-                        EditorMode.DRAW -> {
-                            if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
-                                state.pageHit(screen)?.let { hit ->
-                                    if (hit.page == draftPage.intValue) {
-                                        dimDragPoint = TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
-                                    }
-                                }
-                            }
-                        }
-                        else -> Unit
-                    }
-                },
-                onDrawEnd = {
-                    when (mode) {
-                        EditorMode.RECT -> {
-                            val draft2 = rectDraft
-                            if (draft2 != null) finishRect(draft2.first, draft2.second, rectPage)
-                            rectDraft = null; rectPage = -1
-                        }
-                        EditorMode.BOXSELECT -> {
-                            val s = boxStart; val e = boxEnd
-                            if (s != null && e != null) {
-                                val hs = state.pageHit(s)
-                                val he = state.pageHit(e)
-                                if (hs != null && he != null && hs.page == he.page) {
-                                    val minP = TakeoffPoint(
-                                        minOf(hs.nx, he.nx).toDouble(), minOf(hs.ny, he.ny).toDouble()
-                                    )
-                                    val maxP = TakeoffPoint(
-                                        maxOf(hs.nx, he.nx).toDouble(), maxOf(hs.ny, he.ny).toDouble()
-                                    )
-                                    multiSelectedIds = pageItems
-                                        .filter { it.page == hs.page && TakeoffMath.crossesBox(it, minP, maxP) }
-                                        .map { it.id }.toSet()
-                                }
-                            }
-                            boxStart = null; boxEnd = null
-                        }
-                        EditorMode.VERTEX -> {
-                            val itemId = vertexItemId
-                            val target = vertexTarget
-                            if (itemId != null && target != null && vertexPoints.isNotEmpty()) {
-                                persistVertexPart(itemId, target, vertexPoints.toList(), "تعديل رؤوس")
-                            }
-                            vertexItemId = null; vertexTarget = null; vertexPoints.clear()
-                        }
-                        EditorMode.DRAW -> {
-                            if (tool == TakeoffTool.DIMENSION && draft.size == 2) {
-                                dimDragPoint?.let { draft += it }
-                                dimDragPoint = null
-                                commit()
-                            }
-                        }
-                        else -> Unit
-                    }
-                },
+                onDrawStart = { canvasDrawStart(it) },
+                onDrawMove = { canvasDrawMove(it) },
+                onDrawEnd = { canvasDrawEnd() },
                 onDrawCancel = {
                     rectDraft = null; rectPage = -1
                     boxStart = null; boxEnd = null
                     vertexItemId = null; vertexTarget = null; vertexPoints.clear()
                     dimDragPoint = null
                 },
-                onTap = { point, kind ->
-                    val penOnly = settings.stylusOnly && mode != EditorMode.POINTER
-                    when {
-                        // في وضع القلم، الصباع بيتنقّل بس — مايرسمش ولا يعاير.
-                        penOnly && !kind.isPen -> Unit
-                        calibrating -> {
-                            state.pageHit(point)?.let { hit ->
-                                if (calibPoints.size < 2) {
-                                    calibPoints += TakeoffPoint(hit.nx.toDouble(), hit.ny.toDouble())
-                                }
-                            }
-                        }
-                        // التعليقات طبقة مستقلة — بتاخد الأولوية على وضع
-                        // النقر العادي، وبتفضل شغّالة أيًا كان `mode`.
-                        annotationTool != null -> handleAnnotationTap(point, annotationTool!!)
-                        mode == EditorMode.POINTER || mode == EditorMode.VERTEX -> {
-                            val hit = state.pageHit(point)
-                            val p = hit?.let { h -> TakeoffPoint(h.nx.toDouble(), h.ny.toDouble()) }
-                            selectedId = p?.let { pt ->
-                                // من الآخر للأول: الشكل اللي اترسم بعدين هو
-                                // اللي فوق بصرياً، فلازم يكسب اللمسة.
-                                pageItems.lastOrNull { candidate ->
-                                    candidate.visible && TakeoffMath.hitTest(
-                                        candidate, pt, pageGeometry, tapRadiusPt = 14.0
-                                    )
-                                }?.id
-                            }
-                            multiSelectedIds = emptySet()
-                            // لمسة ماخدتش بند حصر — جرّب تلاقيها على تعليق
-                            // بدل ما تسيب المستخدم بلا طريقة يشيله بيها.
-                            selectedAnnotationId = if (selectedId == null && p != null) {
-                                pageAnnotations.lastOrNull { it.visible && annotationHit(it, p, pageGeometry) }?.id
-                            } else null
-                        }
-                        mode == EditorMode.DRAW -> addPoint(point)
-                        else -> Unit
-                    }
-                },
+                onTap = { point, kind -> canvasTap(point, kind) },
                 onLongPress = { _, _ ->
                     if (annotationTool == TakeoffAnnotationType.CLOUD) finishAnnotation()
                     else if (mode == EditorMode.DRAW) commit()
@@ -1230,6 +1281,60 @@ fun TakeoffEditorScreen(
                 }
             )
 
+            // ── طبقة المؤشّر الافتراضي
+            if (settings.virtualCursor) {
+                val cursorColor = c.accent
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            // صباع واحد بيحرّك المؤشّر، واتنين بيقرّبوا
+                            // ويحرّكوا الصفحة — نفس تقسيم أي برنامج CAD.
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val down = event.changes.filter { it.pressed }
+                                    if (down.isEmpty()) break
+                                    if (down.size >= 2) {
+                                        val zoomChange = event.calculateZoom()
+                                        val panChange = event.calculatePan()
+                                        val centroid = event.calculateCentroid()
+                                        if (zoomChange != 1f) state.zoomBy(zoomChange, centroid)
+                                        if (panChange != Offset.Zero) state.panBy(panChange.x, panChange.y)
+                                    } else {
+                                        val change = down.first()
+                                        val delta = change.position - change.previousPosition
+                                        if (delta != Offset.Zero) {
+                                            val base = cursorPos
+                                                ?: Offset(size.width / 2f, size.height / 2f)
+                                            val next = Offset(
+                                                (base.x + delta.x).coerceIn(0f, size.width.toFloat()),
+                                                (base.y + delta.y).coerceIn(0f, size.height.toFloat())
+                                            )
+                                            cursorPos = next
+                                            // ماسك حاجة؟ يبقى الحركة سحب مش تنقّل.
+                                            if (cursorHolding) canvasDrawMove(next)
+                                        }
+                                    }
+                                    event.changes.forEach { it.consume() }
+                                }
+                            }
+                        }
+                ) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        val pos = cursorPos ?: Offset(size.width / 2f, size.height / 2f)
+                        val arm = 22f
+                        val ring = if (cursorHolding) 13f else 9f
+                        // خطين وحلقة: التقاطع بيحدد النقطة بالظبط، والحلقة
+                        // بتخلّيه ملحوظ فوق رسمة مليانة خطوط.
+                        drawLine(cursorColor, Offset(pos.x - arm, pos.y), Offset(pos.x + arm, pos.y), strokeWidth = 3f)
+                        drawLine(cursorColor, Offset(pos.x, pos.y - arm), Offset(pos.x, pos.y + arm), strokeWidth = 3f)
+                        drawCircle(cursorColor, radius = ring, center = pos, style = Stroke(width = 3f))
+                    }
+                }
+            }
+
             TakeoffTopBar(
                 title = when {
                     calibrating -> "عاير المقياس"
@@ -1279,6 +1384,23 @@ fun TakeoffEditorScreen(
                     .align(Alignment.CenterEnd)
                     .padding(Space.md)
             )
+
+            if (settings.virtualCursor) {
+                ExtendedFloatingActionButton(
+                    onClick = { cursorPlace() },
+                    containerColor = if (cursorHolding) c.warning.fg else c.accent,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = Space.md, bottom = 150.dp)
+                ) {
+                    Icon(
+                        if (cursorHolding) Icons.Filled.Check else Icons.Filled.Add,
+                        contentDescription = null
+                    )
+                    Spacer(Modifier.width(Space.xs))
+                    Text(if (cursorHolding) "سيب" else "ضع")
+                }
+            }
 
             Column(
                 Modifier
