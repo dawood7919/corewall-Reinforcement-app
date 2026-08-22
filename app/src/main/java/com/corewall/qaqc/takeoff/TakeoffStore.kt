@@ -230,6 +230,10 @@ class TakeoffStore(
     suspend fun childrenOf(id: Long): List<TakeoffItemEntity> =
         withContext(Dispatchers.IO) { dao.childrenOf(id) }
 
+    /** تنضيف البنود اللي اتسمّت وماترسمتش — بيتنده مرة عند فتح الرسمة. */
+    suspend fun purgeEmptyItems(drawingId: Long) =
+        withContext(Dispatchers.IO) { dao.purgeEmptyItems(drawingId) }
+
     // ═══════════════════════════════════════════════ الصيغ
 
     fun formulas(drawingId: Long): Flow<List<TakeoffFormulaEntity>> = dao.observeFormulas(drawingId)

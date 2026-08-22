@@ -12,6 +12,7 @@ import com.corewall.qaqc.data.FileLibrary
 import com.corewall.qaqc.data.FilesManager
 import com.corewall.qaqc.data.SettingsStore
 import com.corewall.qaqc.data.db.AppDatabase
+import com.corewall.qaqc.diag.CrashReporter
 
 class CoreWallApp : Application() {
     lateinit var repository: AppRepository
@@ -36,6 +37,9 @@ class CoreWallApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // أول سطر بقصد: أي حاجة بتجري قبله لو وقعت مش هتتسجّل.
+        CrashReporter.install(this)
+
         // الإنشاء هنا رخيص: كله كائنات بتلفّ DAOs. القراية الفعلية
         // للأصول وفتح قاعدة البيانات مؤجّلين.
         repository = AppRepository(this)
@@ -50,7 +54,11 @@ class CoreWallApp : Application() {
         // مع رسم أول شاشة بدل ما يتأخّروها.
         startupScope.launch {
             runCatching { repository.warmUp() }
+            // فشل فتح القاعدة كان بيتبلع هنا بالكامل. المشكلة إن الترحيل
+            // لو وقع، التطبيق مابيقفلش في السطر ده — بيقفل بعدها بثانية من
+            // أول استعلام في الواجهة، فالسبب الحقيقي بيضيع. بنسجّله.
             runCatching { db.openHelper.readableDatabase }
+                .onFailure { CrashReporter.record(this@CoreWallApp, "فتح قاعدة البيانات", it) }
             // المهملات بتتنضّف مرة عند التشغيل — بعد فتح القاعدة عشان
             // ما تتأخّرش أول شاشة عشان حاجة محدش مستنيها.
             runCatching { repository.purgeOldNoteTrash() }

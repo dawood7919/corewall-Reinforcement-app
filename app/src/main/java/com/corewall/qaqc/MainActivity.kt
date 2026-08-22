@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.corewall.qaqc.diag.CrashReportDialog
 import com.corewall.qaqc.ui.design.ProvideMotionPreferences
 import com.corewall.qaqc.ui.shell.AppShell
 import com.corewall.qaqc.ui.theme.CoreWallTheme
@@ -30,6 +31,9 @@ class MainActivity : ComponentActivity() {
                 // مكوّن — الحركة اختيارية، والوظيفة مش متوقّفة عليها أبداً.
                 ProvideMotionPreferences {
                     AppShell(vm)
+                    // فوق الهيكل كله: لو التطبيق قفل المرة اللي فاتت،
+                    // السبب بيتعرض هنا مهما كانت الشاشة اللي فتح عليها.
+                    CrashReportDialog()
                 }
             }
         }

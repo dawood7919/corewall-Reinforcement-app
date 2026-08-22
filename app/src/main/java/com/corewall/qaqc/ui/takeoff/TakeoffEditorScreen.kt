@@ -232,7 +232,12 @@ fun TakeoffEditorScreen(
 
     // ── القسم المالك — عشان الفئات (مستوى القسم، مش الرسمة).
     var projectId by remember(drawingId) { mutableStateOf<Long?>(null) }
-    LaunchedEffect(drawingId) { projectId = vm.takeoff.drawingById(drawingId)?.projectId }
+    LaunchedEffect(drawingId) {
+        projectId = vm.takeoff.drawingById(drawingId)?.projectId
+        // بنود اتسمّت في جلسة فاتت وماترسمتش — بتتشال هنا. آمن دلوقتي
+        // بالظبط لأن مفيش رسم شغّال لسه عند فتح الرسمة.
+        vm.takeoff.purgeEmptyItems(drawingId)
+    }
     val categories: List<TakeoffCategoryEntity> by remember(projectId) {
         projectId?.let { vm.takeoff.categories(it) }
             ?: kotlinx.coroutines.flow.flowOf(emptyList<TakeoffCategoryEntity>())

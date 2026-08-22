@@ -702,6 +702,22 @@ interface TakeoffDao {
     @Query("DELETE FROM takeoff_items WHERE drawingId = :drawingId")
     suspend fun clearDrawingItems(drawingId: Long)
 
+    /**
+     * بنود اتسمّت واتحجز لها ID بس محدش رسمها.
+     *
+     * التسمية بتحصل **قبل** الرسم عشان الـID يبقى جاهز للصيغ، فالصف
+     * بيتكتب بهندسة فاضية. لو المستخدم خرج من الرسمة قبل ما يرسم، الصف
+     * بيفضل شبح: مالوش شكل على الشاشة، كميته صفر، وبيظهر في شجرة
+     * القياسات كبند مالوش معنى. بيتنضّفوا مرة عند فتح الرسمة.
+     */
+    @Query(
+        "DELETE FROM takeoff_items WHERE drawingId = :drawingId " +
+            "AND pointsJson IN ('[]', '') " +
+            "AND extraRingsJson IN ('[]', '') " +
+            "AND extraSegmentsJson IN ('[]', '')"
+    )
+    suspend fun purgeEmptyItems(drawingId: Long)
+
     // ── الصيغ
     @Query("SELECT * FROM takeoff_formulas WHERE drawingId = :drawingId ORDER BY id")
     fun observeFormulas(drawingId: Long): Flow<List<TakeoffFormulaEntity>>
