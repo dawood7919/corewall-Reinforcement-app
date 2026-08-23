@@ -345,6 +345,18 @@ fun TakeoffEditorScreen(
     var pendingNaming by remember { mutableStateOf<PendingNaming?>(null) }
     /** بند اتسمّى واتحجز ID له بس لسه ماترسمش — بيتحدّث بالهندسة عند الحفظ. */
     var pendingDrawItemId by remember { mutableStateOf<Long?>(null) }
+    /**
+     * المقاسات اللي المستخدم كتبها في نافذة التسمية (سُمك الحجم، أبعاد
+     * العمود).
+     *
+     * محفوظة هنا كمان مش في صف الحجز بس: لو الحجز ضاع لأي سبب، مسار
+     * الإنقاذ بيعمل بند جديد — وكان بيعمله بلا سُمك، يعني حجم = مساحة × صفر
+     * = صفر. الكمية بتطلع صفر والمستخدم مش شايف أي سبب.
+     */
+    var pendingThickness by remember { mutableStateOf<Double?>(null) }
+    var pendingColLength by remember { mutableStateOf<Double?>(null) }
+    var pendingColWidth by remember { mutableStateOf<Double?>(null) }
+    var pendingColHeight by remember { mutableStateOf<Double?>(null) }
     var pendingV2Measurement by remember { mutableStateOf<PendingV2Measurement?>(null) }
     var inkMode by remember { mutableStateOf(false) }
     var inkColorArgb by remember { mutableStateOf(0xFF1976D2L) }
@@ -586,7 +598,11 @@ fun TakeoffEditorScreen(
                         points = points,
                         name = defaultName(tool, rows.size + 1),
                         categoryId = null,
-                        colorArgb = TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size]
+                        colorArgb = TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size],
+                        thickness = pendingThickness,
+                        colLength = pendingColLength,
+                        colWidth = pendingColWidth,
+                        colHeight = pendingColHeight
                     )
                 }
             }
@@ -599,7 +615,11 @@ fun TakeoffEditorScreen(
                 points = points,
                 name = defaultName(tool, rows.size + 1),
                 categoryId = null,
-                colorArgb = TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size]
+                colorArgb = TAKEOFF_PALETTE[colourIndex % TAKEOFF_PALETTE.size],
+                thickness = pendingThickness,
+                colLength = pendingColLength,
+                colWidth = pendingColWidth,
+                colHeight = pendingColHeight
             )
         }
         pendingDrawItemId = null
@@ -1116,9 +1136,15 @@ fun TakeoffEditorScreen(
             state.viewport.width / 2f,
             state.viewport.height / 2f
         ).also { cursorPos = it }
+        // البُعد: الطرفين لمستين، وإزاحة خط القياس **سحب** مش لمسة. بالمؤشّر
+        // ماكانش فيه سحب أصلاً، فالبُعد كان بيقف بعد النقطة التانية ومايكملش
+        // أبدًا. بنعامله كوضع سحب: ضغطة تمسك الإزاحة، وتانية تثبّتها وتحفظ.
+        val placingDimOffset = mode == EditorMode.DRAW &&
+            tool == TakeoffTool.DIMENSION && draft.size >= 2
         val dragMode = mode == EditorMode.RECT ||
             mode == EditorMode.BOXSELECT ||
-            mode == EditorMode.VERTEX
+            mode == EditorMode.VERTEX ||
+            placingDimOffset
         if (dragMode) {
             if (cursorHolding) { canvasDrawEnd(); cursorHolding = false }
             else { canvasDrawStart(pos); cursorHolding = true }
@@ -1679,6 +1705,10 @@ fun TakeoffEditorScreen(
                 // الـID يبقى موجود من الأول للصيغ. وضع الرسم مايتفعّلش إلا
                 // لما الـID يرجع فعلاً، عشان مفيش سباق بين اللمسة الأولى
                 // وكتابة القاعدة.
+                pendingThickness = thickness
+                pendingColLength = colLength
+                pendingColWidth = colWidth
+                pendingColHeight = colHeight
                 scope.launch {
                     val newId = vm.takeoff.saveItem(
                         TakeoffItemEntity(
