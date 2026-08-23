@@ -190,6 +190,9 @@ private data class PendingNaming(val tool: TakeoffTool, val viaRect: Boolean = f
  * إيه بالظبط.
  */
 private data class UndoAction(val label: String, val perform: suspend () -> Unit)
+
+/** نوع التعديل على رأس واحد — بيتطبّق على أحدث نسخة من الشكل، مش على لقطة. */
+private enum class VertexOp { MOVE, INSERT, DELETE }
 /** بيانات البند المحجوزة لقياس V2 قبل حفظ هندسته النهائية في Room. */
 private data class PendingV2Measurement(
     val tool: TakeoffTool,
@@ -338,6 +341,8 @@ fun TakeoffEditorScreen(
     var cursorPos by remember { mutableStateOf<Offset?>(null) }
     /** المؤشّر ماسك حاجة دلوقتي (سحب مستطيل، أو رأس بيتنقل). */
     var cursorHolding by remember { mutableStateOf(false) }
+    /** السحب الحالي أضاف رأس جديد على ضلع، مش بيحرّك رأس موجود. */
+    var vertexInserted by remember { mutableStateOf(false) }
     var lastUndo by remember { mutableStateOf<UndoAction?>(null) }
     var deductFor by remember { mutableStateOf<TakeoffItem?>(null) }
     /** بند بنضيف له هندسة إضافية (حلقة/قطعة جديدة) بدل إنشاء بند مستقل. */
@@ -479,15 +484,42 @@ fun TakeoffEditorScreen(
     }
 
     /** يحفظ الجزء الهندسي المستهدف فقط، مع إبقاء بقية حلقات وقطاعات البند كما هي. */
-    fun persistVertexPart(
+    /**
+     * تثبيت تعديل رأس واحد.
+     *
+     * بيتطبّق على **أحدث** نسخة من الشكل من القاعدة، وبيغيّر الرأس المقصود
+     * بس. الأول كانت الدالة بتكتب قائمة الرؤوس كاملة زي ما اتقريت وقت بداية
+     * السحب — واللقطة دي بتبقى قديمة لأن تدفّق Room مابيوصلش فورًا بعد
+     * الحفظ. النتيجة إن تحريك رأس تاني كان بيكتب النسخة القديمة فوق
+     * التعديل الأول ويرجّعه مكانه.
+     */
+    fun persistVertexEdit(
         itemId: Long,
         target: TakeoffVertexTarget,
-        points: List<TakeoffPoint>,
+        point: TakeoffPoint?,
+        op: VertexOp,
         undoLabel: String
     ) {
         scope.launch {
             vm.takeoff.itemById(itemId)?.let { row ->
-                val updated = TakeoffMath.withVertices(vm.takeoff.toModel(row), target, points)
+                val model = vm.takeoff.toModel(row)
+                val fresh = TakeoffMath.verticesFor(model, target).toMutableList()
+                val index = target.vertexIndex
+                when (op) {
+                    VertexOp.MOVE -> {
+                        if (point == null || index !in fresh.indices) return@let
+                        fresh[index] = point
+                    }
+                    VertexOp.INSERT -> {
+                        if (point == null || index > fresh.size || index < 0) return@let
+                        fresh.add(index, point)
+                    }
+                    VertexOp.DELETE -> {
+                        if (index !in fresh.indices) return@let
+                        fresh.removeAt(index)
+                    }
+                }
+                val updated = TakeoffMath.withVertices(model, target, fresh)
                 val persisted = when (target.part) {
                     TakeoffGeometryPart.PRIMARY -> row.copy(pointsJson = vm.takeoff.encodeRing(updated.verts))
                     TakeoffGeometryPart.EXTRA_RING -> row.copy(extraRingsJson = vm.takeoff.encodeRings(updated.extraRings))
@@ -973,6 +1005,7 @@ fun TakeoffEditorScreen(
                                         vertexItemId = item.id.toLongOrNull()
                                         vertexTarget = target
                                         vertexPoints.clear()
+                                        vertexInserted = existingTarget == null
                                         vertexPoints.addAll(TakeoffMath.verticesFor(item, target))
                                         if (existingTarget == null) {
                                             vertexPoints.add(target.vertexIndex, p)
@@ -1056,7 +1089,12 @@ fun TakeoffEditorScreen(
                                 val itemId = vertexItemId
                                 val target = vertexTarget
                                 if (itemId != null && target != null && vertexPoints.isNotEmpty()) {
-                                    persistVertexPart(itemId, target, vertexPoints.toList(), "تعديل رؤوس")
+                                    persistVertexEdit(
+                                        itemId, target,
+                                        vertexPoints.getOrNull(target.vertexIndex),
+                                        if (vertexInserted) VertexOp.INSERT else VertexOp.MOVE,
+                                        "تعديل رؤوس"
+                                    )
                                 }
                                 vertexItemId = null; vertexTarget = null; vertexPoints.clear()
                             }
@@ -1582,8 +1620,7 @@ fun TakeoffEditorScreen(
                                 item.tool != TakeoffTool.DIMENSION &&
                                 target.vertexIndex < vertices.size && vertices.size > minVertsFor(item.tool)
                             ) {
-                                val updated = vertices.toMutableList().also { it.removeAt(target.vertexIndex) }
-                                persistVertexPart(itemId, target, updated, "حذف رأس من")
+                                persistVertexEdit(itemId, target, null, VertexOp.DELETE, "حذف رأس من")
                             }
                             vertexFocusTarget = null
                         },
@@ -1685,9 +1722,14 @@ fun TakeoffEditorScreen(
             },
             onConfirm = { name, categoryId, colorArgb, thickness, colLength, colWidth, colHeight ->
                 pendingNaming = null
-                if (!naming.viaRect && naming.tool.toV2WorkspaceTool() != null) {
-                    // أدوات V2 تحفظ مرة واحدة عند «إنهاء»؛ لا ننشئ صفاً فارغاً
-                    // حتى لا يبقى بند شبح عند إلغاء مسودة القلم.
+                // الشرط ده لازم يطابق `usesV2Measurement` بالحرف. لو التسمية
+                // راحت لمسار V2 والرسم راح للعارض الكلاسيكي (وده اللي بيحصل
+                // مع المؤشّر)، الاسم والفئة واللون **والسُمك** بيفضلوا محبوسين
+                // في `pendingV2Measurement` ومحدش بيقراهم — فالبند بيتحفظ
+                // باسم افتراضي بلا فئة، والحجم بيطلع صفر لأن السُمك ضاع.
+                if (!naming.viaRect && !settings.virtualCursor &&
+                    naming.tool.toV2WorkspaceTool() != null
+                ) {
                     pendingV2Measurement = PendingV2Measurement(
                         tool = naming.tool,
                         name = name,
