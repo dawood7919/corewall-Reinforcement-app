@@ -69,6 +69,9 @@ fun TakeoffDrawingsScreen(
     var failed by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<TakeoffDrawingEntity?>(null) }
 
+    /** رسمة اترفعت ومستنية اختيار صفحاتها. */
+    var pendingPages by remember { mutableStateOf<TakeoffDrawingEntity?>(null) }
+
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -79,8 +82,25 @@ fun TakeoffDrawingsScreen(
             scope.launch {
                 val id = vm.takeoff.addDrawing(projectId, uri, name)
                 if (id == null) failed = true
+                // الاختيار بيحصل **بعد** النسخ عن قصد: منتقي الملفات بيدّي
+                // صلاحية مؤقتة على الـURI، وفتح الملف لعرض مصغّرات وهو لسه
+                // برّه التطبيق ممكن يفشل من غير سبب واضح للمستخدم.
+                else vm.takeoff.drawingById(id)?.let { pendingPages = it }
             }
         }
+    }
+
+    pendingPages?.let { drawing ->
+        TakeoffPagePickerSheet(
+            path = drawing.filePath,
+            onConfirm = { pages ->
+                pendingPages = null
+                scope.launch { vm.takeoff.keepPages(drawing.id, pages) }
+            },
+            // الإلغاء بيسيب الملف كامل — الرفع نفسه نجح، والاختيار تحسين
+            // مش شرط لإتمامه.
+            onDismiss = { pendingPages = null }
+        )
     }
 
     Box(modifier.fillMaxSize()) {

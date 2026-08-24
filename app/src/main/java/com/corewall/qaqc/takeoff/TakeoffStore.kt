@@ -3,6 +3,7 @@ package com.corewall.qaqc.takeoff
 import android.content.Context
 import android.net.Uri
 import com.corewall.qaqc.data.db.AppDatabase
+import com.corewall.qaqc.pdfengine.PdfOps
 import com.corewall.qaqc.data.db.TakeoffAnnotationEntity
 import com.corewall.qaqc.data.db.TakeoffCategoryEntity
 import com.corewall.qaqc.data.db.TakeoffDrawingEntity
@@ -175,6 +176,36 @@ class TakeoffStore(
                     createdAt = System.currentTimeMillis()
                 )
             )
+        }
+
+    /**
+     * بيسيب الصفحات المختارة بس في ملف الرسمة، وبيرمي الباقي.
+     *
+     * الحذف بيحصل على **الملف نفسه** مش كعلَم على الصف. لو كان علَم، كل
+     * حساب وكل رسم وكل مرجع صفحة في التطبيق كان لازم يفلتر الصفحات
+     * المستبعدة، وأي مكان ينسى الفلترة بيدّي رقم غلط بصمت. الملف اللي
+     * فيه الصفحات المطلوبة بس بيخلّي رقم الصفحة يعني نفس الحاجة في كل
+     * مكان من غير أي شرط زيادة.
+     *
+     * بيكتب لملف مؤقت الأول: لو الاستخراج وقع في النص، الأصل بيفضل سليم.
+     */
+    suspend fun keepPages(drawingId: Long, pages: List<Int>): Boolean =
+        withContext(Dispatchers.IO) {
+            val drawing = dao.drawing(drawingId) ?: return@withContext false
+            val source = File(drawing.filePath)
+            if (!source.exists() || pages.isEmpty()) return@withContext false
+            val staging = File(source.parentFile, "${source.nameWithoutExtension}.keep.pdf")
+            val extracted = PdfOps.extract(source, staging, pages.sorted()).isSuccess
+            if (!extracted || !staging.exists() || staging.length() == 0L) {
+                runCatching { staging.delete() }
+                return@withContext false
+            }
+            val replaced = runCatching {
+                staging.copyTo(source, overwrite = true)
+                staging.delete()
+            }.isSuccess
+            if (replaced) dao.upsertDrawing(drawing.copy(pageCount = pages.size))
+            replaced
         }
 
     suspend fun setPageCount(drawing: TakeoffDrawingEntity, pages: Int) =
