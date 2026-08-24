@@ -96,6 +96,9 @@ import com.corewall.qaqc.ui.home.PlanScreen
 import com.corewall.qaqc.ui.home.UnifiedSheet
 import com.corewall.qaqc.ui.manpower.AttendanceFileDetailScreen
 import com.corewall.qaqc.ui.manpower.ManpowerScreen
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.layout.Spacer
+import com.corewall.qaqc.ui.design.CwIconButton
 import com.corewall.qaqc.ui.nav.Dest
 import com.corewall.qaqc.ui.media.ImageViewerScreen
 import com.corewall.qaqc.ui.notes.NoteEditorScreen
@@ -137,6 +140,9 @@ fun AppShell(vm: MainViewModel) {
     var showLevelSheet by remember { mutableStateOf(false) }
 
     val dest = nav.current
+    // نسخة الحصر مالهاش تبويبات ولا درج ولا شريط أدوار: الأقسام دي مش
+    // موجودة فيها أصلاً، وعرض هيكل فاضي بيوحي للمستخدم إن فيه حاجة ناقصة.
+    val takeoffOnly = com.corewall.qaqc.BuildConfig.TAKEOFF_ONLY
     val fullScreen = dest.fullScreen
 
     // طبقتين بس: الدرج (طبقة فوق كل حاجة)، وبعدها المكدّس.
@@ -147,7 +153,7 @@ fun AppShell(vm: MainViewModel) {
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = !fullScreen,
+        gesturesEnabled = !fullScreen && !takeoffOnly,
         drawerContent = {
             ModalDrawerSheet(drawerContainerColor = c.surface) {
                 AppDrawer(vm = vm, onNavigate = { scope.launch { drawerState.close() } })
@@ -160,7 +166,7 @@ fun AppShell(vm: MainViewModel) {
         // من العرض. مجموعة التبويبات نفسها ما بتتغيّرش — نفس الخمسة.
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= WideBreakpoint
-            val showRail = wide && !fullScreen
+            val showRail = wide && !fullScreen && !takeoffOnly
 
             Row(Modifier.fillMaxSize()) {
                 if (showRail) {
@@ -170,7 +176,14 @@ fun AppShell(vm: MainViewModel) {
                     modifier = Modifier.weight(1f),
                     containerColor = c.background,
                     topBar = {
-                        if (!fullScreen) {
+                        if (!fullScreen && takeoffOnly) {
+                            // شريط بسيط: عنوان ورجوع. `FloorBar` بيعرض الدور
+                            // والإشعارات ومفتاح الدرج — تلاتتهم مالهمش وجود هنا.
+                            TakeoffOnlyBar(
+                                title = titleFor(vm, dest),
+                                onBack = if (nav.canPop) ({ vm.back() }) else null
+                            )
+                        } else if (!fullScreen) {
                             FloorBar(
                                 level = level,
                                 levelIndex = vm.levels.indexOf(level),
@@ -185,7 +198,7 @@ fun AppShell(vm: MainViewModel) {
                         }
                     },
                     bottomBar = {
-                        if (!fullScreen && !showRail) {
+                        if (!fullScreen && !showRail && !takeoffOnly) {
                             BottomNav(current = nav.tab, onSelect = { vm.selectTab(it) })
                         }
                     }
@@ -496,3 +509,33 @@ private fun NavTab(
 
 /** الحبّة غير المختارة أصغر شوية — الفرق بيتحسّ قبل ما يتقري. */
 private const val PILL_RESTING_SCALE = 0.86f
+
+/** شريط نسخة الحصر: العنوان والرجوع بس. */
+@Composable
+private fun TakeoffOnlyBar(title: String, onBack: (() -> Unit)?) {
+    val c = LocalCwColors.current
+    Surface(color = c.surface, shadowElevation = Elevation.raised) {
+        Row(
+            Modifier
+                .statusBarsPadding()
+                .fillMaxWidth()
+                .padding(horizontal = Space.sm, vertical = Space.xs),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBack != null) {
+                CwIconButton(Icons.AutoMirrored.Filled.ArrowBack, "رجوع", onBack)
+            } else {
+                Spacer(Modifier.width(Space.sm))
+            }
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = c.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}

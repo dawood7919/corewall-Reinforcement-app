@@ -127,7 +127,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * الملّاح — المصدر الوحيد لسؤال "أنا فين". بديل الـ٦ آليات تنقّل القديمة.
      */
-    val navigator = Navigator(Dest.Today)
+    // نسخة الحصر بتفتح على الحصر مباشرة — مفيش أدوار ولا فحص فيها أصلاً.
+    val navigator = Navigator(
+        if (com.corewall.qaqc.BuildConfig.TAKEOFF_ONLY) Dest.Takeoff else Dest.Today
+    )
     val navState: StateFlow<NavState> = navigator.state
 
     private val _lens = MutableStateFlow(Lens.REINF)

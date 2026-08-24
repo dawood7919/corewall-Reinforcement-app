@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 80
-        versionName = "11.29"
+        versionCode = 81
+        versionName = "11.30"
 
         // PDFium مكتبة أصلية، ومعاها ٤ معماريات = ١٨ ميجا. الأجهزة الحقيقية
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.
@@ -44,6 +44,34 @@ android {
             "BUILD_COMMIT",
             "\"${System.getenv("BUILD_COMMIT") ?: "local"}\""
         )
+    }
+
+    /**
+     * نسختين من نفس الكود: التطبيق الكامل، وتطبيق الحصر لوحده.
+     *
+     * قسم الحصر مستقل معماريًا من الأصل — مالوش علاقة بالأدوار ولا الجدول
+     * ولا الملفات، وبيتكلّم مع باقي التطبيق من خلال `vm.takeoff` بس. فالفصل
+     * هنا إعلان لواقع موجود، مش تقسيم لحاجة متشابكة.
+     *
+     * `applicationId` مختلف، يعني التطبيقين بيتثبتوا جنب بعض وكل واحد
+     * بقاعدة بياناته. ده مقصود لمنتج بيتوزّع لناس تانية — وكمان معناه إن
+     * بيانات النسخة الكاملة **مابتنتقلش** للنسخة المنفصلة.
+     */
+    flavorDimensions += "product"
+    productFlavors {
+        create("full") {
+            dimension = "product"
+            // من غير لاحقة: التحديثات بتنزل فوق المثبّت الحالي.
+            buildConfigField("boolean", "TAKEOFF_ONLY", "false")
+            resValue("string", "app_name", "Core Wall QA/QC")
+        }
+        create("takeoff") {
+            dimension = "product"
+            applicationIdSuffix = ".takeoff"
+            versionNameSuffix = "-takeoff"
+            buildConfigField("boolean", "TAKEOFF_ONLY", "true")
+            resValue("string", "app_name", "Core Wall Takeoff")
+        }
     }
 
     // مفتاح توقيع ثابت متسجّل في الريبو — كل بناء بيتوقّع بنفس المفتاح،

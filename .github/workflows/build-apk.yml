@@ -41,13 +41,13 @@ jobs:
           BUILD_COMMIT: ${{ github.sha }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleFullDebug assembleTakeoffDebug --no-daemon
 
       # اختبارات الوحدة قبل أي نشر. المحرّك الهندسي والـPDF متثبّتين
       # باختبارات، فأي "تحسين أداء" بيغيّر رقم بيوقّع البناء هنا مش على
       # جهاز المستخدم.
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: ./gradlew testFullDebugUnitTest --no-daemon
 
       - name: Test local DWG geometry fixtures
         run: bash tools/test_dwg_host.sh
@@ -58,17 +58,26 @@ jobs:
       - name: Verify Room migrations match the generated schema
         run: python3 tools/check_room_schema.py
 
+      # أسماء ثابتة للنشر. النسخة الكاملة بتفضل `app-debug.apk` عن قصد:
+      # ده الاسم اللي رابط الإصدار الثابت بيشاور عليه، وتغييره بيكسر أي
+      # لينك متبعت قبل كده.
+      - name: Collect APKs under stable names
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/full/debug/app-full-debug.apk dist/app-debug.apk
+          cp app/build/outputs/apk/takeoff/debug/app-takeoff-debug.apk dist/app-takeoff-debug.apk
+
       # برانش orphan بكوميت واحد بيتعمله force-push كل بناء — قناة توزيع ثابتة
       # للـAPK تشتغل بـgit فقط (مفيدة لمّا تحميل الـartifacts/الـreleases مش متاح).
       - name: Push APK to apk-latest branch
         run: |
           mkdir -p /tmp/apkdist
-          cp app/build/outputs/apk/debug/app-debug.apk /tmp/apkdist/
+          cp dist/app-debug.apk dist/app-takeoff-debug.apk /tmp/apkdist/
           cd /tmp/apkdist
           git init -b apk-latest
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add app-debug.apk
+          git add app-debug.apk app-takeoff-debug.apk
           git commit -m "Debug APK from ${GITHUB_SHA::7}"
           git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk-latest
 
@@ -76,7 +85,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: corewall-qaqc-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            dist/app-debug.apk
+            dist/app-takeoff-debug.apk
 
       - name: Create / update GitHub Release (stable download link)
         uses: softprops/action-gh-release@v2
@@ -84,7 +95,11 @@ jobs:
           tag_name: latest-debug
           name: Core Wall QA/QC — Debug APK (latest)
           prerelease: true
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: |
+            dist/app-debug.apk
+            dist/app-takeoff-debug.apk
           body: |
             أحدث نسخة Debug من تطبيق Core Wall QA/QC (بناء تلقائي من GitHub Actions).
-            حمّل ملف app-debug.apk وثبّته مباشرة — موقّع بمفتاح Android الافتراضي للـ Debug.
+            • app-debug.apk — التطبيق الكامل (فحص · عمالة · ملاحظات · حصر).
+            • app-takeoff-debug.apk — الحصر لوحده، بيتثبّت جنب الكامل مش فوقه.
+            الاتنين موقّعين بمفتاح Android الافتراضي للـ Debug.

@@ -129,7 +129,7 @@ fun AppDrawer(vm: MainViewModel, onNavigate: () -> Unit) {
             DrawerRow(
                 Icons.Filled.Straighten, "حصر الكميات",
                 "أقسام مستقلة · ارفع PDF وابدأ تحصر"
-            ) { go(Dest.Takeoff) }
+            ) { vm.openTakeoff(); onNavigate() }
         }
 
         item(key = "project-header") { CwSectionHeader("المشروع") }
