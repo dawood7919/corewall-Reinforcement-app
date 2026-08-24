@@ -67,17 +67,37 @@ jobs:
           cp app/build/outputs/apk/full/debug/app-full-debug.apk dist/app-debug.apk
           cp app/build/outputs/apk/takeoff/debug/app-takeoff-debug.apk dist/app-takeoff-debug.apk
 
+      # علامة الإصدار للتحديث من جوّه التطبيق.
+      #
+      # الوسم ثابت (`latest-debug`) والملفات بتتكتب فوق بعضها كل بناء، يعني
+      # مفيش حاجة في الإصدار نفسه بتقول ده أنهي إصدار. الملف ده بيقول —
+      # والتطبيق بيقارن `versionCode` بتاعه بيه. مفتاح لكل تطبيق لأن نسخة
+      # الحصر `applicationId` مختلف وبتتحدّث لوحدها.
+      - name: Publish version marker
+        run: |
+          CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
+          NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          BASE=https://github.com/${{ github.repository }}/releases/download/latest-debug
+          cat > dist/version.json <<JSON
+          {
+            "com.corewall.qaqc":         { "versionCode": $CODE, "versionName": "$NAME",          "url": "$BASE/app-debug.apk" },
+            "com.corewall.qaqc.takeoff": { "versionCode": $CODE, "versionName": "$NAME-takeoff",  "url": "$BASE/app-takeoff-debug.apk" },
+            "commit": "${GITHUB_SHA::7}"
+          }
+          JSON
+          cat dist/version.json
+
       # برانش orphan بكوميت واحد بيتعمله force-push كل بناء — قناة توزيع ثابتة
       # للـAPK تشتغل بـgit فقط (مفيدة لمّا تحميل الـartifacts/الـreleases مش متاح).
       - name: Push APK to apk-latest branch
         run: |
           mkdir -p /tmp/apkdist
-          cp dist/app-debug.apk dist/app-takeoff-debug.apk /tmp/apkdist/
+          cp dist/app-debug.apk dist/app-takeoff-debug.apk dist/version.json /tmp/apkdist/
           cd /tmp/apkdist
           git init -b apk-latest
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add app-debug.apk app-takeoff-debug.apk
+          git add app-debug.apk app-takeoff-debug.apk version.json
           git commit -m "Debug APK from ${GITHUB_SHA::7}"
           git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk-latest
 
@@ -98,6 +118,7 @@ jobs:
           files: |
             dist/app-debug.apk
             dist/app-takeoff-debug.apk
+            dist/version.json
           body: |
             أحدث نسخة Debug من تطبيق Core Wall QA/QC (بناء تلقائي من GitHub Actions).
             • app-debug.apk — التطبيق الكامل (فحص · عمالة · ملاحظات · حصر).

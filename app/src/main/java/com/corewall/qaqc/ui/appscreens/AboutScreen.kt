@@ -22,6 +22,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import com.corewall.qaqc.BuildConfig
+import kotlinx.coroutines.launch
+import com.corewall.qaqc.update.AvailableUpdate
+import com.corewall.qaqc.update.AppUpdater
+import com.corewall.qaqc.ui.design.CwProgressBar
+import com.corewall.qaqc.ui.design.CwButtonStyle
+import com.corewall.qaqc.ui.design.CwButton
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import com.corewall.qaqc.ui.design.CwCard
 import com.corewall.qaqc.ui.design.CwKeyValue
 import com.corewall.qaqc.ui.design.CwKeyValueList
@@ -96,6 +111,8 @@ fun AboutScreen(modifier: Modifier = Modifier) {
             }
         }
 
+        item(key = "update") { UpdateCard() }
+
         item(key = "project-header") { CwSectionHeader("المشروع") }
         item(key = "project") {
             CwCard {
@@ -153,4 +170,122 @@ fun AboutScreen(modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+/**
+ * تحديث التطبيق.
+ *
+ * الفحص بيحصل لما تفتح الشاشة مش عند تشغيل التطبيق: التحديث مش عاجل،
+ * وسؤال الشبكة مع كل فتحة بيدفع بطارية وبيانات مقابل حاجة المستخدم
+ * بيدوّر عليها لما يحتاجها.
+ */
+@Composable
+private fun UpdateCard() {
+    val c = LocalCwColors.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var state by remember { mutableStateOf<UpdateUi>(UpdateUi.Checking) }
+
+    LaunchedEffect(Unit) {
+        state = AppUpdater.check()?.let { UpdateUi.Available(it) } ?: UpdateUi.UpToDate
+    }
+
+    CwCard {
+        when (val s = state) {
+            UpdateUi.Checking -> Text("بنشوف فيه تحديث…", style = CwText.codeSmall, color = c.textTertiary)
+
+            UpdateUi.UpToDate -> Text(
+                "التطبيق محدَّث لآخر إصدار",
+                style = CwText.codeSmall,
+                color = c.textTertiary
+            )
+
+            is UpdateUi.Available -> {
+                Text(
+                    "فيه إصدار جديد: ${s.update.versionName}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = c.textPrimary
+                )
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    "هيتنزّل هنا، وبعدين النظام هيسألك توافق على التثبيت.",
+                    style = CwText.codeSmall,
+                    color = c.textTertiary
+                )
+                Spacer(Modifier.height(Space.sm))
+                CwButton("نزّل وثبّت") {
+                    state = UpdateUi.Downloading(0f)
+                    scope.launch {
+                        val file = AppUpdater.download(context, s.update) { p ->
+                            state = UpdateUi.Downloading(p)
+                        }
+                        state = when {
+                            file == null -> UpdateUi.Failed
+                            !AppUpdater.canInstall(context) -> UpdateUi.NeedsPermission(file)
+                            AppUpdater.install(context, file) -> UpdateUi.Installing
+                            else -> UpdateUi.Failed
+                        }
+                    }
+                }
+            }
+
+            is UpdateUi.Downloading -> {
+                Text(
+                    "بيتنزّل… ${(s.progress * 100).toInt()}٪",
+                    style = CwText.codeSmall,
+                    color = c.textPrimary
+                )
+                Spacer(Modifier.height(Space.xs))
+                CwProgressBar(fraction = s.progress)
+            }
+
+            is UpdateUi.NeedsPermission -> {
+                // مش خطأ: أندرويد بيمنع تثبيت الحزم من تطبيق غير مسموح له،
+                // والمستخدم بيسمح مرة واحدة بس.
+                Text(
+                    "محتاج إذن \"تثبيت تطبيقات غير معروفة\" مرة واحدة",
+                    style = CwText.codeSmall,
+                    color = c.warning.fg
+                )
+                Spacer(Modifier.height(Space.sm))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    CwButton("افتح الإعداد") { AppUpdater.openInstallPermission(context) }
+                    CwButton(
+                        "ثبّت",
+                        { if (!AppUpdater.install(context, s.file)) state = UpdateUi.Failed },
+                        style = CwButtonStyle.Secondary
+                    )
+                }
+            }
+
+            UpdateUi.Installing -> Text(
+                "شاشة التثبيت اتفتحت",
+                style = CwText.codeSmall,
+                color = c.textTertiary
+            )
+
+            UpdateUi.Failed -> {
+                Text("مقدرناش نكمّل التحديث", style = CwText.codeSmall, color = c.danger.fg)
+                Spacer(Modifier.height(Space.sm))
+                CwButton("جرّب تاني") {
+                    state = UpdateUi.Checking
+                    scope.launch {
+                        state = AppUpdater.check()?.let { UpdateUi.Available(it) } ?: UpdateUi.UpToDate
+                    }
+                }
+            }
+        }
+    }
+}
+
+private sealed interface UpdateUi {
+    data object Checking : UpdateUi
+    data object UpToDate : UpdateUi
+    data class Available(val update: AvailableUpdate) : UpdateUi
+    data class Downloading(val progress: Float) : UpdateUi
+    data class NeedsPermission(val file: java.io.File) : UpdateUi
+    data object Installing : UpdateUi
+    data object Failed : UpdateUi
 }
