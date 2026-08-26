@@ -62,6 +62,10 @@ class AgentEngine(private val executor: AgentExecutor) {
         val transcript = StringBuilder()
         var pendingSeq = System.currentTimeMillis()
         var retriedForAction = false
+        // بصمة كل أداة اتشغّلت بنفس الوسائط. الموديل بيعيد نفس النداء
+        // أحياناً رغم التعليمات، والنتيجة بتتخزّن مرتين في الترانسكريبت
+        // وبتتبعت في كل جولة بعد كده — تمن مضاعف لصفر معلومة جديدة.
+        val alreadyRun = HashSet<String>()
 
         repeat(MAX_ROUNDS) { round ->
             val user = buildUserMessage(question, appState, knowledge, history, memory, transcript.toString(), round)
@@ -104,6 +108,14 @@ class AgentEngine(private val executor: AgentExecutor) {
                     continue
                 }
                 if (AgentTools.autoRuns(tool.name)) {
+                    val signature = action.describe()
+                    if (!alreadyRun.add(signature)) {
+                        transcript.appendLine(
+                            "[${tool.name}] ↺ اتشغّلت قبل كده بنفس الوسائط — النتيجة فوق."
+                        )
+                        transcript.appendLine()
+                        continue
+                    }
                     // المستخدم بيستنى دقيقة قدام شاشة مكتوب عليها "بيشتغل…"
                     // من غير ما يعرف بيشتغل في إيه. اسم الأداة بيدّي إشارة
                     // إن فيه تقدّم فعلي بدل ما الانتظار يتقري كتعليق.

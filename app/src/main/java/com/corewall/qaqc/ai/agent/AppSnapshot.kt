@@ -48,7 +48,12 @@ object AppSnapshot {
                 InspectionStatus.from(s) == st
             }
         }
-        appendLine("- حالات الفحص: " + statusCounts.entries.joinToString("، ") { (st, n) -> "${st.label} $n" })
+        // نفس السبب: الحالات اللي عدّها صفر مابتضيفش معلومة.
+        appendLine(
+            "- حالات الفحص: " + statusCounts.entries.filter { it.value > 0 }
+                .joinToString("، ") { (st, n) -> "${st.label} $n" }
+                .ifBlank { "مفيش أي فحص مسجّل" }
+        )
         statusCounts[InspectionStatus.REJECTED]?.takeIf { it > 0 }?.let {
             appendLine("- ⚠ فيه $it عنصر مرفوض في الدور ده")
         }
@@ -110,11 +115,25 @@ object AppSnapshot {
         val levelTasks = host.tasks.filter { it.level == level }
         val levelNotes = host.notes.filter { it.level == level }
         val photos = host.sitePhotos.filter { it.level == level }
-        appendLine("## الشغل اليومي")
-        appendLine("- مهام: ${levelTasks.size} (مفتوحة ${levelTasks.count { !it.done }})")
-        appendLine("- ملاحظات: ${levelNotes.size}")
-        appendLine("- صور موقع: ${photos.size}")
-        appendLine("- كومنتات على العناصر: ${host.comments.count { it.level == level }}")
+        // السطور اللي قيمتها صفر مابتتكتبش.
+        //
+        // "مهام: 0 · ملاحظات: 0 · صور: 0" بتتدفع بسعر كامل في كل طلب
+        // وبتقول حاجة الوكيل يقدر يستنتجها من غيابها. الدور الفاضي —
+        // وده أغلب الأدوار — كان بيصرف السطور دي على لا حاجة.
+        val comments = host.comments.count { it.level == level }
+        val daily = listOfNotNull(
+            levelTasks.takeIf { it.isNotEmpty() }
+                ?.let { "- مهام: ${it.size} (مفتوحة ${it.count { t -> !t.done }})" },
+            levelNotes.size.takeIf { it > 0 }?.let { "- ملاحظات: $it" },
+            photos.size.takeIf { it > 0 }?.let { "- صور موقع: $it" },
+            comments.takeIf { it > 0 }?.let { "- كومنتات على العناصر: $it" }
+        )
+        if (daily.isEmpty()) {
+            appendLine("## الشغل اليومي: مفيش مهام ولا ملاحظات ولا صور في الدور ده")
+        } else {
+            appendLine("## الشغل اليومي")
+            daily.forEach { appendLine(it) }
+        }
 
         val labels = host.attendanceFileLabels()
         if (labels.isNotEmpty()) {

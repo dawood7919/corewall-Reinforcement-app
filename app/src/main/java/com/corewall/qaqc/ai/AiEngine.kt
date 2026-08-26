@@ -95,6 +95,19 @@ class AiEngine(
          * كانت المفروض تحلّه.
          */
         const val MEMORY_BUDGET = 1_200
+
+        /**
+         * سقف كتلة معرفة المستندات.
+         *
+         * كان ١٤ ألف حرف — أكبر جزء في الطلب كله، أكبر من شرح التطبيق
+         * وكتالوج الأدوات مع بعض. والأهم إنه كان **قص** مش **اختيار**:
+         * بيملا بترتيب وصول الصفوف من قاعدة البيانات وبيرمي الباقي.
+         * أربعة آلاف حرف **مرتّبة بالصلة** بتجيب معلومات أحسن بربع التمن.
+         */
+        const val KNOWLEDGE_BUDGET = 4_000
+
+        /** عدد المستندات في الفهرس — الباقي بيتجاب بأداة عند الحاجة. */
+        const val DOC_LIST_LIMIT = 10
     }
 
     private val json = Json {
@@ -504,39 +517,76 @@ class AiEngine(
             .distinct()
             .take(12)
 
+        val docs = documentDao.inScope(level, KnowledgeScope.PROJECT)
+        if (docs.isEmpty()) return@withContext ""
+        val byId = docs.associateBy { it.id }
+
         // كل الاستعلامات مقيّدة بـ(الدور الحالي + مكتبة المشروع).
         // من غير التقييد ده كانت حقائق دور تاني بتتسرّب في الإجابة.
-        val hits = LinkedHashMap<Long, MutableList<DocFactEntity>>()
+        //
+        // الدرجة = كام كلمة من كلمات السؤال طابقت الحقيقة دي.
+        // الإشارة دي كانت **بتتحسب وبتترمي**: الحقيقة اللي بتطابق تلات
+        // كلمات كانت بتتضاف تلات مرات في قايمة، وبعدين `distinctBy`
+        // بيلغي التكرار — يعني أقوى دليل على الصلة بيتمسح.
+        val scored = HashMap<String, Int>()
+        val facts = HashMap<String, DocFactEntity>()
         terms.forEach { t ->
             factDao.searchInScope(t, level, KnowledgeScope.PROJECT, 60).forEach { f ->
-                hits.getOrPut(f.documentId) { mutableListOf() }.add(f)
-            }
-        }
-        if (hits.isEmpty()) {
-            factDao.inScope(level, KnowledgeScope.PROJECT).take(80).forEach { f ->
-                hits.getOrPut(f.documentId) { mutableListOf() }.add(f)
+                val k = "${f.documentId}|${f.key}|${f.value}"
+                facts[k] = f
+                scored[k] = (scored[k] ?: 0) + 1
             }
         }
 
-        val docs = documentDao.inScope(level, KnowledgeScope.PROJECT).associateBy { it.id }
+        val ranked = scored.entries
+            .sortedByDescending { it.value }
+            .mapNotNull { facts[it.key] }
+
         buildString {
-            val known = documentDao.inScope(level, KnowledgeScope.PROJECT).take(30)
-            if (known.isNotEmpty()) {
-                appendLine("المستندات المتاحة (دور $level + معرفة المشروع):")
-                known.forEach {
-                    val tag = if (KnowledgeScope.isProject(it.level)) "[معرفة المشروع]" else "[دور $level]"
-                    appendLine("- $tag ${it.fileName} [${it.docType}] ${it.drawingNumber} ${it.revision} — ${it.summary.take(160)}")
-                }
-                appendLine()
+            // ① المستندات: سطر قصير لكل واحد، وعدد محدود.
+            //
+            // كانت ٣٠ مستند × ملخّص ١٦٠ حرف ≈ ٧٥٠٠ حرف — أكتر من نص
+            // الميزانية بتتصرف على **فهرس** قبل ما أي حقيقة تتكتب.
+            appendLine("المستندات المتاحة (دور $level + معرفة المشروع):")
+            docs.take(DOC_LIST_LIMIT).forEach {
+                val tag = if (KnowledgeScope.isProject(it.level)) "[مشروع]" else "[$level]"
+                appendLine("- $tag ${it.fileName} [${it.docType}] ${it.drawingNumber}".trimEnd())
             }
-            hits.entries.take(12).forEach { (docId, facts) ->
-                val d = docs[docId] ?: return@forEach
-                appendLine("من \"${d.fileName}\" (${d.docType}, دور ${d.level}):")
-                facts.distinctBy { it.key + it.value }.take(40).forEach {
-                    appendLine("  • ${it.kind}: ${it.key} = ${it.value} ${it.unit}".trimEnd())
-                }
+            if (docs.size > DOC_LIST_LIMIT) {
+                appendLine("- (+${docs.size - DOC_LIST_LIMIT} مستند تاني — استخدم list_documents)")
             }
-        }.take(14_000)
+            appendLine()
+
+            if (ranked.isEmpty()) {
+                // القديم كان بيرمي ٨٠ حقيقة عشوائية هنا لما مفيش تطابق.
+                // دي مش معرفة — دي ضوضاء بتتدفع بسعر كامل وبتشتّت الموديل
+                // عن اللي هو محتاجه فعلاً.
+                appendLine("مفيش حقايق مستخرجة مطابقة لكلمات السؤال.")
+                appendLine("لو محتاج تفاصيل مستند، استخدم get_document_facts.")
+                return@buildString
+            }
+
+            // ② الحقايق بالأهم فالأهم لحد ما الميزانية تخلص.
+            //
+            // القص في الآخر (`take(14_000)`) كان أسوأ اختيار ممكن: بيسيب
+            // اللي وصل الأول — يعني ترتيب SQLite — وبيرمي اللي بعده، حتى
+            // لو كان هو الحقيقة الوحيدة اللي بتجاوب على السؤال.
+            var used = length
+            var shownDoc = -1L
+            var dropped = 0
+            for (f in ranked) {
+                val d = byId[f.documentId] ?: continue
+                val header = if (f.documentId != shownDoc) "من \"${d.fileName}\":\n" else ""
+                val line = header + "  • ${f.kind}: ${f.key} = ${f.value} ${f.unit}".trimEnd() + "\n"
+                if (used + line.length > KNOWLEDGE_BUDGET) { dropped++; continue }
+                append(line)
+                used += line.length
+                shownDoc = f.documentId
+            }
+            if (dropped > 0) {
+                appendLine("(+$dropped حقيقة أقل صلة — اسأل عنها بـsearch أو get_document_facts)")
+            }
+        }
     }
 
     // ---------------------------------------------------------------- الداشبورد الديناميكي
