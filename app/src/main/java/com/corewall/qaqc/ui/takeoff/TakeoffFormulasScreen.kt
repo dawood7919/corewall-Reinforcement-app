@@ -3,6 +3,9 @@ package com.corewall.qaqc.ui.takeoff
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,8 +44,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.input.OffsetMapping
@@ -69,6 +73,7 @@ import com.corewall.qaqc.ui.design.CwIconButton
 import com.corewall.qaqc.ui.design.CwText
 import com.corewall.qaqc.ui.design.LocalCwColors
 import com.corewall.qaqc.ui.design.Space
+import com.corewall.qaqc.ui.design.Stroke
 import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.launch
 
@@ -275,7 +280,14 @@ private fun FormulaCard(
     }
 }
 
-/** نافذة كتابة الصيغة — خانة نص + زرار صغير بيفتح منتقي القياسات. */
+/**
+ * نافذة كتابة الصيغة.
+ *
+ * الترتيب مقصود: الاسم، التعبير، إزاي تدخّل فيه حاجة، الناتج — وبعدين
+ * الوحدة والتقريب. الوحدة والتقريب شكل الرقم، مش الرقم نفسه، فمكانهم
+ * بعد ما تشوف إن الحساب طلع صح.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FormulaEditorDialog(
     initial: TakeoffFormulaEntity?,
@@ -348,7 +360,13 @@ private fun FormulaEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "New formula" else "Edit formula") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            // المحتوى بقى أطول من شاشة موبايل، والـAlertDialog مابيمرّرش
+            // محتواه لوحده — من غير ده الوحدة والتقريب وزراير الحفظ
+            // بيتقصّوا من تحت زي ما الصف كان بيتقص من الجنب.
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
                 CwField(value = name, onValueChange = { name = it }, label = "Formula name")
 
                 CwField(
@@ -360,21 +378,53 @@ private fun FormulaEditorDialog(
                     visualTransformation = highlight
                 )
 
-                // مفاتيح الإدخال: العمليات، ثم استدعاء قياس، ثم استدعاء صيغة.
+                // الاستدعاء أهم من العمليات، فهو أول حاجة تحت الخانة وفي
+                // صف تلاتة بالعرض — مش مزنوق في آخر شريط بيتمرّر. الشريط
+                // اللي كان بيتمرّر كان بيخبّي ∑ وfx بالظبط، وهما السبب
+                // اللي النافذة موجودة عشانه.
                 Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
+                ) {
+                    InsertButton(
+                        "∑", "Measurement", Modifier.weight(1f)
+                    ) { picking = true }
+                    InsertButton(
+                        "fx", "Formula", Modifier.weight(1f)
+                    ) { pickingFormula = true }
+                    InsertButton(
+                        "ƒ()", "Function", Modifier.weight(1f)
+                    ) { pickingFunction = true }
+                }
+
+                // العمليات بتلفّ لسطر جديد بدل ما تتقص. الصف اللي بيتمرّر
+                // أفقيًا مافيهوش أي علامة إن فيه حاجة برّه الشاشة، فاللي
+                // مش ظاهر بيبقى غير موجود من ناحية المستخدم.
+                FlowRow(
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(Space.xs)
                 ) {
                     listOf("+", "-", "*", "/", "(", ")").forEach { op ->
                         KeyChip(op) { insert(op) }
                     }
-                    KeyChip("∑", accent = true) { picking = true }
-                    KeyChip("fx", accent = true) { pickingFormula = true }
-                    KeyChip("ƒ()", accent = true) { pickingFunction = true }
                     KeyChip("⌫") { backspace() }
+                }
+
+                // الناتج جنب اللي بيولّده مباشرة — مش تحت الوحدة والتقريب.
+                CwCard(
+                    style = CwCardStyle.Inset,
+                    contentPadding = PaddingValues(Space.sm)
+                ) {
+                    Text(
+                        preview.error ?: preview.value?.let {
+                            "= " + "%.${roundTo.coerceIn(0, 6)}f".format(it) +
+                                if (unit.isNotBlank()) " $unit" else ""
+                        } ?: "Write an expression, or use ∑ and fx",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (preview.error != null) c.danger.fg else c.accent
+                    )
                 }
 
                 CwField(
@@ -385,42 +435,29 @@ private fun FormulaEditorDialog(
                 // الوحدات دي هي اللي بتتكتب فعليًا في كشف الحصر. كتابتها
                 // بالإيد في كل صيغة بتخلّي "m2" و"M2" و"m²" وحدات مختلفة
                 // في الجمع من غير ما حد ياخد باله.
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
+                FlowRow(
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(Space.xs)
                 ) {
                     listOf("m", "m2", "m3", "no", "kg", "ton").forEach { u ->
                         KeyChip(u, accent = unit.trim() == u) { unit = u }
                     }
                 }
 
-                Row(
+                // العنوان فوق الشيبس مش جنبها: `weight(1f)` جنب صف شيبس
+                // بياخد عرضه الطبيعي بيخنق النص لصفر تقريبًا، فبيتلف حرف
+                // في كل سطر — وده اللي كان حاصل هنا بالظبط.
+                Text("Decimals", style = CwText.codeSmall, color = c.textTertiary)
+                FlowRow(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(Space.xs)
                 ) {
-                    Text(
-                        "Decimals",
-                        style = CwText.codeSmall,
-                        color = c.textTertiary,
-                        modifier = Modifier.weight(1f)
-                    )
                     (0..4).forEach { d ->
                         KeyChip(d.toString(), accent = roundTo == d) { roundTo = d }
                     }
                 }
-
-                Text(
-                    preview.error ?: preview.value?.let {
-                        "= " + "%.${roundTo.coerceIn(0, 6)}f".format(it) +
-                            if (unit.isNotBlank()) " $unit" else ""
-                    } ?: "Write an expression, or use ∑ and fx",
-                    style = CwText.codeSmall,
-                    color = if (preview.error != null) c.danger.fg else c.accent
-                )
             }
         },
         confirmButton = {
@@ -571,22 +608,82 @@ private fun decodeRefs(raw: String): Map<String, Long> = runCatching {
 
 private fun encodeRefs(refs: Map<String, Long>): String = refsJson.encodeToString(refs)
 
-/** مفتاح إدخال صغير — عملية حسابية أو استدعاء. */
+/**
+ * مفتاح إدخال — عملية حسابية، وحدة، أو رقم خانات.
+ *
+ * ٤٤dp حد أدنى في الاتجاهين: دي أصغر مساحة لمس معقولة على الموبايل،
+ * والمفاتيح دي حرف واحد فالنص لوحده بيطلع هدف أصغر من الإصبع.
+ */
 @Composable
 private fun KeyChip(label: String, accent: Boolean = false, onClick: () -> Unit) {
     val c = LocalCwColors.current
     Surface(
         onClick = onClick,
         shape = Radius.shapeMd,
-        color = if (accent) c.accent.copy(alpha = 0.16f) else c.surfaceAlt
+        color = if (accent) c.accent.copy(alpha = 0.18f) else c.surfaceAlt,
+        border = if (accent) BorderStroke(Stroke.hair, c.accent.copy(alpha = 0.5f)) else null
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = if (accent) c.accent else c.textPrimary,
-            modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
-        )
+        Box(
+            Modifier
+                .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
+                .padding(horizontal = Space.sm),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (accent) c.accent else c.textPrimary,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/**
+ * زرار استدعاء — رمز فوق واسم تحته.
+ *
+ * الرمز لوحده (`∑`, `fx`) مابيقولش لحد بيعمل إيه أول مرة، والاسم لوحده
+ * بياخد عرض. الاتنين مع بعض في تلت العرض بيخلّوا التلاتة ظاهرين دايمًا
+ * من غير تمرير.
+ */
+@Composable
+private fun InsertButton(
+    symbol: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val c = LocalCwColors.current
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = Radius.shapeMd,
+        color = c.accent.copy(alpha = 0.18f),
+        border = BorderStroke(Stroke.hair, c.accent.copy(alpha = 0.5f))
+    ) {
+        Column(
+            Modifier
+                .defaultMinSize(minHeight = 52.dp)
+                .padding(vertical = Space.sm, horizontal = Space.xs),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                symbol,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = c.accent,
+                maxLines = 1
+            )
+            Text(
+                label,
+                style = CwText.codeSmall,
+                color = c.accent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
