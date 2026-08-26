@@ -1692,7 +1692,7 @@ fun TakeoffEditorScreen(
         val categoryModels = remember(categories) { categories.map { vm.takeoff.categoryToModel(it) } }
         TakeoffTotalsSheet(
             items = items,
-            pageGeometry = pageGeometry,
+            pageGeometryFor = pageGeometryFor,
             categories = categoryModels,
             onDismiss = { totalsOpen = false }
         )

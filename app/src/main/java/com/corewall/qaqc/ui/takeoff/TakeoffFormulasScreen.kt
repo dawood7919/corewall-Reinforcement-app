@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Functions
@@ -28,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -126,6 +128,22 @@ fun TakeoffFormulasScreen(
         }
     }
 
+    /**
+     * مجموع كل صيغة مع اللي بنفس الوحدة.
+     *
+     * بالوحدة مش إجمالي واحد: جمع m2 على m3 رقم مالوش معنى هندسي. الصيغ
+     * اللي من غير وحدة مابتدخلش — مش معروف بتجمع إيه.
+     */
+    val unitTotals = remember(evaluated) {
+        evaluated.mapNotNull { (row, result) ->
+            val value = result.value ?: return@mapNotNull null
+            val unit = row.unit.trim()
+            if (unit.isBlank()) null else unit to value
+        }.groupBy({ it.first }, { it.second })
+            .map { (unit, values) -> unit to values.sum() }
+            .sortedBy { it.first }
+    }
+
     // الشاشة كلها LTR عن قصد: الصيغة تعبير رياضي بيتقرا من الشمال لليمين،
     // ومحاذاتها يمين كانت بتقلب ترتيب الأقواس والعوامل بصريًا.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -148,6 +166,9 @@ fun TakeoffFormulasScreen(
                     verticalArrangement = Arrangement.spacedBy(Space.sm),
                     contentPadding = PaddingValues(top = Space.sm, bottom = Space.xxl)
                 ) {
+                    if (unitTotals.isNotEmpty()) {
+                        item(key = "unit-totals") { UnitTotalsCard(unitTotals) }
+                    }
                     items(evaluated, key = { it.first.id }) { (row, result) ->
                         FormulaCard(
                             row = row,
@@ -158,6 +179,19 @@ fun TakeoffFormulasScreen(
                                 } ?: "Q = —",
                             isError = result.error != null,
                             onEdit = { editing = row },
+                            onDuplicate = {
+                                scope.launch {
+                                    vm.takeoff.saveFormula(
+                                        row.copy(
+                                            id = 0,
+                                            name = uniqueFormulaName(
+                                                row.name, formulaRows.map { it.name }
+                                            ),
+                                            createdAt = System.currentTimeMillis()
+                                        )
+                                    )
+                                }
+                            },
                             onDelete = { scope.launch { vm.takeoff.deleteFormula(row.id) } }
                         )
                     }
@@ -197,6 +231,7 @@ private fun FormulaCard(
     resultText: String,
     isError: Boolean,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit
 ) {
     val c = LocalCwColors.current
@@ -232,6 +267,9 @@ private fun FormulaCard(
                 )
             }
             CwIconButton(Icons.Filled.Edit, "Edit", onEdit)
+            // النسخ موجود عشان أغلب الصيغ بتتولد من صيغة قبلها بفرق بند
+            // أو معامل — إعادة كتابتها من الأول شغل مكرر.
+            CwIconButton(Icons.Filled.ContentCopy, "Duplicate", onDuplicate)
             CwIconButton(Icons.Filled.Delete, "Delete", onDelete, tint = c.danger.fg)
         }
     }
@@ -254,9 +292,9 @@ private fun FormulaEditorDialog(
     var refs by remember(initial) { mutableStateOf(decodeRefs(initial?.refsJson ?: "{}")) }
     var picking by remember { mutableStateOf(false) }
     var pickingFormula by remember { mutableStateOf(false) }
-
-    val roundTo = initial?.roundTo ?: 2
-    val preview = remember(expr, refs, items, unit) {
+    var pickingFunction by remember { mutableStateOf(false) }
+    var roundTo by remember(initial) { mutableIntStateOf(initial?.roundTo ?: 2) }
+    val preview = remember(expr, refs, items, unit, roundTo) {
         if (expr.isBlank()) TakeoffFormulaEngine.Result(null, null)
         else TakeoffFormulaEngine.evaluate(
             TakeoffFormula(
@@ -283,6 +321,23 @@ private fun FormulaEditorDialog(
     fun insert(token: String) {
         expr = if (expr.isBlank() || expr.endsWith(" ") || expr.endsWith("(")) expr + token
         else "${expr.trimEnd()} $token"
+    }
+
+    /**
+     * بيمسح آخر **رمز** مش آخر حرف.
+     *
+     * الأسماء هنا طويلة (`concrete_slab_area`)، ومسح حرف بحرف يعني عشرين
+     * ضغطة. الحرف لوحده بيتمسح بس لما يكون عامل أو قوس.
+     */
+    fun backspace() {
+        val trimmed = expr.trimEnd()
+        if (trimmed.isEmpty()) { expr = ""; return }
+        val last = trimmed.last()
+        expr = if (last.isLetterOrDigit() || last == '_' || last == '.') {
+            trimmed.dropLastWhile { it.isLetterOrDigit() || it == '_' || it == '.' }.trimEnd()
+        } else {
+            trimmed.dropLast(1).trimEnd()
+        }
     }
 
     // النافذة بتتعرض في نافذة نظام منفصلة، فمزوّد الاتجاه اللي على الشاشة
@@ -318,12 +373,45 @@ private fun FormulaEditorDialog(
                     }
                     KeyChip("∑", accent = true) { picking = true }
                     KeyChip("fx", accent = true) { pickingFormula = true }
+                    KeyChip("ƒ()", accent = true) { pickingFunction = true }
+                    KeyChip("⌫") { backspace() }
                 }
 
                 CwField(
                     value = unit, onValueChange = { unit = it },
                     label = "Unit (optional)", placeholder = "m3"
                 )
+
+                // الوحدات دي هي اللي بتتكتب فعليًا في كشف الحصر. كتابتها
+                // بالإيد في كل صيغة بتخلّي "m2" و"M2" و"m²" وحدات مختلفة
+                // في الجمع من غير ما حد ياخد باله.
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf("m", "m2", "m3", "no", "kg", "ton").forEach { u ->
+                        KeyChip(u, accent = unit.trim() == u) { unit = u }
+                    }
+                }
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Decimals",
+                        style = CwText.codeSmall,
+                        color = c.textTertiary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    (0..4).forEach { d ->
+                        KeyChip(d.toString(), accent = roundTo == d) { roundTo = d }
+                    }
+                }
 
                 Text(
                     preview.error ?: preview.value?.let {
@@ -357,6 +445,13 @@ private fun FormulaEditorDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+    }
+
+    if (pickingFunction) {
+        FunctionPickerDialog(
+            onPick = { call -> insert(call); pickingFunction = false },
+            onDismiss = { pickingFunction = false }
+        )
     }
 
     if (pickingFormula) {
@@ -491,6 +586,127 @@ private fun KeyChip(label: String, accent: Boolean = false, onClick: () -> Unit)
             fontWeight = FontWeight.SemiBold,
             color = if (accent) c.accent else c.textPrimary,
             modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
+        )
+    }
+}
+
+/**
+ * مجموع الصيغ لكل وحدة.
+ *
+ * ده الرقم اللي بيتنقل لكشف الكميات — الكارت هنا عشان مايتجمعش بالإيد
+ * من فوق شاشة فيها عشرين صيغة.
+ */
+@Composable
+private fun UnitTotalsCard(totals: List<Pair<String, Double>>) {
+    val c = LocalCwColors.current
+    CwCard(
+        style = CwCardStyle.Accent,
+        accent = c.accent,
+        contentPadding = PaddingValues(Space.md)
+    ) {
+        Text(
+            "Totals by unit",
+            style = CwText.codeSmall,
+            color = c.textTertiary
+        )
+        Spacer(Modifier.height(Space.xs))
+        totals.forEach { (unit, value) ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = Space.xxs),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    unit,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = c.textSecondary,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "%.2f".format(value),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = c.accent
+                )
+            }
+        }
+    }
+}
+
+/**
+ * اسم مايتكررش.
+ *
+ * النسخة لازم يبقى ليها اسم تاني: الصيغ بتستدعي بعضها **بالاسم**، فاسمين
+ * متطابقين معناهم إن الاستدعاء بيروح لواحدة منهم عشوائيًا.
+ */
+private fun uniqueFormulaName(base: String, taken: List<String>): String {
+    val existing = taken.map { takeoffSlug(it) }.toSet()
+    var candidate = "$base copy"
+    var n = 2
+    while (takeoffSlug(candidate) in existing) {
+        candidate = "$base copy $n"
+        n++
+    }
+    return candidate
+}
+
+/** الدوال المتاحة في المحرّك — بتوقيعها وسطر بيقول بتعمل إيه. */
+private val FORMULA_FUNCTIONS = listOf(
+    Triple("ROUND(", "ROUND(x, digits)", "Round x to a number of decimals"),
+    Triple("ABS(", "ABS(x)", "Drop the sign"),
+    Triple("MIN(", "MIN(a, b, …)", "Smallest of the values"),
+    Triple("MAX(", "MAX(a, b, …)", "Largest of the values"),
+    Triple("SQRT(", "SQRT(x)", "Square root"),
+    Triple("CEIL(", "CEIL(x)", "Round up — bars, sheets, whole units"),
+    Triple("FLOOR(", "FLOOR(x)", "Round down")
+)
+
+/**
+ * منتقي الدوال.
+ *
+ * المحرّك بيعرف سبع دوال بس، ومحدش بيحفظها. عرضها بتوقيعها هنا بيخلّيها
+ * قابلة للاستخدام من غير ما المستخدم يخمّن الاسم ويستنى `#REF!`.
+ */
+@Composable
+private fun FunctionPickerDialog(
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = LocalCwColors.current
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Insert a function") },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 340.dp)) {
+                    items(FORMULA_FUNCTIONS, key = { it.first }) { (call, signature, detail) ->
+                        Column(Modifier.fillMaxWidth()) {
+                            Spacer(Modifier.height(Space.xxs))
+                            CwCard(
+                                style = CwCardStyle.Inset,
+                                onClick = { onPick(call) },
+                                contentPadding = PaddingValues(Space.sm)
+                            ) {
+                                Text(
+                                    signature,
+                                    style = CwText.codeSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = c.accent,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    detail,
+                                    style = CwText.codeSmall,
+                                    color = c.textTertiary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
         )
     }
 }

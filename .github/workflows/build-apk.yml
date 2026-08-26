@@ -34,6 +34,12 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "ndk;27.2.12479018" "cmake;3.22.1"
 
+      # فحص نصّي بيجري في تانيتين قبل بناء مدته خمس دقايق. بيمسك غلطة
+      # واحدة بس — لامدا لاحقة على دالة آخر بارامتر فيها مش دالة — لأن
+      # الغلطة دي بالذات وقّعت بناءين ورا بعض من غير ما يوصل للمستخدم حاجة.
+      - name: Check for trailing lambdas on non-lambda parameters
+        run: python3 tools/check_trailing_lambda.py
+
       - name: Build debug APK
         env:
           # بيتحط في BuildConfig.BUILD_COMMIT فشاشة "عن التطبيق" بتقول

@@ -284,12 +284,17 @@ private fun CalibrationBadge(index: Int, filled: Boolean) {
  * مجمّعة بالأداة لأن جمع مساحة على طول مالوش معنى. الخصومات مابتظهرش
  * كبنود — هي أصلاً مطروحة من أبوها، وعرضها كسطر لوحدها بيخلّي المستخدم
  * يحسبها مرتين.
+ *
+ * الإجمالي بياخد **كل** بنود الرسمة، والبنود دي على صفحات مختلفة —
+ * وكل صفحة ليها مقاسها بالنقط ومعايرتها هي. فالمعايرة بتتاخد لكل بند
+ * من صفحته ([pageGeometryFor])، مش من الصفحة المفتوحة. المساحة بتتناسب
+ * مع **مربّع** مقاس الصفحة، فصفحة واحدة غلط بتضرب الرقم في أضعاف.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TakeoffTotalsSheet(
     items: List<TakeoffItem>,
-    pageGeometry: PageGeometry,
+    pageGeometryFor: (Int) -> PageGeometry,
     categories: List<TakeoffCategory> = emptyList(),
     onDismiss: () -> Unit
 ) {
@@ -297,14 +302,20 @@ fun TakeoffTotalsSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val visible = remember(items) { items.filter { it.visible && it.tool.isQuantity } }
-    val totals = remember(visible, pageGeometry) {
+    val totals = remember(visible, pageGeometryFor) {
         TakeoffTool.entries.filter { it.isQuantity }.associateWith { tool ->
             visible.filter { it.tool == tool }
-                .sumOf { TakeoffMath.netQuantity(it, items, pageGeometry) }
+                .sumOf { TakeoffMath.netQuantity(it, items, pageGeometryFor(it.page)) }
         }
     }
-    val totalCost = remember(visible, pageGeometry, categories) {
-        visible.sumOf { TakeoffMath.costOf(it, items, pageGeometry, categories) }
+    val totalCost = remember(visible, pageGeometryFor, categories) {
+        visible.sumOf { TakeoffMath.costOf(it, items, pageGeometryFor(it.page), categories) }
+    }
+    // الصفحات اللي فيها بنود ولسه مش معايرة — بالاسم، عشان المستخدم يعرف
+    // يروح فين. الرقم المعروض بيبقى ناقص من غير ما يبان إنه ناقص.
+    val uncalibrated = remember(visible, pageGeometryFor) {
+        visible.map { it.page }.distinct().sorted()
+            .filterNot { pageGeometryFor(it).calibrated }
     }
 
     ModalBottomSheet(
@@ -322,9 +333,14 @@ fun TakeoffTotalsSheet(
             Text("الإجماليات", style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
             Spacer(Modifier.height(Space.sm))
 
-            if (!pageGeometry.calibrated) {
+            if (uncalibrated.isNotEmpty()) {
                 Text(
-                    "الصفحة مش معايرة — المساحات والأطوال هتطلع صفر لحد ما تعاير.",
+                    if (uncalibrated.size == 1)
+                        "صفحة ${uncalibrated.first() + 1} مش معايرة — بنودها بتتحسب صفر."
+                    else
+                        "صفحات مش معايرة: " +
+                            uncalibrated.joinToString("، ") { (it + 1).toString() } +
+                            " — بنودها بتتحسب صفر.",
                     style = MaterialTheme.typography.bodySmall,
                     color = c.danger.fg
                 )
@@ -372,7 +388,7 @@ fun TakeoffTotalsSheet(
 
             LazyColumn(Modifier.heightIn(max = 280.dp)) {
                 items(visible, key = { it.id }) { item ->
-                    val net = TakeoffMath.netQuantity(item, items, pageGeometry)
+                    val net = TakeoffMath.netQuantity(item, items, pageGeometryFor(item.page))
                     val holes = TakeoffMath.deductionsOf(item, items).count { it.visible }
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = Space.xxs),
