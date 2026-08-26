@@ -57,16 +57,50 @@ object TakeoffFormulaEngine {
      * بتقيّم صيغة كاملة: بتجيب كمية كل مرجع من [items] بمعايرة صفحته هو
      * (من [pageGeometryFor])، وبعدين بتحلّل وتحسب [TakeoffFormula.expr].
      */
+    /** أسماء الدوال — عشان مانحاولش نفسّرها كمراجع لصيغ. */
+    private val FUNCTIONS = setOf("ROUND", "ABS", "MIN", "MAX", "SQRT", "CEIL", "FLOOR")
+
+    /**
+     * تقييم صيغة.
+     *
+     * [formulas] بتخلّي صيغة تستدعي صيغة تانية باسمها. الربط بالاسم مش
+     * بالـid عن قصد هنا: الصيغة بتتكتب كنص، والاسم هو اللي المستخدم كتبه
+     * في النص. التمن إن إعادة تسمية صيغة بتكسر اللي بيرجع لها — وده ظاهر
+     * فورًا كـ`#REF!` مش غلط صامت.
+     *
+     * [visiting] بيمنع الدور اللانهائي: صيغة بترجع لنفسها، أو أ→ب→أ،
+     * بترجع خطأ بدل ما تفضل تنادي نفسها لحد ما المكدّس يقع.
+     */
     fun evaluate(
         formula: TakeoffFormula,
         items: List<TakeoffItem>,
-        pageGeometryFor: (Int) -> PageGeometry
+        pageGeometryFor: (Int) -> PageGeometry,
+        formulas: List<TakeoffFormula> = emptyList(),
+        visiting: Set<String> = emptySet()
     ): Result {
+        if (formula.id in visiting) return Result(null, "#CYCLE! ${formula.name}")
         val vars = HashMap<String, Double>()
         for ((token, itemId) in formula.refs) {
             val item = items.firstOrNull { it.id == itemId }
-                ?: return Result(null, "#REF! $token اتمسح")
+                ?: return Result(null, "#REF! $token was deleted")
             vars[token] = TakeoffMath.netQuantity(item, items, pageGeometryFor(item.page))
+        }
+        val scanned = try {
+            tokenize(formula.expr)
+        } catch (e: FormulaException) {
+            return Result(null, e.message)
+        }
+        for (t in scanned) {
+            if (t !is Token.Ident) continue
+            if (t.name in vars || t.name.uppercase() in FUNCTIONS) continue
+            val target = formulas.firstOrNull {
+                it.id != formula.id && takeoffSlug(it.name) == t.name
+            } ?: continue
+            val nested = evaluate(
+                target, items, pageGeometryFor, formulas, visiting + formula.id
+            )
+            if (nested.error != null) return Result(null, nested.error)
+            vars[t.name] = nested.value ?: return Result(null, "#REF! ${t.name}")
         }
         return try {
             var value = Parser(tokenize(formula.expr), vars).parse()
@@ -108,7 +142,7 @@ object TakeoffFormulaEngine {
                     val start = i
                     while (i < expr.length && (expr[i].isDigit() || expr[i] == '.')) i++
                     val text = expr.substring(start, i)
-                    tokens += Token.Number(text.toDoubleOrNull() ?: throw FormulaException("رقم غلط: $text"))
+                    tokens += Token.Number(text.toDoubleOrNull() ?: throw FormulaException("Bad number: $text"))
                 }
                 isIdentStart(c) -> {
                     val start = i
@@ -122,7 +156,7 @@ object TakeoffFormulaEngine {
                 c == '(' -> { tokens += Token.LParen; i++ }
                 c == ')' -> { tokens += Token.RParen; i++ }
                 c == ',' -> { tokens += Token.Comma; i++ }
-                else -> throw FormulaException("رمز مش مفهوم: '$c'")
+                else -> throw FormulaException("Unexpected character: \'$c\'")
             }
         }
         tokens += Token.End
@@ -140,7 +174,7 @@ object TakeoffFormulaEngine {
 
         fun parse(): Double {
             val v = parseExpr()
-            if (peek() != Token.End) throw FormulaException("رموز زيادة بعد نهاية الصيغة")
+            if (peek() != Token.End) throw FormulaException("Extra input after end of expression")
             return v
         }
 
@@ -163,7 +197,7 @@ object TakeoffFormulaEngine {
                     Token.Slash -> {
                         advance()
                         val d = parseUnary()
-                        if (d == 0.0) throw FormulaException("قسمة على صفر")
+                        if (d == 0.0) throw FormulaException("Division by zero")
                         v /= d
                     }
                     else -> return v
@@ -186,20 +220,20 @@ object TakeoffFormulaEngine {
                             args += parseExpr()
                             while (peek() == Token.Comma) { advance(); args += parseExpr() }
                         }
-                        if (peek() != Token.RParen) throw FormulaException("قوس ناقص بعد ${t.name}(")
+                        if (peek() != Token.RParen) throw FormulaException("Missing ) after ${t.name}(")
                         advance()
                         callFunction(t.name, args)
                     } else {
-                        vars[t.name] ?: throw FormulaException("مرجع غير معروف: ${t.name}")
+                        vars[t.name] ?: throw FormulaException("Unknown reference: ${t.name}")
                     }
                 }
                 Token.LParen -> {
                     val v = parseExpr()
-                    if (peek() != Token.RParen) throw FormulaException("قوس ناقص")
+                    if (peek() != Token.RParen) throw FormulaException("Missing )")
                     advance()
                     v
                 }
-                else -> throw FormulaException("متوقّع رقم أو مرجع")
+                else -> throw FormulaException("Expected a number or a reference")
             }
         }
 
@@ -210,12 +244,12 @@ object TakeoffFormulaEngine {
                 round(args.getOrElse(0) { 0.0 } * factor) / factor
             }
             "ABS" -> abs(args.getOrElse(0) { 0.0 })
-            "MIN" -> args.minOrNull() ?: throw FormulaException("MIN محتاج قيمة على الأقل")
-            "MAX" -> args.maxOrNull() ?: throw FormulaException("MAX محتاج قيمة على الأقل")
+            "MIN" -> args.minOrNull() ?: throw FormulaException("MIN needs at least one value")
+            "MAX" -> args.maxOrNull() ?: throw FormulaException("MAX needs at least one value")
             "SQRT" -> sqrt(args.getOrElse(0) { 0.0 })
             "CEIL" -> ceil(args.getOrElse(0) { 0.0 })
             "FLOOR" -> floor(args.getOrElse(0) { 0.0 })
-            else -> throw FormulaException("دالة غير معروفة: $name")
+            else -> throw FormulaException("Unknown function: $name")
         }
     }
 }

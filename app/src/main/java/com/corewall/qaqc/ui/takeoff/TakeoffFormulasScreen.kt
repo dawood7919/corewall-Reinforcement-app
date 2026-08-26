@@ -39,6 +39,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import com.corewall.qaqc.ui.design.Radius
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.MainViewModel
@@ -95,7 +104,16 @@ fun TakeoffFormulasScreen(
     val pagesInUse = remember(items) { items.map { it.page }.toSet() }
     val pageGeometryFor = rememberDrawingPageGeometry(vm, drawingId, scaleRows, pagesInUse)
 
-    val evaluated = remember(formulaRows, items, pageGeometryFor) {
+    val formulaModels = remember(formulaRows) {
+        formulaRows.map { row ->
+            TakeoffFormula(
+                id = row.id.toString(), name = row.name, expr = row.expr, unit = row.unit,
+                roundTo = row.roundTo, colorArgb = row.colorArgb,
+                refs = decodeRefs(row.refsJson).mapValues { it.value.toString() }
+            )
+        }
+    }
+    val evaluated = remember(formulaRows, items, pageGeometryFor, formulaModels) {
         formulaRows.map { row ->
             row to TakeoffFormulaEngine.evaluate(
                 TakeoffFormula(
@@ -103,7 +121,7 @@ fun TakeoffFormulasScreen(
                     roundTo = row.roundTo, colorArgb = row.colorArgb,
                     refs = decodeRefs(row.refsJson).mapValues { it.value.toString() }
                 ),
-                items, pageGeometryFor
+                items, pageGeometryFor, formulaModels
             )
         }
     }
@@ -162,6 +180,7 @@ fun TakeoffFormulasScreen(
         FormulaEditorDialog(
             initial = editing,
             items = items,
+            formulas = formulaModels,
             pageGeometryFor = pageGeometryFor,
             onSave = { entity ->
                 scope.launch { vm.takeoff.saveFormula(entity.copy(drawingId = drawingId)) }
@@ -223,6 +242,7 @@ private fun FormulaCard(
 private fun FormulaEditorDialog(
     initial: TakeoffFormulaEntity?,
     items: List<TakeoffItem>,
+    formulas: List<TakeoffFormula>,
     pageGeometryFor: (Int) -> PageGeometry,
     onSave: (TakeoffFormulaEntity) -> Unit,
     onDismiss: () -> Unit
@@ -233,6 +253,7 @@ private fun FormulaEditorDialog(
     var unit by remember(initial) { mutableStateOf(initial?.unit ?: "") }
     var refs by remember(initial) { mutableStateOf(decodeRefs(initial?.refsJson ?: "{}")) }
     var picking by remember { mutableStateOf(false) }
+    var pickingFormula by remember { mutableStateOf(false) }
 
     val roundTo = initial?.roundTo ?: 2
     val preview = remember(expr, refs, items, unit) {
@@ -243,10 +264,31 @@ private fun FormulaEditorDialog(
                 colorArgb = initial?.colorArgb ?: TAKEOFF_PALETTE[0],
                 refs = refs.mapValues { it.value.toString() }
             ),
-            items, pageGeometryFor
+            items, pageGeometryFor, formulas
         )
     }
 
+    // كل أسماء المراجع المعروفة — بتتلوّن في النص عشان تفرّق المرجع عن
+    // أي كلمة مكتوبة غلط من نظرة واحدة.
+    val knownRefs = remember(items, formulas, initial) {
+        (items.filter { it.tool != TakeoffTool.DEDUCT && it.tool != TakeoffTool.DIMENSION }
+            .map { takeoffSlug(it.name) } +
+            formulas.filter { it.id != initial?.id?.toString() }.map { takeoffSlug(it.name) })
+            .filter { it.isNotBlank() }.toSet()
+    }
+    val highlight = remember(knownRefs, c.accent, c.warning.fg, c.textPrimary) {
+        ExpressionHighlighter(knownRefs, c.accent, c.warning.fg, c.textPrimary)
+    }
+
+    fun insert(token: String) {
+        expr = if (expr.isBlank() || expr.endsWith(" ") || expr.endsWith("(")) expr + token
+        else "${expr.trimEnd()} $token"
+    }
+
+    // النافذة بتتعرض في نافذة نظام منفصلة، فمزوّد الاتجاه اللي على الشاشة
+    // مابيوصلهاش. من غير ده التعبير بيتقلب وانت بتكتب: `c_shape*10` بتبان
+    // `10c_shape*`.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "New formula" else "Edit formula") },
@@ -254,21 +296,28 @@ private fun FormulaEditorDialog(
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 CwField(value = name, onValueChange = { name = it }, label = "Formula name")
 
+                CwField(
+                    value = expr,
+                    onValueChange = { expr = it },
+                    label = "Expression",
+                    placeholder = "slab_area * bar_count",
+                    minLines = 2,
+                    visualTransformation = highlight
+                )
+
+                // مفاتيح الإدخال: العمليات، ثم استدعاء قياس، ثم استدعاء صيغة.
                 Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CwField(
-                        value = expr,
-                        onValueChange = { expr = it },
-                        label = "Expression",
-                        placeholder = "slab_area * bar_count",
-                        minLines = 2,
-                        modifier = Modifier.weight(1f)
-                    )
-                    // الزرار الصغير: بيفتح كل القياسات وبيحط اللي تختاره بالاسم.
-                    CwIconButton(Icons.Filled.Functions, "Insert measurement", { picking = true })
+                    listOf("+", "-", "*", "/", "(", ")").forEach { op ->
+                        KeyChip(op) { insert(op) }
+                    }
+                    KeyChip("∑", accent = true) { picking = true }
+                    KeyChip("fx", accent = true) { pickingFormula = true }
                 }
 
                 CwField(
@@ -280,7 +329,7 @@ private fun FormulaEditorDialog(
                     preview.error ?: preview.value?.let {
                         "= " + "%.${roundTo.coerceIn(0, 6)}f".format(it) +
                             if (unit.isNotBlank()) " $unit" else ""
-                    } ?: "Write an expression or insert a measurement",
+                    } ?: "Write an expression, or use ∑ and fx",
                     style = CwText.codeSmall,
                     color = if (preview.error != null) c.danger.fg else c.accent
                 )
@@ -308,6 +357,15 @@ private fun FormulaEditorDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+    }
+
+    if (pickingFormula) {
+        FormulaPickerDialog(
+            formulas = formulas.filter { it.id != initial?.id?.toString() },
+            onPick = { picked -> insert(takeoffSlug(picked.name)); pickingFormula = false },
+            onDismiss = { pickingFormula = false }
+        )
+    }
 
     if (picking) {
         MeasurementPickerDialog(
@@ -417,3 +475,111 @@ private fun decodeRefs(raw: String): Map<String, Long> = runCatching {
 }.getOrDefault(emptyMap())
 
 private fun encodeRefs(refs: Map<String, Long>): String = refsJson.encodeToString(refs)
+
+/** مفتاح إدخال صغير — عملية حسابية أو استدعاء. */
+@Composable
+private fun KeyChip(label: String, accent: Boolean = false, onClick: () -> Unit) {
+    val c = LocalCwColors.current
+    Surface(
+        onClick = onClick,
+        shape = Radius.shapeMd,
+        color = if (accent) c.accent.copy(alpha = 0.16f) else c.surfaceAlt
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (accent) c.accent else c.textPrimary,
+            modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
+        )
+    }
+}
+
+/** الصيغ اللي ينفع تستدعيها جوّه صيغة تانية. */
+@Composable
+private fun FormulaPickerDialog(
+    formulas: List<TakeoffFormula>,
+    onPick: (TakeoffFormula) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = LocalCwColors.current
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Pick a formula") },
+            text = {
+                if (formulas.isEmpty()) {
+                    Text("No other formulas yet", color = c.textTertiary)
+                } else {
+                    LazyColumn(Modifier.heightIn(max = 340.dp)) {
+                        items(formulas, key = { it.id }) { f ->
+                            Column(Modifier.fillMaxWidth()) {
+                                Spacer(Modifier.height(Space.xxs))
+                                CwCard(
+                                    style = CwCardStyle.Inset,
+                                    onClick = { onPick(f) },
+                                    contentPadding = PaddingValues(Space.sm)
+                                ) {
+                                    Text(
+                                        takeoffSlug(f.name),
+                                        style = CwText.codeSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = c.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        f.expr.ifBlank { "—" },
+                                        style = CwText.codeSmall,
+                                        color = c.textTertiary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        )
+    }
+}
+
+/**
+ * تلوين نص الصيغة.
+ *
+ * المرجع المعروف بلون التمييز، والمرجع اللي مالوش مقابل بلون التحذير —
+ * فاسم غلطان بيبان وانت بتكتبه، مش بعد الحفظ لما النتيجة تطلع `#REF!`.
+ * الطول مابيتغيّرش، فتحويل المواضع هو نفسه (`Identity`) والمؤشّر بيفضل مظبوط.
+ */
+private class ExpressionHighlighter(
+    private val known: Set<String>,
+    private val refColor: Color,
+    private val unknownColor: Color,
+    private val plainColor: Color
+) : VisualTransformation {
+
+    override fun filter(text: AnnotatedString): TransformedText {
+        val raw = text.text
+        val builder = AnnotatedString.Builder(raw)
+        builder.addStyle(SpanStyle(color = plainColor), 0, raw.length)
+        var i = 0
+        while (i < raw.length) {
+            val ch = raw[i]
+            if (ch.isLetter() || ch == '_') {
+                var j = i
+                while (j < raw.length && (raw[j].isLetterOrDigit() || raw[j] == '_' || raw[j] == '.')) j++
+                val word = raw.substring(i, j)
+                // الدالة زي ROUND( مش مرجع — القوس بعدها هو الفرق.
+                val isCall = j < raw.length && raw[j] == '('
+                if (!isCall) {
+                    val color = if (word in known) refColor else unknownColor
+                    builder.addStyle(SpanStyle(color = color, fontWeight = FontWeight.SemiBold), i, j)
+                }
+                i = j
+            } else i++
+        }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+    }
+}
