@@ -41,7 +41,19 @@ jobs:
           BUILD_COMMIT: ${{ github.sha }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleFullDebug assembleTakeoffDebug --no-daemon
+          set -o pipefail
+          ./gradlew assembleFullDebug assembleTakeoffDebug --no-daemon --console=plain \
+            2>&1 | tee /tmp/build.log
+
+      # لما البناء يقع، جريدل بيقول "Compilation error. See log for more
+      # details" وبس — والسطور اللي فيها الملف والرقم بتبقى فوق بآلاف
+      # السطور، وسجل الـActions لما يتقص بتروح معاه. الخطوة دي بتطلّعها
+      # تاني في آخر السجل، فالفشل بيتقرا من غير ما تنزّل السجل كله.
+      - name: Show compile errors
+        if: failure()
+        run: |
+          echo "───────── compile errors ─────────"
+          grep -E "^e: |error:" /tmp/build.log | head -60 || echo "(no e: lines in the log)"
 
       # اختبارات الوحدة قبل أي نشر. المحرّك الهندسي والـPDF متثبّتين
       # باختبارات، فأي "تحسين أداء" بيغيّر رقم بيوقّع البناء هنا مش على

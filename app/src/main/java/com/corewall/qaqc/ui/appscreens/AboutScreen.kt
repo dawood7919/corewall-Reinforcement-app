@@ -215,7 +215,7 @@ private fun UpdateCard() {
                     color = c.textTertiary
                 )
                 Spacer(Modifier.height(Space.sm))
-                CwButton("نزّل وثبّت") {
+                CwButton("نزّل وثبّت", {
                     state = UpdateUi.Downloading(0f)
                     scope.launch {
                         val file = AppUpdater.download(context, s.update) { p ->
@@ -228,7 +228,7 @@ private fun UpdateCard() {
                             else -> UpdateUi.Failed
                         }
                     }
-                }
+                })
             }
 
             is UpdateUi.Downloading -> {
@@ -251,7 +251,7 @@ private fun UpdateCard() {
                 )
                 Spacer(Modifier.height(Space.sm))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    CwButton("افتح الإعداد") { AppUpdater.openInstallPermission(context) }
+                    CwButton("افتح الإعداد", { AppUpdater.openInstallPermission(context) })
                     CwButton(
                         "ثبّت",
                         { if (!AppUpdater.install(context, s.file)) state = UpdateUi.Failed },
@@ -269,12 +269,12 @@ private fun UpdateCard() {
             UpdateUi.Failed -> {
                 Text("مقدرناش نكمّل التحديث", style = CwText.codeSmall, color = c.danger.fg)
                 Spacer(Modifier.height(Space.sm))
-                CwButton("جرّب تاني") {
+                CwButton("جرّب تاني", {
                     state = UpdateUi.Checking
                     scope.launch {
                         state = AppUpdater.check()?.let { UpdateUi.Available(it) } ?: UpdateUi.UpToDate
                     }
-                }
+                })
             }
         }
     }
