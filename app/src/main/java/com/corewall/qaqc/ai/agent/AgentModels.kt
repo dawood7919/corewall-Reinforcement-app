@@ -39,6 +39,9 @@ data class AgentAction(
 
     fun num(key: String): Double? = str(key).trim().toDoubleOrNull()
 
+    /** الموديل بيبعت البوليان أحياناً كنص ("true") وأحياناً كقيمة. */
+    fun bool(key: String): Boolean = str(key).trim().lowercase() in setOf("true", "1", "yes", "نعم")
+
     /** وصف مقروء للإجراء — للسجل ولكارت الموافقة. */
     fun describe(): String {
         val a = args.entries.joinToString("، ") { (k, v) -> "$k=${v.plain()}" }

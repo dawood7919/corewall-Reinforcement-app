@@ -32,6 +32,11 @@ class AgentEngine(private val executor: AgentExecutor) {
     companion object {
         private const val MAX_ROUNDS = 4
         private const val MAX_ACTIONS_PER_ROUND = 4
+
+        private val PERMISSION_PHRASES = Regex(
+            "موافقت|موافقة منك|تحب أ|تحب ا|هل أ|أعملها|اعملها|أنفّذ|انفذ|" +
+                "تأكيد|لو موافق|تحب تأكد|بإذنك|استأذن"
+        )
     }
 
     /** نتيجة تشغيل الوكيل. */
@@ -47,6 +52,7 @@ class AgentEngine(private val executor: AgentExecutor) {
         appState: String,
         knowledge: String,
         history: String,
+        memory: String,
         onProgress: (String) -> Unit
     ): Run {
         if (!config.isConfigured) throw AiError.NoKey
@@ -55,9 +61,10 @@ class AgentEngine(private val executor: AgentExecutor) {
         val pending = mutableListOf<PendingAction>()
         val transcript = StringBuilder()
         var pendingSeq = System.currentTimeMillis()
+        var retriedForAction = false
 
         repeat(MAX_ROUNDS) { round ->
-            val user = buildUserMessage(question, appState, knowledge, history, transcript.toString(), round)
+            val user = buildUserMessage(question, appState, knowledge, history, memory, transcript.toString(), round)
             val raw = providerFor(config.provider).complete(config, systemPrompt(), user)
             val step = parseStep(raw)
 
@@ -67,7 +74,27 @@ class AgentEngine(private val executor: AgentExecutor) {
 
             // مفيش أدوات = الوكيل خلص
             if (actions.isEmpty()) {
-                return Run(step.answer ?: fallbackAnswer(raw), executed, pending)
+                val answer = step.answer ?: fallbackAnswer(raw)
+
+                // شبكة أمان لأكتر غلطة بتضيّع طلب المستخدم: الوكيل يكتب
+                // "مستني موافقتك" **من غير** ما يبعت الأداة. ساعتها مفيش
+                // كارت موافقة يظهر، والمستخدم بيبص على رسالة بتستأذن في
+                // حاجة مالهاش زرار — وده بالظبط اللي كان بيحصل.
+                //
+                // الرد مرة واحدة بس، وبس لما يبقى فيه استئذان فعلاً: تمنها
+                // رحلة واحدة في حالة الفشل، ومفيش تمن في الحالة العادية.
+                if (pending.isEmpty() && !retriedForAction && asksPermission(answer)) {
+                    retriedForAction = true
+                    transcript.appendLine(
+                        "[النظام] إنت استأذنت المستخدم من غير ما تبعت الأداة في `actions`، " +
+                            "فمظهرش عنده أي حاجة يوافق عليها. ابعت الأداة دلوقتي في " +
+                            "`actions` — التطبيق هو اللي هيعرض الموافقة."
+                    )
+                    transcript.appendLine()
+                    return@repeat
+                }
+
+                return Run(answer, executed, pending)
             }
 
             for (action in actions) {
@@ -77,6 +104,10 @@ class AgentEngine(private val executor: AgentExecutor) {
                     continue
                 }
                 if (AgentTools.autoRuns(tool.name)) {
+                    // المستخدم بيستنى دقيقة قدام شاشة مكتوب عليها "بيشتغل…"
+                    // من غير ما يعرف بيشتغل في إيه. اسم الأداة بيدّي إشارة
+                    // إن فيه تقدّم فعلي بدل ما الانتظار يتقري كتعليق.
+                    onProgress(AgentTools.progressLabel(tool.name))
                     val outcome = executor.run(action)
                     executed += ActionLogEntry(
                         at = System.currentTimeMillis(),
@@ -104,6 +135,18 @@ class AgentEngine(private val executor: AgentExecutor) {
                 }
             }
 
+            // فيه إجراء مستني موافقة؟ خلاص — الكرة عند المستخدم.
+            //
+            // الجولات اللي بعدها مالهاش أي فايدة: الوكيل مش هيقدر ينفّذ
+            // الإجراء ولا يشوف نتيجته، وكل جولة رحلة كاملة للسيرفر.
+            // ده كان بيكلّف لحد تلات رحلات زيادة على كل طلب تعديل.
+            if (pending.isNotEmpty()) {
+                val answer = step.answer ?: finalAnswer(
+                    config, question, appState, knowledge, history, memory, transcript.toString()
+                )
+                return Run(answer, executed, pending)
+            }
+
             // آخر جولة: لو الموديل بعت إجابة معاها، ناخدها
             if (round == MAX_ROUNDS - 1 && step.answer != null) {
                 return Run(step.answer, executed, pending)
@@ -111,12 +154,29 @@ class AgentEngine(private val executor: AgentExecutor) {
         }
 
         // خلصت الجولات من غير إجابة — نطلب واحدة أخيرة من غير أدوات
-        val finalRaw = providerFor(config.provider).complete(
-            config, systemPrompt(),
-            buildUserMessage(question, appState, knowledge, history, transcript.toString(), MAX_ROUNDS, force = true)
+        return Run(
+            finalAnswer(config, question, appState, knowledge, history, memory, transcript.toString()),
+            executed, pending
         )
-        val finalStep = parseStep(finalRaw)
-        return Run(finalStep.answer ?: fallbackAnswer(finalRaw), executed, pending)
+    }
+
+    /** طلب أخير من غير أدوات — للحالة اللي الوكيل مابعتش فيها إجابة. */
+    private suspend fun finalAnswer(
+        config: AiConfig,
+        question: String,
+        appState: String,
+        knowledge: String,
+        history: String,
+        memory: String,
+        transcript: String
+    ): ChatAnswer {
+        val raw = providerFor(config.provider).complete(
+            config, systemPrompt(),
+            // `round = 0` هنا مش خطأ: ده الطلب اللي الإجابة بتطلع منه،
+            // فبياخد السياق كامل. `force` هو اللي بيحدّد التعليمات.
+            buildUserMessage(question, appState, knowledge, history, memory, transcript, 0, force = true)
+        )
+        return parseStep(raw).answer ?: fallbackAnswer(raw)
     }
 
     // ------------------------------------------------------------ البرومبت
@@ -135,9 +195,17 @@ class AgentEngine(private val executor: AgentExecutor) {
         appendLine("1. لو الإجابة محتاجة رقم مش موجود في حالة التطبيق المعروضة، **شغّل أداة**. متخمّنش.")
         appendLine("2. لسؤال \"هل التسليح هيتغيّر في الدور الجاي\" استخدم `next_floor_changes`.")
         appendLine("3. لأي حساب حديد استخدم `steel_quantity` — متحسبش بنفسك.")
-        appendLine("4. أدوات التعديل والحذف **مابتتنفّذش لحد ما المستخدم يوافق**. لو اقترحت واحدة،")
-        appendLine("   قول في إجابتك إنها مستنية موافقته — **متقولش إنك عملتها**.")
+        appendLine("4. أدوات التعديل والحذف: **ابعت الأداة في `actions` عادي.** التطبيق هو اللي")
+        appendLine("   بيوقّفها ويعرض كارت موافقة للمستخدم — إنت مش بتنفّذها، وإنت مش بتستأذن.")
+        appendLine("   **ممنوع** تكتب \"مستني موافقتك\" أو \"تحب أعملها؟\" في نص الإجابة من غير ما")
+        appendLine("   تبعت الأداة معاها: لو بعت الكلام لوحده، المستخدم **مش هيلاقي حاجة يوافق عليها**")
+        appendLine("   والطلب بتاعه بيضيع. غلط ← {\"answer\":{\"headline\":\"مستني موافقتك\"},\"actions\":[]}")
+        appendLine("   صح ← {\"actions\":[{\"tool\":\"add_task\",\"args\":{…}}],\"answer\":{\"headline\":\"جهّزت المهمة\"}}")
+        appendLine("   وبرضه **متقولش إنك عملتها** — قول إنها اتجهّزت.")
         appendLine("5. متشغّلش أداة كتبت نتيجتها قبل كده في نفس المحادثة.")
+        appendLine("7. المستخدم شاور على حاجة اتقالت قبل كده وإنت مش شايفها فوق؟ شغّل")
+        appendLine("   `search_chat` — المحادثة كلها متسجّلة. **ممنوع** ترد بـ\"مش فاكر\".")
+        appendLine("8. طلع قرار أو رقم هيفرق في المحادثات الجاية؟ احفظه بـ`remember`.")
         appendLine("6. لو المستخدم طلب حاجة تتعمل (امسح/ضيف/غيّر)، اقترح الأداة المناسبة فوراً —")
         appendLine("   متسألش أسئلة توضيحية زيادة عن اللزوم.")
         appendLine()
@@ -177,18 +245,32 @@ class AgentEngine(private val executor: AgentExecutor) {
         appState: String,
         knowledge: String,
         history: String,
+        memory: String,
         transcript: String,
         round: Int,
         force: Boolean = false
     ): String = buildString {
-        appendLine(appState)
+        // لقطة التطبيق ٦ آلاف حرف، وكانت بتتبعت **كاملة في كل جولة** —
+        // يعني أربع مرات في السؤال الواحد، والحالة مابتتغيّرش بينهم أصلاً.
+        // الجولة الأولى بتاخدها كلها؛ اللي بعدها بتاخد السطور اللي بتحدّد
+        // «إنت فين» بس، لأن باقي اللي محتاجه بقى في نتايج الأدوات تحت.
+        appendLine(if (round == 0) appState else appState.lineSequence().take(6).joinToString("\n"))
         appendLine()
-        if (knowledge.isNotBlank()) {
+        // الذاكرة بتتبعت في كل جولة عن قصد — سقفها ١٢٠٠ حرف، وهي اللي
+        // بتخلّي الوكيل فاكر بدل ما يسأل نفس السؤال تاني.
+        if (memory.isNotBlank()) {
+            appendLine("## اللي إنت فاكره عن الدور ده")
+            appendLine(memory)
+            appendLine()
+        }
+
+        // نفس السبب: دول محسوبين من السؤال ومابيتغيّروش بين الجولات.
+        if (round == 0 && knowledge.isNotBlank()) {
             appendLine("## معرفة المستندات المرتبطة بالسؤال")
             appendLine(knowledge)
             appendLine()
         }
-        if (history.isNotBlank()) {
+        if (round == 0 && history.isNotBlank()) {
             appendLine("## آخر الرسائل")
             appendLine(history)
             appendLine()
@@ -214,6 +296,21 @@ class AgentEngine(private val executor: AgentExecutor) {
         val obj = JsonRepair.extractObject(raw) ?: return AgentStep(answer = fallbackAnswer(raw))
         return runCatching { json.decodeFromString(AgentStep.serializer(), obj.json) }
             .getOrElse { AgentStep(answer = fallbackAnswer(raw)) }
+    }
+
+    /**
+     * هل الرد بيستأذن؟
+     *
+     * الصيغ دي هي اللي الموديل بيكتبها لما يفهم إن التعديل محتاج موافقة
+     * فيسأل بالكلام بدل ما يبعت الأداة. مش فحص كامل للغة — ومش محتاج
+     * يكون: أسوأ نتيجة للخطأ إن الوكيل يتسأل مرة زيادة.
+     */
+    private fun asksPermission(answer: ChatAnswer): Boolean {
+        val text = buildString {
+            append(answer.headline)
+            answer.blocks.forEach { append(' ').append(it.title).append(' ').append(it.body) }
+        }
+        return PERMISSION_PHRASES.containsMatchIn(text)
     }
 
     /** لو الموديل خرج عن الصيغة، بنعرض نصّه بدل ما نضيّع الرد. */

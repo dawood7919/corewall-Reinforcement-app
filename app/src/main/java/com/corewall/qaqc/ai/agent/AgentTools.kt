@@ -8,7 +8,23 @@ package com.corewall.qaqc.ai.agent
  * لمشروع حقيقي — طلب فحص اتحطّ غلط أو ملف اتمسح غلط مش بيترجعوا،
  * وهلوسة واحدة من الموديل تكفي.
  */
-enum class ToolRisk { READ, NAVIGATE, WRITE, DESTRUCTIVE }
+enum class ToolRisk {
+    READ,
+    NAVIGATE,
+
+    /**
+     * كتابة في دفتر الوكيل نفسه، مش في بيانات المستخدم.
+     *
+     * ليه مستوى لوحده مش `WRITE`: الموافقة موجودة عشان سجلّات الجودة —
+     * مهمة اتحطّت غلط أو فحص اتغيّر غلط مالهمش رجعة. ملاحظة في الذاكرة
+     * مالهاش أي أثر على المشروع، ولو استنّت موافقة الوكيل مش هيقدر يفتكر
+     * حاجة غير بضغطة من المستخدم — وده يلغي فايدة الذاكرة أصلاً.
+     */
+    MEMORY,
+
+    WRITE,
+    DESTRUCTIVE
+}
 
 /**
  * أداة يقدر الوكيل ينفّذها جوّه التطبيق.
@@ -144,6 +160,25 @@ object AgentTools {
             "ملاحظات الدور (عناوينها وبداية محتواها).",
             listOf(arg("level", "string", "الدور"))
         ),
+        // ------------------------------------------------ قراءة: الذاكرة
+        AgentTool(
+            "search_chat", ToolRisk.READ,
+            "بحث في **كل** المحادثة السابقة مع المستخدم في الدور ده — مش آخر رسايل بس. " +
+                "استخدمها أول ما المستخدم يشاور على حاجة اتقالت قبل كده (\"زي ما اتفقنا\"، " +
+                "\"الرقم اللي قلتهولك\"، \"المهمة اللي عملناها\") بدل ما تقول إنك مش فاكر.",
+            listOf(arg("query", "string", "كلمة أو كود للبحث في المحادثة", required = true))
+        ),
+        AgentTool(
+            "remember", ToolRisk.MEMORY,
+            "حفظ حقيقة صغيرة تفضل معاك في كل المحادثات الجاية في الدور ده: قرار اتاخد، " +
+                "تفضيل للمستخدم، رقم مرجعي. المفتاح الواحد بيتكتب فوق القديم. " +
+                "احفظ اللي هيفرق بعدين بس — مش كل تفصيلة.",
+            listOf(
+                arg("key", "string", "اسم قصير للمعلومة، زي \"مقاس فتحة البوم\"", required = true),
+                arg("value", "string", "المعلومة نفسها في سطر", required = true)
+            )
+        ),
+
         AgentTool(
             "get_attendance", ToolRisk.READ,
             "بيانات العمالة: الحضور اليومي وإجماليات الفترة.",
@@ -174,10 +209,13 @@ object AgentTools {
         // ------------------------------------------------ كتابة (محتاجة موافقة)
         AgentTool(
             "add_task", ToolRisk.WRITE,
-            "إضافة مهمة جديدة للدور.",
+            "إضافة مهمة جديدة. لدور واحد، أو لكل الأدوار مرة واحدة بـ`allLevels: true` — " +
+                "استخدم `allLevels` لأي طلب من نوع \"في كل دور\" بدل ما تبعت الأداة مرة لكل دور " +
+                "(الأدوار ممكن تكون ٤٨، وده مش هينفع).",
             listOf(
                 arg("title", "string", "نص المهمة", required = true),
-                arg("level", "string", "الدور")
+                arg("level", "string", "الدور — بيتجاهَل لو allLevels = true"),
+                arg("allLevels", "boolean", "true = المهمة تتضاف في كل أدوار المشروع")
             )
         ),
         AgentTool(
@@ -258,7 +296,37 @@ object AgentTools {
 
     /** هل الأداة بتتنفّذ من غير ما نستأذن؟ */
     fun autoRuns(name: String): Boolean =
-        find(name)?.risk?.let { it == ToolRisk.READ || it == ToolRisk.NAVIGATE } ?: false
+        find(name)?.risk?.let {
+            it == ToolRisk.READ || it == ToolRisk.NAVIGATE || it == ToolRisk.MEMORY
+        } ?: false
+
+    /**
+     * جملة بالعربي عن الأداة اللي شغّالة دلوقتي.
+     *
+     * الشاشة كانت بتقول "بيشتغل…" لدقيقة كاملة، وانتظار من غير أي إشارة
+     * تقدّم بيتقري كتعليق مش كشغل. الاسم التقني مش هيفيد المستخدم، فده
+     * وصف بلغته.
+     */
+    fun progressLabel(name: String): String = when (name) {
+        "get_floor_summary" -> "بيراجع ملخّص الدور…"
+        "get_element" -> "بيقرا بيانات العنصر…"
+        "list_elements" -> "بيعدّ عناصر الدور…"
+        "compare_floors", "next_floor_changes" -> "بيقارن التسليح بين الأدوار…"
+        "get_plan_geometry" -> "بيقرا المسقط…"
+        "steel_quantity" -> "بيحسب مساحة الحديد…"
+        "pour_readiness" -> "بيراجع جاهزية الصبّ…"
+        "get_bar_counts" -> "بيراجع عدّ الأسياخ…"
+        "list_files", "read_file" -> "بيقرا الملفات…"
+        "list_documents", "get_document_facts" -> "بيراجع المستندات المحلّلة…"
+        "list_photos" -> "بيراجع صور الموقع…"
+        "search" -> "بيدوّر في بيانات الدور…"
+        "search_chat" -> "بيراجع اللي اتقال قبل كده…"
+        "remember" -> "بيسجّل المعلومة في الذاكرة…"
+        "list_tasks", "list_notes" -> "بيراجع المهام والملاحظات…"
+        "get_attendance" -> "بيراجع بيانات العمالة…"
+        "open_screen", "set_level", "open_file" -> "بيفتحلك الشاشة…"
+        else -> "بينفّذ $name…"
+    }
 
     /** وصف الأدوات زي ما بيتبعت للموديل. */
     fun catalogue(): String = buildString {
@@ -269,6 +337,7 @@ object AgentTools {
                 when (risk) {
                     ToolRisk.READ -> "### أدوات قراءة (بتتنفّذ فوراً)"
                     ToolRisk.NAVIGATE -> "### أدوات تنقّل (بتتنفّذ فوراً)"
+                    ToolRisk.MEMORY -> "### ذاكرة (بتتنفّذ فوراً)"
                     ToolRisk.WRITE -> "### أدوات تعديل (محتاجة موافقة المستخدم)"
                     ToolRisk.DESTRUCTIVE -> "### أدوات حذف (محتاجة موافقة المستخدم — مفيش تراجع)"
                 }

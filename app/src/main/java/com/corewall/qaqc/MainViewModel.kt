@@ -1111,9 +1111,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
             val knowledge = runCatching { aiEngine.knowledgeFor(level, q) }.getOrDefault("")
             val history = runCatching { aiEngine.historyDigest(level) }.getOrDefault("")
+            val memory = runCatching { aiEngine.memoryDigest(level) }.getOrDefault("")
 
             runCatching {
-                agentEngine.ask(cfg, question, appState, knowledge, history) { thought ->
+                agentEngine.ask(cfg, question, appState, knowledge, history, memory) { thought ->
                     _agentStatus.value = thought
                 }
             }.onSuccess { run ->

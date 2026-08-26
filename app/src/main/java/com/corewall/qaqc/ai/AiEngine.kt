@@ -86,6 +86,17 @@ class AiEngine(
     private val chatDao: ChatMessageDao,
     private val promptDao: PromptDao
 ) {
+    private companion object {
+        /**
+         * سقف ملاحظات الذاكرة في البرومبت.
+         *
+         * ١٢٠٠ حرف ≈ ٤٠٠ توكن — تمن ثابت مقبول على كل طلب. من غير سقف،
+         * الذاكرة بتكبر مع الاستعمال لحد ما تبقى هي نفسها سبب البطء اللي
+         * كانت المفروض تحلّه.
+         */
+        const val MEMORY_BUDGET = 1_200
+    }
+
     private val json = Json {
         ignoreUnknownKeys = true; isLenient = true
         encodeDefaults = true; explicitNulls = false
@@ -328,6 +339,77 @@ class AiEngine(
         withContext(Dispatchers.IO) { documentDao.forLevel(KnowledgeScope.PROJECT) }
 
     suspend fun clearChat(level: String) = withContext(Dispatchers.IO) { chatDao.clearLevel(level) }
+
+    // ---------------------------------------------------------------- الذاكرة
+
+    /**
+     * ذاكرة الوكيل.
+     *
+     * المشكلة اللي بتحلّها: المحادثة كانت بتتبعت كـ«آخر ٦ رسائل بخلاصتها».
+     * يعني حاجة اتقالت من عشر رسائل — قرار، رقم، تفضيل — بتختفي خالص،
+     * والحل السهل (نبعت المحادثة كلها) بيغلى طرديًا مع طول المحادثة لحد
+     * ما كل سؤال يتكلّف زي تحليل مستند.
+     *
+     * فالذاكرة هنا حاجتين مختلفتين:
+     *
+     * 1. **المحادثة كلها متسجّلة وقابلة للبحث** ([searchChat]) — الوكيل
+     *    بيدوّر فيها بأداة لما يحتاج، فمفيش حرف بيتبعت من غير داعي.
+     * 2. **ملاحظات صغيرة صريحة** ([rememberNote]) — الوكيل بيكتب فيها
+     *    اللي يستاهل يفضل (قرار، تفضيل، رقم مرجعي)، ودي بتتبعت كاملة
+     *    في كل طلب لأنها مقفولة على [MEMORY_BUDGET] حرف.
+     *
+     * التقسيمة دي هي الفرق بين «ذاكرة رخيصة وناقصة» و«ذاكرة كاملة وغالية»:
+     * الملخّص الصغير بيتبعت دايمًا، والباقي متاح عند الطلب.
+     */
+    suspend fun rememberNote(level: String, key: String, value: String) =
+        withContext(Dispatchers.IO) {
+            val k = key.trim()
+            if (k.isNotBlank()) {
+                // نفس المفتاح بيتكتب فوق القديم — من غير كده الذاكرة بتمتلي
+                // بنسخ من نفس الحقيقة وكل واحدة بتاكل من الميزانية.
+                chatDao.forgetByPrefix(level, "$k::")
+                chatDao.upsert(
+                    ChatMessageEntity(
+                        level = level, role = "memory",
+                        content = "$k::${value.trim().take(300)}",
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+            }
+        }
+
+    /** ملاحظات الذاكرة كنص جاهز للبرومبت — مقفولة على ميزانية ثابتة. */
+    suspend fun memoryDigest(level: String): String = withContext(Dispatchers.IO) {
+        val notes = chatDao.memory(level, 40)
+        if (notes.isEmpty()) return@withContext ""
+        buildString {
+            var used = 0
+            for (n in notes) {
+                val line = "- " + n.content.replace("::", ": ")
+                if (used + line.length > MEMORY_BUDGET) break
+                appendLine(line)
+                used += line.length + 1
+            }
+        }.trim()
+    }
+
+    /** بحث في المحادثة كلها — النتيجة سطر لكل رسالة. */
+    suspend fun searchChat(level: String, query: String, limit: Int = 12): String =
+        withContext(Dispatchers.IO) {
+            val q = query.trim()
+            if (q.isBlank()) return@withContext ""
+            val hits = chatDao.search(level, q, limit)
+            if (hits.isEmpty()) return@withContext ""
+            hits.reversed().joinToString("\n") {
+                val who = if (it.role == "user") "المستخدم" else "المساعد"
+                val body = if (it.role == "user") it.content else headlineOf(it.content)
+                "$who: ${body.take(300)}"
+            }
+        }
+
+    /** عدد رسائل المحادثة في دور. */
+    suspend fun chatCount(level: String): Int =
+        withContext(Dispatchers.IO) { chatDao.countForLevel(level) }
 
     /**
      * سؤال هندسي. بنجمع سياق حقيقي (المشروع + معرفة المستندات + الحقائق

@@ -522,11 +522,47 @@ interface DocFactDao {
 
 @Dao
 interface ChatMessageDao {
-    @Query("SELECT * FROM chat_messages WHERE level = :level ORDER BY createdAt ASC")
+    // `role` بياخد قيمة تالتة غير user/assistant هي `memory` — ملاحظات
+    // الوكيل عن نفسه. عمود موجود بقيمة جديدة يعني **مفيش ترحيل** ولا
+    // مخاطرة كسر المخطط؛ الاستعلامات هي اللي بتفصل بينهم.
+    @Query(
+        "SELECT * FROM chat_messages WHERE level = :level AND role IN ('user','assistant') " +
+            "ORDER BY createdAt ASC"
+    )
     fun observeForLevel(level: String): Flow<List<ChatMessageEntity>>
 
-    @Query("SELECT * FROM chat_messages WHERE level = :level ORDER BY createdAt ASC")
+    @Query(
+        "SELECT * FROM chat_messages WHERE level = :level AND role IN ('user','assistant') " +
+            "ORDER BY createdAt ASC"
+    )
     suspend fun forLevel(level: String): List<ChatMessageEntity>
+
+    /**
+     * بحث في **كل** المحادثة، مش آخر ست رسائل.
+     *
+     * ده اللي بيخلّي الذاكرة كاملة من غير ما تتكلّف: مفيش حرف زيادة
+     * بيتبعت في الطلب العادي، والوكيل بيجيب القديم لما يحتاجه بس.
+     */
+    @Query(
+        "SELECT * FROM chat_messages WHERE level = :level AND role IN ('user','assistant') " +
+            "AND content LIKE '%' || :query || '%' ORDER BY createdAt DESC LIMIT :limit"
+    )
+    suspend fun search(level: String, query: String, limit: Int): List<ChatMessageEntity>
+
+    /** ملاحظات الوكيل المحفوظة — الأحدث الأول. */
+    @Query(
+        "SELECT * FROM chat_messages WHERE level = :level AND role = 'memory' " +
+            "ORDER BY createdAt DESC LIMIT :limit"
+    )
+    suspend fun memory(level: String, limit: Int): List<ChatMessageEntity>
+
+    /** ملاحظة بنفس المفتاح بتتشال قبل ما الجديدة تتكتب. */
+    @Query("DELETE FROM chat_messages WHERE level = :level AND role = 'memory' AND content LIKE :prefix || '%'")
+    suspend fun forgetByPrefix(level: String, prefix: String)
+
+    /** عدد رسائل المحادثة — للعرض ولقرار الاختصار. */
+    @Query("SELECT COUNT(*) FROM chat_messages WHERE level = :level AND role IN ('user','assistant')")
+    suspend fun countForLevel(level: String): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: ChatMessageEntity): Long

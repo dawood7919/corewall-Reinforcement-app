@@ -55,11 +55,14 @@ class AgentExecutor(
                 "list_notes" -> listNotes(level(action))
                 "get_attendance" -> attendance(level(action), action.num("days")?.toInt() ?: 14)
 
+                "search_chat" -> searchChat(level(action), action.str("query"))
+                "remember" -> remember(level(action), action.str("key"), action.str("value"))
+
                 "open_screen" -> navigate(action.str("screen"))
                 "set_level" -> changeLevel(action.str("level"))
                 "open_file" -> openFile(action.str("path"))
 
-                "add_task" -> addTask(action.str("title"), level(action))
+                "add_task" -> addTask(action.str("title"), level(action), action.bool("allLevels"))
                 "complete_task" -> completeTask(action.num("id")?.toLong())
                 "add_note" -> addNote(action.str("title"), action.str("body"), level(action))
                 "create_document" -> createDocument(action.str("title"), action.str("template"), level(action))
@@ -82,6 +85,32 @@ class AgentExecutor(
         a.str("level").ifBlank { host.currentLevel }.let { asked ->
             host.levels.firstOrNull { it.equals(asked, ignoreCase = true) } ?: host.currentLevel
         }
+
+    // ------------------------------------------------------------ الذاكرة
+
+    /**
+     * بحث في المحادثة كلها.
+     *
+     * البديل — إن الوكيل يفضل شايف المحادثة كلها في كل طلب — بيغلى
+     * طرديًا مع طولها. هنا مفيش حرف بيتبعت غير لما يدوّر فعلاً.
+     */
+    private suspend fun searchChat(level: String, query: String): ToolOutcome {
+        if (query.isBlank()) return fail("search_chat", "محتاج كلمة للبحث")
+        val hits = aiEngine.searchChat(level, query)
+        return if (hits.isBlank()) {
+            ok("search_chat", "مفيش أي رسالة سابقة فيها \"$query\" في الدور $level.")
+        } else {
+            ok("search_chat", "رسايل سابقة فيها \"$query\":\n$hits")
+        }
+    }
+
+    private suspend fun remember(level: String, key: String, value: String): ToolOutcome {
+        if (key.isBlank() || value.isBlank()) {
+            return fail("remember", "محتاج key و value الاتنين")
+        }
+        aiEngine.rememberNote(level, key, value)
+        return ok("remember", "اتسجّل في ذاكرة الدور $level — «$key: $value»")
+    }
 
     private fun ok(tool: String, text: String, user: String = "") = ToolOutcome(tool, true, text, user)
     private fun fail(tool: String, text: String) = ToolOutcome(tool, false, text)
@@ -493,11 +522,29 @@ class AgentExecutor(
 
     // ------------------------------------------------------------ الكتابة
 
-    private suspend fun addTask(title: String, level: String): ToolOutcome {
+    private suspend fun addTask(title: String, level: String, allLevels: Boolean): ToolOutcome {
         if (title.isBlank()) return fail("add_task", "لازم عنوان للمهمة")
-        return if (host.addTask(title.trim(), level))
-            ok("add_task", "اتضافت المهمة", "ضفت مهمة: $title")
-        else fail("add_task", "تعذّرت الإضافة")
+        val text = title.trim()
+
+        // "اعمل المهمة دي في كل دور" كان مستحيل: الأداة بتاخد دور واحد،
+        // والجولة سقفها أربع إجراءات — والمشروع ٤٨ دور. إجراء واحد بيلفّ
+        // على الأدوار كلها يعني كارت موافقة واحد كمان، مش ٤٨.
+        if (!allLevels) {
+            return if (host.addTask(text, level)) {
+                ok("add_task", "اتضافت المهمة", "ضفت مهمة: $text")
+            } else fail("add_task", "تعذّرت الإضافة")
+        }
+
+        val levels = host.levels
+        if (levels.isEmpty()) return fail("add_task", "مفيش أدوار في المشروع")
+        var done = 0
+        for (lv in levels) if (host.addTask(text, lv)) done++
+        return if (done == 0) fail("add_task", "تعذّرت الإضافة في أي دور")
+        else ok(
+            "add_task",
+            "اتضافت المهمة في $done دور من ${levels.size}",
+            "ضفت «$text» في $done دور"
+        )
     }
 
     private suspend fun completeTask(id: Long?): ToolOutcome {

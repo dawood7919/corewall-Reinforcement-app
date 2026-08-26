@@ -590,7 +590,14 @@ data class ChatMessageEntity(
     val level: String,
     /** المحادثة اللي الرسالة تبعها. صفر = رسايل قديمة من قبل ما المحادثات توجد. */
     val threadId: Long = 0,
-    /** user | assistant */
+    /**
+     * `user` | `assistant` | `memory`.
+     *
+     * `memory` مش رسالة — دي ملاحظة الوكيل كاتبها لنفسه (`مفتاح::قيمة`)
+     * عشان يفتكرها في المحادثات الجاية. بتتخزّن هنا عشان تفضل مربوطة
+     * بالدور وتتمسح معاه، والاستعلامات هي اللي بتفصلها عن المحادثة —
+     * فمفيش عمود جديد ولا ترحيل.
+     */
     val role: String,
     val content: String,
     val createdAt: Long
