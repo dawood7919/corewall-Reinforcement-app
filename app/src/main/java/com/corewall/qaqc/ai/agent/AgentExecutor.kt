@@ -21,7 +21,15 @@ import java.io.File
 class AgentExecutor(
     private val host: AgentHost,
     private val files: FilesManager,
-    private val aiEngine: AiEngine
+    private val aiEngine: AiEngine,
+    /**
+     * الإعدادات وقت التنفيذ — دالة مش قيمة.
+     *
+     * توليد الصور محتاج المفتاح وموديل الصور، والمستخدم ممكن يغيّرهم
+     * والمحادثة شغّالة. القراءة عند الاستدعاء بتضمن إننا بننفّذ بآخر
+     * إعداد، مش بنسخة اتاخدت وقت إنشاء المنفّذ.
+     */
+    private val configOf: () -> com.corewall.qaqc.ai.AiConfig = { com.corewall.qaqc.ai.AiConfig() }
 ) {
 
     /** أقصى طول لأي مشاهدة — عشان الحلقة ماتفضاش تكبر. */
@@ -55,6 +63,10 @@ class AgentExecutor(
                 "list_notes" -> listNotes(level(action))
                 "get_attendance" -> attendance(level(action), action.num("days")?.toInt() ?: 14)
 
+                "make_image" -> makeImage(
+                    action.str("prompt"), action.str("caption"), level(action)
+                )
+
                 "search_chat" -> searchChat(level(action), action.str("query"))
                 "remember" -> remember(level(action), action.str("key"), action.str("value"))
 
@@ -85,6 +97,38 @@ class AgentExecutor(
         a.str("level").ifBlank { host.currentLevel }.let { asked ->
             host.levels.firstOrNull { it.equals(asked, ignoreCase = true) } ?: host.currentLevel
         }
+
+    // ------------------------------------------------------------ توليد صور
+
+    /**
+     * بيولّد صورة ويحفظها في ملفات الدور.
+     *
+     * الصورة بتتكتب على القرص مش بترجع في الذاكرة: كده بتفضل بعد قفل
+     * المحادثة، وبتظهر في شاشة الملفات، وبتتفتح وتتبعت زي أي ملف تاني.
+     * المسار بيرجع للموديل عشان يحطّه في بلوك IMAGES.
+     */
+    private suspend fun makeImage(prompt: String, caption: String, level: String): ToolOutcome {
+        if (prompt.isBlank()) return fail("make_image", "لازم وصف للصورة")
+        val config = configOf()
+        if (!config.canMakeImages) {
+            return fail(
+                "make_image",
+                "توليد الصور مقفول — محطّش موديل صور في الإعدادات ← الذكاء الاصطناعي."
+            )
+        }
+        val dir = File(files.levelDir(level), "صور مولّدة")
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+            .format(java.util.Date())
+        val file = com.corewall.qaqc.ai.remote.AiImageGenerator.generate(
+            config, prompt.trim(), dir, "ai-$stamp"
+        )
+        return ok(
+            "make_image",
+            "الصورة اتولّدت واتحفظت.\nالمسار الكامل: ${file.absolutePath}\n" +
+                "حطّ المسار ده زي ما هو في بلوك IMAGES.",
+            caption.ifBlank { "صورة مولّدة" }
+        )
+    }
 
     // ------------------------------------------------------------ الذاكرة
 

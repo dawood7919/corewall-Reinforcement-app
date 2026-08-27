@@ -47,6 +47,45 @@ object AiHttpClient {
         throw last ?: AiError.Network("فشل الطلب من غير سبب واضح")
     }
 
+    /**
+     * تحميل بايتس (GET).
+     *
+     * موجودة عشان بعض خدمات توليد الصور بترجّع **رابط** للصورة بدل
+     * البايتس نفسها، والرابط ده مؤقت وبينتهي — فلازم ننزّله دلوقتي
+     * ونحفظه، مش نسيبه للعرض بعدين.
+     */
+    suspend fun getBytes(url: String): ByteArray = withContext(Dispatchers.IO) {
+        var conn: HttpURLConnection? = null
+        try {
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+            }
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val text = conn.errorStream?.bufferedReader(Charsets.UTF_8)
+                    ?.use(BufferedReader::readText).orEmpty()
+                throw AiError.Server(code, text.take(300))
+            }
+            conn.inputStream.use { it.readBytes() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AiError) {
+            throw e
+        } catch (e: SocketTimeoutException) {
+            throw AiError.Timeout
+        } catch (e: UnknownHostException) {
+            throw AiError.Offline
+        } catch (e: OutOfMemoryError) {
+            throw AiError.TooLarge("الصورة أكبر من الذاكرة المتاحة")
+        } catch (e: Throwable) {
+            throw AiError.Network("${e::class.java.simpleName}: ${e.message.orEmpty()}")
+        } finally {
+            runCatching { conn?.disconnect() }
+        }
+    }
+
     private suspend fun attempt(
         url: String,
         body: String,

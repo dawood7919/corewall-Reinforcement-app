@@ -51,9 +51,24 @@ data class AiConfig(
     val provider: AiProviderId = AiProviderId.OPENROUTER,
     val apiKey: String = "",
     val model: String = AiProviderId.OPENROUTER.defaultModel,
-    val baseUrl: String = AiProviderId.OPENROUTER.defaultBaseUrl
+    val baseUrl: String = AiProviderId.OPENROUTER.defaultBaseUrl,
+    /**
+     * موديل توليد الصور — **منفصل عن موديل المحادثة**.
+     *
+     * الفصل ده مش تنظيمي، هو الطريقة اللي الميزة بتشتغل بيها: موديل
+     * اللغة هو اللي بيكتب وصف الصورة من نتايج الحساب، وموديل تاني خالص
+     * هو اللي بيرسمها. موديل واحد مابيعملش الاتنين.
+     *
+     * فاضي = التوليد مقفول. مفيش موديل افتراضي عن قصد: الموديلات دي
+     * بتتحاسب بالصورة، وتشغيلها من غير ما المستخدم يختار معناه إنه
+     * يدفع من غير ما يعرف.
+     */
+    val imageModel: String = ""
 ) {
     val isConfigured: Boolean get() = apiKey.isNotBlank()
+
+    /** التوليد متاح؟ محتاج مفتاح + موديل صور متحدّد. */
+    val canMakeImages: Boolean get() = isConfigured && imageModel.isNotBlank()
 }
 
 /**

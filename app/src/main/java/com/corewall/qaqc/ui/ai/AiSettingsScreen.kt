@@ -151,6 +151,14 @@ fun AiSettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 )
                 Spacer(Modifier.height(Space.md))
                 CwField(
+                    value = cfg.imageModel,
+                    onValueChange = { m -> vm.updateAiConfig { it.copy(imageModel = m.trim()) } },
+                    label = "موديل الصور (اختياري)",
+                    placeholder = imageModelHint(cfg.provider),
+                    helper = imageModelHelp(cfg.provider)
+                )
+                Spacer(Modifier.height(Space.md))
+                CwField(
                     value = cfg.baseUrl,
                     onValueChange = { u -> vm.updateAiConfig { it.copy(baseUrl = u.trim()) } },
                     label = "عنوان الخدمة",
@@ -296,6 +304,28 @@ private fun keyHelp(provider: AiProviderId): String = when (provider) {
     AiProviderId.GEMINI ->
         "اعمل مفتاح مجاني من aistudio.google.com/apikey — اضغط \"Create API key\" " +
             "واختار مشروع. المفتاح بيبدأ بـAIza."
+}
+
+/**
+ * اقتراح موديل صور لكل مزوّد.
+ *
+ * مجرد نص إرشادي مش قيمة افتراضية: الموديلات دي بتتحاسب **بالصورة**،
+ * وتشغيلها لوحدها معناه إن المستخدم يدفع من غير ما يطلب. فاضي = مقفول.
+ */
+private fun imageModelHint(provider: AiProviderId): String = when (provider) {
+    AiProviderId.OPENAI -> "gpt-image-1"
+    AiProviderId.GEMINI -> "gemini-2.5-flash-image"
+    AiProviderId.OPENROUTER -> "google/gemini-2.5-flash-image"
+    AiProviderId.TOKENROUTER -> "اسم موديل صور من الخدمة"
+    AiProviderId.ANTHROPIC -> "مش متاح"
+}
+
+private fun imageModelHelp(provider: AiProviderId): String = when (provider) {
+    AiProviderId.ANTHROPIC ->
+        "Anthropic مابتولّدش صور. عشان الميزة دي تشتغل اختار OpenAI أو Gemini أو OpenRouter."
+    else ->
+        "سيبه فاضي = التوليد مقفول. لما تحطّه، تقدر تقول للمساعد \"اعملي صورة\" — " +
+            "هو بيكتب الوصف من الأرقام الحقيقية، والموديل ده بيرسمها."
 }
 
 private fun modelHelp(provider: AiProviderId): String = when (provider) {

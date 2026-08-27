@@ -165,12 +165,16 @@ fun ImageGallery(files: List<AnswerFile>, onOpen: (String) -> Unit, modifier: Mo
         return
     }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        real.take(9).chunked(3).forEach { row ->
+        // شبكة تلاتة في الصف مناسبة لألبوم صور موقع. صورة واحدة —
+        // وده حال أي صورة مولّدة — بتاخد العرض كله: تلت الشاشة مش كفاية
+        // تشوف فيها رسمة اتعملت مخصوص عشان تتقري.
+        val perRow = if (real.size == 1) 1 else 3
+        real.take(9).chunked(perRow).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { af ->
                     Thumb(af, onOpen, Modifier.weight(1f))
                 }
-                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
         val captioned = real.filter { it.caption.isNotBlank() }

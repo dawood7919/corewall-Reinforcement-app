@@ -108,7 +108,8 @@ class SettingsStore(context: Context) {
                 provider = provider,
                 apiKey = aiPrefs.getString("aiApiKey", "").orEmpty(),
                 model = aiPrefs.getString("aiModel", null) ?: provider.defaultModel,
-                baseUrl = aiPrefs.getString("aiBaseUrl", null) ?: provider.defaultBaseUrl
+                baseUrl = aiPrefs.getString("aiBaseUrl", null) ?: provider.defaultBaseUrl,
+                imageModel = aiPrefs.getString("aiImageModel", "").orEmpty()
             )
         }
     )
@@ -122,6 +123,7 @@ class SettingsStore(context: Context) {
             .putString("aiApiKey", next.apiKey)
             .putString("aiModel", next.model)
             .putString("aiBaseUrl", next.baseUrl)
+            .putString("aiImageModel", next.imageModel)
             .apply()
     }
 
@@ -238,7 +240,10 @@ class SettingsStore(context: Context) {
                 provider = provider,
                 apiKey = saved?.apiKey.orEmpty(),
                 model = saved?.model ?: provider.defaultModel,
-                baseUrl = saved?.baseUrl ?: provider.defaultBaseUrl
+                baseUrl = saved?.baseUrl ?: provider.defaultBaseUrl,
+                // موديل الصور مربوط بالمزوّد — اسم موديل من خدمة تانية
+                // مش هيتعرف، والطلب هيفشل برسالة مالهاش معنى للمستخدم.
+                imageModel = ""
             )
         }
     }

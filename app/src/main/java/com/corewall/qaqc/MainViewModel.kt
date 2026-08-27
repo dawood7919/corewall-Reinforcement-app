@@ -1262,7 +1262,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val agentEngine by lazy {
         com.corewall.qaqc.ai.agent.AgentEngine(
-            com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine)
+            com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine) { aiConfig.value }
         )
     }
 
@@ -1331,7 +1331,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         viewModelScope.launch {
-            val executor = com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine)
+            val executor = com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine) { aiConfig.value }
             val outcome = executor.run(p.action)
             _actionLog.value = (
                 listOf(
@@ -1395,7 +1395,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val tool = com.corewall.qaqc.ai.agent.AgentTools.find(action.tool) ?: return
         agentExecutionStore.markPlan(planId, "RUNNING")
         agentExecutionStore.markStep(stepId, "RUNNING", "جاري التنفيذ")
-        val outcome = com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine).run(action)
+        val outcome = com.corewall.qaqc.ai.agent.AgentExecutor(agentHost, files, aiEngine) { aiConfig.value }.run(action)
         agentExecutionStore.markStep(stepId, if (outcome.ok) "DONE" else "FAILED", outcome.userMessage.ifBlank { outcome.observation })
         agentExecutionStore.audit(
             level = _currentLevel.value,
