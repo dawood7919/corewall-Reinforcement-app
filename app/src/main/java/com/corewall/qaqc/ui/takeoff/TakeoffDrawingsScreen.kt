@@ -11,8 +11,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.pdf.rememberPdfCover
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -115,46 +126,68 @@ fun TakeoffDrawingsScreen(
                 )
             }
         } else {
-            LazyColumn(
+            // الرسمة بتتعرّف من شكلها. أيقونة PDF حمرا واحدة على كل صف
+            // معناها إن كل الرسمات شكلها واحد، والاسم لوحده ("A-101")
+            // مابيقولش لحد إيه اللي جوّه غير لو فاتحه من شوية.
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 160.dp),
                 contentPadding = PaddingValues(
                     start = Space.lg, end = Space.lg,
                     top = Space.md, bottom = Space.bottomInset
                 ),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 items(drawings, key = { it.id }) { drawing ->
                     val count = items.count { it.drawingId == drawing.id && it.parentId == null }
-                    CwCard(onClick = {
-                        vm.openTakeoffEditor(drawing.id, drawing.filePath, drawing.name)
-                    }) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.sm)
+                    val cover = rememberPdfCover(drawing.filePath)
+                    CwCard(
+                        onClick = {
+                            vm.openTakeoffEditor(drawing.id, drawing.filePath, drawing.name)
+                        },
+                        contentPadding = PaddingValues(Space.sm)
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1.15f)
+                                .background(c.surfaceAlt, Radius.shapeMd),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                Icons.Filled.PictureAsPdf,
-                                contentDescription = null,
-                                tint = c.danger.fg
-                            )
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    drawing.name,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = c.textPrimary
+                            if (cover != null) {
+                                Image(
+                                    bitmap = cover,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize().padding(Space.xxs)
                                 )
-                                Text(
-                                    if (count == 0) "مفيش بنود لسه" else "$count بند",
-                                    style = CwText.codeSmall,
-                                    color = c.textTertiary
+                            } else {
+                                Icon(
+                                    Icons.Filled.PictureAsPdf,
+                                    contentDescription = null,
+                                    tint = c.danger.fg
                                 )
                             }
                             CwIconButton(
                                 Icons.Filled.Delete, "احذف الرسمة",
-                                { confirmDelete = drawing }, tint = c.danger.fg
+                                { confirmDelete = drawing }, tint = c.danger.fg,
+                                modifier = Modifier.align(Alignment.TopEnd)
                             )
                         }
+                        Spacer(Modifier.height(Space.xs))
+                        Text(
+                            drawing.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = c.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            if (count == 0) "مفيش بنود لسه" else "$count بند",
+                            style = CwText.codeSmall,
+                            color = c.textTertiary
+                        )
                     }
                 }
             }

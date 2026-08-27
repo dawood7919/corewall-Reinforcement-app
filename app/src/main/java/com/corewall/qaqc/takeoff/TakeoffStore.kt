@@ -56,6 +56,16 @@ class TakeoffStore(
 
     fun drawings(projectId: Long): Flow<List<TakeoffDrawingEntity>> = dao.observeDrawings(projectId)
     suspend fun drawingById(id: Long): TakeoffDrawingEntity? = withContext(Dispatchers.IO) { dao.drawing(id) }
+
+    /**
+     * رسمات قسم — قراية واحدة، مش تدفّق.
+     *
+     * شبكة الأقسام محتاجة أول رسمة في كل قسم عشان ترسم الغلاف. تدفّق لكل
+     * قسم يعني اشتراك حيّ لكل خانة في الشبكة، وده تكلفة مستمرة مقابل
+     * بيانات بتتقري مرة واحدة عند الرسم.
+     */
+    suspend fun drawingsOnce(projectId: Long): List<TakeoffDrawingEntity> =
+        withContext(Dispatchers.IO) { dao.drawingsOf(projectId) }
     fun items(drawingId: Long): Flow<List<TakeoffItemEntity>> = dao.observeItems(drawingId)
     fun projectItems(projectId: Long): Flow<List<TakeoffItemEntity>> = dao.observeProjectItems(projectId)
     fun scales(drawingId: Long): Flow<List<TakeoffScaleEntity>> = dao.observeScales(drawingId)

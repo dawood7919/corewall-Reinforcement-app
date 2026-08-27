@@ -11,8 +11,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import com.corewall.qaqc.data.db.TakeoffDrawingEntity
+import com.corewall.qaqc.ui.design.Radius
+import com.corewall.qaqc.ui.pdf.rememberPdfCover
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -76,14 +89,20 @@ fun TakeoffProjectsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 )
             }
         } else {
-            LazyColumn(
+            // شبكة مش ليستة: القسم بيتعرّف من رسمته قبل اسمه — الأسماء
+            // بتتشابه ("برج ١"، "برج ٢")، والغلاف بيفرّق من نظرة.
+            // `Adaptive` مش عدد ثابت: عمودين على الموبايل وأكتر على
+            // الشاشة الكبيرة أو الوضع الأفقي، من غير حسابات مقاسات.
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 160.dp),
                 contentPadding = PaddingValues(
                     start = Space.lg, end = Space.lg,
                     top = Space.md, bottom = Space.bottomInset
                 ),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
-                item(key = "overview") {
+                item(key = "overview", span = { GridItemSpan(maxLineSpan) }) {
                     CwCard(style = com.corewall.qaqc.ui.design.CwCardStyle.Accent, accent = c.accent) {
                         Text("حصر الكميات", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(Space.xs))
@@ -91,7 +110,7 @@ fun TakeoffProjectsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     }
                 }
                 if (creating) {
-                    item(key = "new") {
+                    item(key = "new", span = { GridItemSpan(maxLineSpan) }) {
                         CwCard {
                             Column {
                                 CwField(
@@ -117,8 +136,9 @@ fun TakeoffProjectsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
 
                 items(projects, key = { it.id }) { project ->
-                    ProjectRow(
+                    ProjectTile(
                         project = project,
+                        loadDrawings = { vm.takeoff.drawingsOnce(project.id) },
                         onOpen = { vm.openTakeoffProject(project.id, project.name) },
                         onDelete = { confirmDelete = project }
                     )
@@ -154,32 +174,74 @@ fun TakeoffProjectsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * خانة قسم في الشبكة: غلاف أول رسمة، الاسم، وعدد الرسمات.
+ *
+ * الرسمات بتتقري هنا مش في الشاشة الأم عن قصد: الشبكة كسولة، فالقسم
+ * اللي لسه ماوصلتش له بالتمرير مابيفتحش ملف ولا بيرسم صفحة.
+ */
 @Composable
-private fun ProjectRow(
+private fun ProjectTile(
     project: TakeoffProjectEntity,
+    loadDrawings: suspend () -> List<TakeoffDrawingEntity>,
     onOpen: () -> Unit,
     onDelete: () -> Unit
 ) {
     val c = LocalCwColors.current
-    CwCard(onClick = onOpen) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+    var drawings by remember(project.id) { mutableStateOf<List<TakeoffDrawingEntity>>(emptyList()) }
+    LaunchedEffect(project.id) { drawings = runCatching { loadDrawings() }.getOrDefault(emptyList()) }
+
+    val cover = rememberPdfCover(drawings.firstOrNull()?.filePath)
+
+    CwCard(onClick = onOpen, contentPadding = PaddingValues(Space.sm)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                // نسبة الورقة تقريباً — الغلاف بيفضل بنفس الشكل قبل ما
+                // الصورة توصل، فالشبكة مابتنطّش وهي بتتحمّل.
+                .aspectRatio(1.15f)
+                .background(c.surfaceAlt, Radius.shapeMd),
+            contentAlignment = Alignment.Center
         ) {
-            CwLeadingIcon(Icons.Filled.Straighten, tone = CwTone.Info)
-            Spacer(Modifier.width(Space.md))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    project.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = c.textPrimary
+            if (cover != null) {
+                Image(
+                    bitmap = cover,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(Space.xxs)
                 )
-                if (project.note.isNotBlank()) {
-                    Text(project.note, style = CwText.codeSmall, color = c.textTertiary)
-                }
+            } else {
+                Icon(
+                    if (drawings.isEmpty()) Icons.Filled.Straighten else Icons.Filled.Description,
+                    contentDescription = null,
+                    tint = c.textTertiary
+                )
             }
-            CwIconButton(Icons.Filled.Delete, "احذف القسم", onDelete, tint = c.danger.fg)
+            CwIconButton(
+                Icons.Filled.Delete, "احذف القسم", onDelete,
+                tint = c.danger.fg,
+                modifier = Modifier.align(Alignment.TopEnd)
+            )
         }
+
+        Spacer(Modifier.height(Space.xs))
+        Text(
+            project.name,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = c.textPrimary,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+        Text(
+            when (drawings.size) {
+                0 -> "مفيش رسمات"
+                1 -> "رسمة واحدة"
+                2 -> "رسمتين"
+                else -> "${drawings.size} رسمة"
+            },
+            style = CwText.codeSmall,
+            color = c.textTertiary
+        )
     }
 }
