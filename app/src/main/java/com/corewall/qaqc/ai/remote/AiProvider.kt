@@ -35,6 +35,25 @@ interface AiProvider {
     ): String
 
     /**
+     * نفس [complete] بس بيسلّم النصّ وهو بيوصل.
+     *
+     * الرد كامل هو الراجع في الحالتين — البثّ مش بيغيّر النتيجة، بيغيّر
+     * إمتى المستخدم يعرف إن فيه حاجة بتحصل. الانتظار الصامت لدقيقة
+     * بيتقري كتعليق، حتى لو الرد في الآخر بيوصل في نفس الوقت بالظبط.
+     *
+     * الافتراضي بيرجع لـ[complete]: المزوّد اللي مش داعم البثّ بيشتغل
+     * زي ما هو من غير أي كود مخصوص، وبينده [onDelta] مرة واحدة في الآخر.
+     */
+    suspend fun completeStreaming(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        expectJson: Boolean = true,
+        onDelta: (String) -> Unit
+    ): String = complete(config, systemPrompt, userContent, expectJson)
+        .also(onDelta)
+
+    /**
      * نفس الطلب بس مع صور (base64 JPEG) — للـPDF وصور الموقع.
      * الافتراضي بيرجّع للنص العادي لو المزوّد مش داعم الرؤية.
      */
@@ -103,6 +122,9 @@ private fun systemMessage(config: AiConfig, systemPrompt: String): JsonObject = 
 /** سقف طول الرد. مستندات الـBBS بترجّع مئات الصفوف، والافتراضي بيقطعها. */
 private const val MAX_TOKENS = 8000
 
+/** كل كام حرف نحدّث الشاشة أثناء البثّ. */
+private const val NOTIFY_EVERY_CHARS = 48
+
 fun providerFor(id: AiProviderId): AiProvider = when (id) {
     // TokenRouter بتتكلم نفس صيغة OpenAI (/chat/completions + Bearer)،
     // فبتمشي على نفس المزوّد من غير كود مخصوص.
@@ -147,6 +169,55 @@ object OpenAiCompatProvider : AiProvider {
 
         val raw = AiHttpClient.postJson("${config.baseUrl.trimEnd('/')}/chat/completions", payload, headers)
         return extractOpenAiContent(raw)
+    }
+
+    override suspend fun completeStreaming(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        expectJson: Boolean,
+        onDelta: (String) -> Unit
+    ): String {
+        val payload = buildJsonObject {
+            put("model", config.model)
+            put("temperature", 0.2)
+            put("max_tokens", MAX_TOKENS)
+            put("stream", true)
+            if (expectJson) putJsonObject("response_format") { put("type", "json_object") }
+            putJsonArray("messages") {
+                add(systemMessage(config, systemPrompt))
+                add(buildJsonObject { put("role", "user"); put("content", userContent) })
+            }
+        }.toString()
+
+        val headers = buildMap {
+            put("Authorization", "Bearer ${config.apiKey}")
+            if (config.provider == AiProviderId.OPENROUTER) {
+                put("HTTP-Referer", "https://github.com/corewall-qaqc")
+                put("X-Title", "CoreWall QA/QC")
+            }
+        }
+
+        val out = StringBuilder()
+        var lastNotified = 0
+        AiStreamClient.stream(
+            "${config.baseUrl.trimEnd('/')}/chat/completions", payload, headers
+        ).collect { chunk ->
+            if (chunk is AiStreamClient.Chunk.Delta) {
+                out.append(chunk.text)
+                // مش مع كل رمز: التجميع بيحصل على الخيط الرئيسي، ونسخ
+                // نصّ بيكبر مع كل رمز تكلفته تربيعية — رد فيه ألفين رمز
+                // كان هيهتّه الواجهة. عين الإنسان مش شايفة أسرع من كده.
+                if (out.length - lastNotified >= NOTIFY_EVERY_CHARS) {
+                    lastNotified = out.length
+                    onDelta(out.toString())
+                }
+            }
+        }
+        // بثّ رجع فاضي = الخدمة مادعمتوش أو قطعت من غير خطأ. الرجوع
+        // للطلب العادي أحسن من إن المستخدم يشوف رد فاضي.
+        if (out.isBlank()) return complete(config, systemPrompt, userContent, expectJson)
+        return out.toString()
     }
 
     override suspend fun completeWithImages(
@@ -236,6 +307,53 @@ object AnthropicProvider : AiProvider {
 
         // القوس اللي إحنا بدأنا بيه مش راجع في الرد — بنرجّعه مكانه.
         return if (expectJson && !text.trimStart().startsWith("{")) "{$text" else text
+    }
+
+    override suspend fun completeStreaming(
+        config: AiConfig,
+        systemPrompt: String,
+        userContent: String,
+        expectJson: Boolean,
+        onDelta: (String) -> Unit
+    ): String {
+        val payload = buildJsonObject {
+            put("model", config.model)
+            put("max_tokens", MAX_TOKENS)
+            put("temperature", 0.2)
+            put("stream", true)
+            putJsonArray("system") { add(cachedTextBlock(systemPrompt)) }
+            putJsonArray("messages") {
+                add(buildJsonObject { put("role", "user"); put("content", userContent) })
+                if (expectJson) {
+                    add(buildJsonObject { put("role", "assistant"); put("content", "{") })
+                }
+            }
+        }.toString()
+
+        val headers = mapOf(
+            "x-api-key" to config.apiKey,
+            "anthropic-version" to "2023-06-01"
+        )
+
+        val out = StringBuilder()
+        if (expectJson) out.append("{")
+        var lastNotified = 0
+        AiStreamClient.stream(
+            "${config.baseUrl.trimEnd('/')}/messages", payload, headers
+        ).collect { chunk ->
+            if (chunk is AiStreamClient.Chunk.Delta) {
+                out.append(chunk.text)
+                if (out.length - lastNotified >= NOTIFY_EVERY_CHARS) {
+                    lastNotified = out.length
+                    onDelta(out.toString())
+                }
+            }
+        }
+        val text = out.toString()
+        if (text.isBlank() || text == "{") {
+            return complete(config, systemPrompt, userContent, expectJson)
+        }
+        return text
     }
 }
 

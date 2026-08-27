@@ -127,6 +127,13 @@ object AiStreamClient {
      */
     private fun parseDelta(data: String): String? = runCatching {
         val obj = json.parseToJsonElement(data).jsonObject
+
+        // صيغة Anthropic: أحداث مسمّاة، والنصّ في `delta.text`.
+        // مالهاش `choices` خالص، فلازم تتفحص لوحدها.
+        obj["delta"]?.jsonObject?.get("text")?.jsonPrimitive?.content
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return@runCatching it }
+
         val choice = obj["choices"]?.jsonArray?.firstOrNull()?.jsonObject
         val fromDelta = choice?.get("delta")?.jsonObject?.get("content")?.jsonPrimitive?.content
         if (!fromDelta.isNullOrEmpty()) fromDelta

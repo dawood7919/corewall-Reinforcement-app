@@ -33,6 +33,9 @@ class AgentEngine(private val executor: AgentExecutor) {
         private const val MAX_ROUNDS = 4
         private const val MAX_ACTIONS_PER_ROUND = 4
 
+        /** بالترتيب: الإجابة أهم من الفكرة لو الاتنين موجودين. */
+        private val PREVIEW_KEYS = listOf("\"headline\"", "\"thought\"", "\"body\"")
+
         private val PERMISSION_PHRASES = Regex(
             "موافقت|موافقة منك|تحب أ|تحب ا|هل أ|أعملها|اعملها|أنفّذ|انفذ|" +
                 "تأكيد|لو موافق|تحب تأكد|بإذنك|استأذن"
@@ -69,7 +72,12 @@ class AgentEngine(private val executor: AgentExecutor) {
 
         repeat(MAX_ROUNDS) { round ->
             val user = buildUserMessage(question, appState, knowledge, history, memory, transcript.toString(), round)
-            val raw = providerFor(config.provider).complete(config, systemPrompt(), user)
+            // بثّ: النصّ بيتسلّم وهو بيوصل. الرد النهائي هو هو، اللي
+            // بيتغيّر إن المستخدم بيشوف حاجة بتحصل بدل شاشة ساكتة.
+            val raw = providerFor(config.provider)
+                .completeStreaming(config, systemPrompt(), user) { partial ->
+                    livePreview(partial)?.let(onProgress)
+                }
             val step = parseStep(raw)
 
             if (step.thought.isNotBlank()) onProgress(step.thought)
@@ -154,7 +162,7 @@ class AgentEngine(private val executor: AgentExecutor) {
             // ده كان بيكلّف لحد تلات رحلات زيادة على كل طلب تعديل.
             if (pending.isNotEmpty()) {
                 val answer = step.answer ?: finalAnswer(
-                    config, question, appState, knowledge, history, memory, transcript.toString()
+                    config, question, appState, knowledge, history, memory, transcript.toString(), onProgress
                 )
                 return Run(answer, executed, pending)
             }
@@ -167,7 +175,7 @@ class AgentEngine(private val executor: AgentExecutor) {
 
         // خلصت الجولات من غير إجابة — نطلب واحدة أخيرة من غير أدوات
         return Run(
-            finalAnswer(config, question, appState, knowledge, history, memory, transcript.toString()),
+            finalAnswer(config, question, appState, knowledge, history, memory, transcript.toString(), onProgress),
             executed, pending
         )
     }
@@ -180,14 +188,15 @@ class AgentEngine(private val executor: AgentExecutor) {
         knowledge: String,
         history: String,
         memory: String,
-        transcript: String
+        transcript: String,
+        onProgress: (String) -> Unit
     ): ChatAnswer {
-        val raw = providerFor(config.provider).complete(
+        val raw = providerFor(config.provider).completeStreaming(
             config, systemPrompt(),
             // `round = 0` هنا مش خطأ: ده الطلب اللي الإجابة بتطلع منه،
             // فبياخد السياق كامل. `force` هو اللي بيحدّد التعليمات.
             buildUserMessage(question, appState, knowledge, history, memory, transcript, 0, force = true)
-        )
+        ) { partial -> livePreview(partial)?.let(onProgress) }
         return parseStep(raw).answer ?: fallbackAnswer(raw)
     }
 
@@ -308,6 +317,51 @@ class AgentEngine(private val executor: AgentExecutor) {
         val obj = JsonRepair.extractObject(raw) ?: return AgentStep(answer = fallbackAnswer(raw))
         return runCatching { json.decodeFromString(AgentStep.serializer(), obj.json) }
             .getOrElse { AgentStep(answer = fallbackAnswer(raw)) }
+    }
+
+    /**
+     * أول كلام مفيد من JSON لسه بيتكتب.
+     *
+     * الرد بيوصل حرف حرف، وفي نصّه بيبقى JSON ناقص مايتفكّش. بس الحقول
+     * اللي إحنا عايزينها بتيجي في الأول، وقراية نصّ بين علامتي تنصيص
+     * مابتحتاجش المستند يكون كامل — فبنقراها بالإيد بدل ما نستنى القوس
+     * الأخير. مش محلّل JSON، وماينفعش يبقى واحد: نصّ نص مش JSON صالح.
+     *
+     * بيرجّع `null` لحد ما يبقى فيه حاجة تتعرض — عرض حروف مقطوعة أسوأ
+     * من عرض الرسالة القديمة ثانية زيادة.
+     */
+    private fun livePreview(buffer: String): String? {
+        for (key in PREVIEW_KEYS) {
+            val at = buffer.indexOf(key)
+            if (at < 0) continue
+            val colon = buffer.indexOf(':', at + key.length)
+            if (colon < 0) continue
+            val quote = buffer.indexOf('"', colon + 1)
+            if (quote < 0) continue
+            val sb = StringBuilder()
+            var i = quote + 1
+            while (i < buffer.length) {
+                val ch = buffer[i]
+                when {
+                    ch == '\\' && i + 1 < buffer.length -> {
+                        // الهروب بيتفك بالإيد: `\n` جوّه العرض بيبان كسطر
+                        // جديد، و`\"` مايقفلش النصّ بالغلط.
+                        when (val next = buffer[i + 1]) {
+                            'n' -> sb.append(' ')
+                            '"' -> sb.append('"')
+                            '\\' -> sb.append('\\')
+                            else -> sb.append(next)
+                        }
+                        i += 2
+                    }
+                    ch == '"' -> return sb.toString().trim().ifBlank { null }
+                    else -> { sb.append(ch); i++ }
+                }
+            }
+            // النصّ لسه بيتكتب — بنعرضه ناقص، ده المقصود من البثّ.
+            return sb.toString().trim().takeIf { it.length >= 4 }
+        }
+        return null
     }
 
     /**
