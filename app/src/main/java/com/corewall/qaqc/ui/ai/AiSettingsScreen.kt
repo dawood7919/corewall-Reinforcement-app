@@ -24,6 +24,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -116,12 +119,21 @@ fun AiSettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             val provider = AiProviderId.entries[i]
             ProviderCard(
                 label = provider.label,
-                model = provider.defaultModel,
+                // المحلي مالوش موديل افتراضي بالاسم — بيتوصف بدل ما
+                // يفضل السطر فاضي تحت اسمه.
+                model = provider.defaultModel.ifBlank { "ملف على الجهاز · بيشتغل من غير إنترنت" },
                 selected = cfg.provider == provider,
                 savedCount = keys.count { it.provider == provider.name },
                 onClick = { vm.switchAiProvider(provider) }
             )
         }
+
+        // المحلي مالوش مفتاح ولا عنوان ولا موديل بالاسم — عنده ملف.
+        // فبيتعرض بكارت مختلف بدل ما يفضّي خانات مالهاش معنى عنده.
+        if (cfg.provider == AiProviderId.LOCAL) {
+            item(key = "local-header") { CwSectionHeader("ملف الموديل") }
+            item(key = "local") { LocalModelCard(vm, cfg) }
+        } else {
 
         item(key = "key-header") { CwSectionHeader("المفتاح والموديل") }
         item(key = "key") {
@@ -180,6 +192,7 @@ fun AiSettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     color = c.textTertiary
                 )
             }
+        }
         }
 
         item(key = "prompts") {
@@ -294,6 +307,91 @@ private fun SavedKeyCard(
     }
 }
 
+/**
+ * كارت الموديل المحلي.
+ *
+ * الملف بيتنسخ لمجلد التطبيق عن قصد مش بيتقرا من مكانه: الإذن اللي
+ * منتقي الملفات بيدّيه مؤقت وبيروح مع إعادة التشغيل، والمكتبة الأصلية
+ * محتاجة **مسار حقيقي** مش `content://` — فقراءة من المكان الأصلي كانت
+ * هتشتغل مرة وتقع بعدها.
+ */
+@Composable
+private fun LocalModelCard(vm: MainViewModel, cfg: com.corewall.qaqc.ai.AiConfig) {
+    val c = LocalCwColors.current
+    val context = LocalContext.current
+    var copying by remember { mutableStateOf(false) }
+
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            copying = true
+            vm.importLocalModel(uri) { copying = false }
+        }
+    }
+
+    val path = cfg.localModelPath
+    val ready = com.corewall.qaqc.ai.local.LocalLlm.isReady(path)
+    val sizeMb = remember(path, ready) {
+        if (!ready) 0L else runCatching { java.io.File(path).length() / (1024 * 1024) }
+            .getOrDefault(0L)
+    }
+
+    CwCard {
+        Text(
+            when {
+                copying -> "بينسخ الملف جوّه التطبيق…"
+                ready -> "جاهز · ${java.io.File(path).name} · $sizeMb ميجا"
+                path.isNotBlank() -> "الملف المختار مش موجود — اختاره تاني"
+                else -> "مفيش موديل متحدّد"
+            },
+            style = MaterialTheme.typography.titleSmall,
+            color = when {
+                ready -> c.success.fg
+                copying -> c.textPrimary
+                else -> c.warning.fg
+            }
+        )
+        Spacer(Modifier.height(Space.md))
+
+        // الأنواع مفتوحة: منتقي الملفات في أندرويد مابيعرفش `.litertlm`،
+        // وفلترة بنوع MIME كانت هتخفي الملف اللي المستخدم لسه نزّله.
+        CwButton(
+            if (ready) "غيّر الملف" else "اختار ملف الموديل",
+            { picker.launch(arrayOf("*/*")) },
+            enabled = !copying
+        )
+
+        if (ready) {
+            Spacer(Modifier.height(Space.sm))
+            CwButton(
+                "شيل الموديل",
+                { vm.clearLocalModel() },
+                style = CwButtonStyle.Ghost,
+                enabled = !copying
+            )
+        }
+
+        Spacer(Modifier.height(Space.md))
+        Text(
+            "الموديل بيشتغل على الجهاز — من غير إنترنت ومن غير ما أي بيانات تخرج. " +
+                "بس هو أصغر بكتير من الموديلات السحابية، فـ**الأدوات وتحليل المستندات " +
+                "وتوليد الصور مش شغّالين عليه**، والإجابات أقصر وأضعف. " +
+                "استخدمه لما الشبكة تقطع في الموقع، وارجع للسحابي لما تلاقي شبكة.",
+            style = MaterialTheme.typography.bodySmall,
+            color = c.textTertiary
+        )
+        Spacer(Modifier.height(Space.sm))
+        Text(
+            "الملف لازم يكون بصيغة .litertlm. نزّله من litert-community على " +
+                "Hugging Face، وحطّه في التنزيلات، وبعدين اختاره من هنا. " +
+                "أول تشغيل بياخد لحد عشر ثواني عشان الموديل بيتحمّل في الذاكرة.",
+            style = CwText.codeSmall,
+            color = c.textTertiary
+        )
+    }
+}
+
 private fun keyHelp(provider: AiProviderId): String = when (provider) {
     AiProviderId.OPENROUTER -> "اعمل مفتاح من openrouter.ai/keys — مفتاح واحد بيديك موديلات كتير."
     AiProviderId.TOKENROUTER ->
@@ -304,6 +402,8 @@ private fun keyHelp(provider: AiProviderId): String = when (provider) {
     AiProviderId.GEMINI ->
         "اعمل مفتاح مجاني من aistudio.google.com/apikey — اضغط \"Create API key\" " +
             "واختار مشروع. المفتاح بيبدأ بـAIza."
+    AiProviderId.LOCAL ->
+        "الموديل المحلي مالوش مفتاح ولا بيتصل بحاجة — الملف اللي على الجهاز هو كل حاجة."
 }
 
 /**
@@ -318,11 +418,14 @@ private fun imageModelHint(provider: AiProviderId): String = when (provider) {
     AiProviderId.OPENROUTER -> "google/gemini-2.5-flash-image"
     AiProviderId.TOKENROUTER -> "اسم موديل صور من الخدمة"
     AiProviderId.ANTHROPIC -> "مش متاح"
+    AiProviderId.LOCAL -> "مش متاح"
 }
 
 private fun imageModelHelp(provider: AiProviderId): String = when (provider) {
     AiProviderId.ANTHROPIC ->
         "Anthropic مابتولّدش صور. عشان الميزة دي تشتغل اختار OpenAI أو Gemini أو OpenRouter."
+    AiProviderId.LOCAL ->
+        "الموديل المحلي بيكتب نص بس — الصور محتاجة مزوّد سحابي."
     else ->
         "سيبه فاضي = التوليد مقفول. لما تحطّه، تقدر تقول للمساعد \"اعملي صورة\" — " +
             "هو بيكتب الوصف من الأرقام الحقيقية، والموديل ده بيرسمها."

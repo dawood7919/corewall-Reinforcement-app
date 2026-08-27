@@ -35,6 +35,22 @@ enum class AiProviderId(val label: String, val defaultBaseUrl: String, val defau
         label = "Gemini (AI Studio)",
         defaultBaseUrl = "https://generativelanguage.googleapis.com/v1beta",
         defaultModel = "gemini-2.5-flash"
+    ),
+
+    /**
+     * موديل شغّال **على الجهاز نفسه** — من غير إنترنت ومن غير مفتاح.
+     *
+     * الشغل في موقع، والشبكة في المواقع بتقطع. مساعد بيحتاج إنترنت
+     * بيبقى مش موجود في نص الحالات اللي محتاجه فيها.
+     *
+     * مالوش عنوان ولا موديل افتراضي: اللي بيحدّده هو **ملف** المستخدم
+     * نزّله بنفسه. مفيش تنزيل تلقائي — الملفات دي جيجابايتات، وتنزيلها
+     * من غير ما يطلب بياكل باقة الموبايل من غير إذنه.
+     */
+    LOCAL(
+        label = "موديل محلي (من غير إنترنت)",
+        defaultBaseUrl = "",
+        defaultModel = ""
     );
 
     companion object {
@@ -63,9 +79,24 @@ data class AiConfig(
      * بتتحاسب بالصورة، وتشغيلها من غير ما المستخدم يختار معناه إنه
      * يدفع من غير ما يعرف.
      */
-    val imageModel: String = ""
+    val imageModel: String = "",
+    /**
+     * مسار ملف الموديل المحلي (`.litertlm`) على الجهاز.
+     *
+     * مسار مش اسم: الملف بيتنزّل برّه التطبيق وبيتختار من مدير الملفات،
+     * فمفيش سجل أسماء نقدر نطابق عليه.
+     */
+    val localModelPath: String = ""
 ) {
-    val isConfigured: Boolean get() = apiKey.isNotBlank()
+    /**
+     * جاهز للاستخدام؟
+     *
+     * المحلي مالوش مفتاح — الشرط عنده إن فيه ملف متحدّد. من غير الفرق
+     * ده كان هيفضل "مش متظبط" مهما نزّلت موديلات.
+     */
+    val isConfigured: Boolean
+        get() = if (provider == AiProviderId.LOCAL) localModelPath.isNotBlank()
+        else apiKey.isNotBlank()
 
     /** التوليد متاح؟ محتاج مفتاح + موديل صور متحدّد. */
     val canMakeImages: Boolean get() = isConfigured && imageModel.isNotBlank()

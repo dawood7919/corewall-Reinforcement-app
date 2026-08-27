@@ -109,7 +109,8 @@ class SettingsStore(context: Context) {
                 apiKey = aiPrefs.getString("aiApiKey", "").orEmpty(),
                 model = aiPrefs.getString("aiModel", null) ?: provider.defaultModel,
                 baseUrl = aiPrefs.getString("aiBaseUrl", null) ?: provider.defaultBaseUrl,
-                imageModel = aiPrefs.getString("aiImageModel", "").orEmpty()
+                imageModel = aiPrefs.getString("aiImageModel", "").orEmpty(),
+                localModelPath = aiPrefs.getString("aiLocalModelPath", "").orEmpty()
             )
         }
     )
@@ -124,6 +125,7 @@ class SettingsStore(context: Context) {
             .putString("aiModel", next.model)
             .putString("aiBaseUrl", next.baseUrl)
             .putString("aiImageModel", next.imageModel)
+            .putString("aiLocalModelPath", next.localModelPath)
             .apply()
     }
 
@@ -244,6 +246,9 @@ class SettingsStore(context: Context) {
                 // موديل الصور مربوط بالمزوّد — اسم موديل من خدمة تانية
                 // مش هيتعرف، والطلب هيفشل برسالة مالهاش معنى للمستخدم.
                 imageModel = ""
+                // ملف الموديل المحلي **مابيتمسحش** هنا: تنزيله كلّف
+                // جيجابايت ووقت، ومالوش أي علاقة بالمزوّد السحابي
+                // المختار. الرجوع للمحلي بيلاقيه مكانه.
             )
         }
     }

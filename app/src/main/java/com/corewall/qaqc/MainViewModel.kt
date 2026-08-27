@@ -1082,7 +1082,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val q = question.trim()
         if (q.isBlank() || _chatBusy.value) return
         val cfg = settingsStore.aiConfig.value
-        if (!cfg.isConfigured) { _chatError.value = "ضيف مفتاح API من إعدادات المساعد الذكي الأول."; return }
+        if (!cfg.isConfigured) {
+            _chatError.value =
+                if (cfg.provider == com.corewall.qaqc.ai.AiProviderId.LOCAL)
+                    "اختار ملف الموديل المحلي من إعدادات المساعد الذكي الأول."
+                else "ضيف مفتاح API من إعدادات المساعد الذكي الأول."
+            return
+        }
+        if (cfg.provider == com.corewall.qaqc.ai.AiProviderId.LOCAL) { askLocal(q, cfg); return }
 
         _chatBusy.value = true
         _chatError.value = null
@@ -1166,6 +1173,65 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _chatBusy.value = false
                 refreshSuggestions()
             } finally {
+                com.corewall.qaqc.work.BackgroundWork.finish(
+                    appContext, com.corewall.qaqc.work.BackgroundWork.JOB_AI
+                )
+            }
+        }
+    }
+
+    /**
+     * سؤال على الموديل المحلي.
+     *
+     * مسار منفصل عن الوكيل عن قصد، مش اختصار: حلقة الوكيل ببرومبتها
+     * ٦٣٠٠ توكن وأربع جولات JSON مابتشتغلش على موديل بحجم اللي بيتحمّل
+     * على تليفون. تشغيلها عليه كان هيدّي أدوات بتضيع بصمت وانتظار طويل
+     * قبل أول حرف — يعني تجربة أسوأ من إن الأدوات تكون مقفولة بوضوح.
+     *
+     * السياق هنا سطور معدودة: الدور، وأعداد العناصر، والسؤال.
+     */
+    private fun askLocal(q: String, cfg: com.corewall.qaqc.ai.AiConfig) {
+        _chatBusy.value = true
+        _chatError.value = null
+        _agentStatus.value = "الموديل المحلي بيتحمّل…"
+        com.corewall.qaqc.work.BackgroundWork.start(
+            appContext, com.corewall.qaqc.work.BackgroundWork.JOB_AI, "الموديل المحلي بيشتغل…"
+        )
+        viewModelScope.launch {
+            val level = _currentLevel.value
+            _chat.value = _chat.value + com.corewall.qaqc.data.db.ChatMessageEntity(
+                level = level, role = "user", content = q, createdAt = System.currentTimeMillis()
+            )
+            try {
+                val prompt = buildString {
+                    appendLine("إنت مساعد مهندس تنفيذ في موقع بناء. جاوب بالعربي، مختصر وعملي.")
+                    appendLine("لو مش متأكد من رقم، قول إنك مش متأكد — متخمّنش أرقام.")
+                    appendLine()
+                    appendLine("الدور الشغّال: $level")
+                    appendLine("عدد عناصر المسقط: ${planData.elements.size}")
+                    appendLine()
+                    appendLine("السؤال: $q")
+                }
+                val answer = com.corewall.qaqc.ai.local.LocalLlm.generate(
+                    cfg.localModelPath, prompt
+                ) { partial -> _agentStatus.value = partial.takeLast(120) }
+
+                aiEngine.saveTurn(
+                    level, q,
+                    com.corewall.qaqc.ai.model.ChatAnswer(
+                        blocks = listOf(
+                            com.corewall.qaqc.ai.model.AnswerBlock(
+                                type = "TEXT", body = answer.trim()
+                            )
+                        )
+                    )
+                )
+                _chat.value = aiEngine.history(level)
+            } catch (e: Throwable) {
+                _chatError.value = e.message ?: "الموديل المحلي فشل"
+            } finally {
+                _agentStatus.value = null
+                _chatBusy.value = false
                 com.corewall.qaqc.work.BackgroundWork.finish(
                     appContext, com.corewall.qaqc.work.BackgroundWork.JOB_AI
                 )
@@ -1708,6 +1774,63 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 com.corewall.qaqc.update.UpdateUi.Installing
             else com.corewall.qaqc.update.UpdateUi.Failed("مقدرناش نفتح شاشة التثبيت")
     }
+
+    // ------------------------------------------------- الموديل المحلي
+
+    /**
+     * بينسخ ملف الموديل جوّه التطبيق ويسجّل مساره.
+     *
+     * النسخ مش تبذير: الإذن اللي منتقي الملفات بيدّيه مؤقت وبيروح مع
+     * إعادة التشغيل، والمكتبة الأصلية محتاجة **مسار ملف حقيقي** مش
+     * `content://`. القراءة من المكان الأصلي كانت هتشتغل مرة وتقع بعدها،
+     * والمستخدم مش هيعرف ليه.
+     *
+     * التمن نسخة تانية من ملف حجمه جيجابايت. مقبول لأن البديل ميزة
+     * بتقع من غير سبب واضح — والملف القديم بيتمسح قبل الجديد.
+     */
+    fun importLocalModel(uri: android.net.Uri, onDone: () -> Unit) {
+        viewModelScope.launch {
+            com.corewall.qaqc.work.BackgroundWork.start(
+                appContext, "local-model", "بينسخ ملف الموديل…"
+            )
+            val result = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val dir = java.io.File(appContext.filesDir, "models").apply { mkdirs() }
+                    dir.listFiles()?.forEach { it.delete() }
+                    val name = queryFileName(uri) ?: "model.litertlm"
+                    val target = java.io.File(dir, name)
+                    appContext.contentResolver.openInputStream(uri)?.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    } ?: error("مقدرناش نفتح الملف")
+                    target.absolutePath
+                }
+            }
+            com.corewall.qaqc.work.BackgroundWork.finish(appContext, "local-model")
+            result
+                .onSuccess { path ->
+                    com.corewall.qaqc.ai.local.LocalLlm.release()
+                    settingsStore.updateAiConfig { it.copy(localModelPath = path) }
+                }
+                .onFailure { e ->
+                    _chatError.value = "مقدرناش ننسخ ملف الموديل: ${e.message.orEmpty()}"
+                }
+            onDone()
+        }
+    }
+
+    /** بيشيل الموديل المحلي وملفه. */
+    fun clearLocalModel() {
+        com.corewall.qaqc.ai.local.LocalLlm.release()
+        runCatching { java.io.File(appContext.filesDir, "models").deleteRecursively() }
+        settingsStore.updateAiConfig { it.copy(localModelPath = "") }
+    }
+
+    private fun queryFileName(uri: android.net.Uri): String? = runCatching {
+        appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val i = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (i >= 0 && cursor.moveToFirst()) cursor.getString(i) else null
+        }
+    }.getOrNull()
 
     fun switchAiProvider(provider: com.corewall.qaqc.ai.AiProviderId) =
         settingsStore.switchAiProvider(provider)

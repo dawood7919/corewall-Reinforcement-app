@@ -65,6 +65,9 @@ object AiImageGenerator {
             AiProviderId.OPENAI -> openAiImages(config, prompt)
             AiProviderId.OPENROUTER, AiProviderId.TOKENROUTER -> chatImages(config, prompt)
             AiProviderId.GEMINI -> geminiImages(config, prompt)
+            AiProviderId.LOCAL -> throw AiError.BadResponse(
+                "الموديل المحلي بيكتب نص بس — مابيرسمش صور. اختار مزوّد سحابي للصور."
+            )
             AiProviderId.ANTHROPIC -> throw AiError.BadResponse(
                 "Anthropic مابتولّدش صور. اختار مزوّد تاني للصور من الإعدادات " +
                     "(OpenAI أو Gemini أو OpenRouter)."
