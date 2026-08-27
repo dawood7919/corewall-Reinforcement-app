@@ -344,7 +344,7 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
         Dest.Settings -> SettingsScreen(vm, modifier)
         Dest.Sync -> SyncScreen(vm, modifier)
         Dest.ScheduleImport -> ScheduleImportScreen(vm, modifier)
-        Dest.About -> AboutScreen(modifier)
+        Dest.About -> AboutScreen(vm, modifier)
 
         // ملء الشاشة
         is Dest.PdfViewer -> PdfViewerScreen(vm = vm, path = dest.path, onClose = { vm.closePdf() })

@@ -23,6 +23,14 @@
       الصامت مش متاح لتطبيق عادي، والمستخدم بيوافق في كل مرة.
     -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!--
+      الشغل اللي بيكمّل والتطبيق في الخلفية: طلبات المساعد وتحميل التحديث.
+      من غير خدمة أمامية، أندرويد بيقتل العملية تحت ضغط الذاكرة في نص
+      الطلب — ودي بالظبط اللحظة اللي المستخدم بيسيب فيها التطبيق.
+      النوع `dataSync` لأن الاتنين نقل بيانات على الشبكة ومفيش غيره.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- تسجيل ملاحظات صوتية محلية يطلب إذناً وقت الاستخدام فقط. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -55,6 +63,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".work.BackgroundWorkService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <receiver
             android:name=".notify.NoteReminderReceiver"

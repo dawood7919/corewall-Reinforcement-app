@@ -1087,6 +1087,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _chatBusy.value = true
         _chatError.value = null
         _agentStatus.value = "بيقرا حالة الدور…"
+        // الطلب ممكن ياخد دقيقة، والمستخدم بيسيب التطبيق وهو مستني.
+        // من غير التسجيل ده، النظام بيقتل العملية والرد بيضيع كأنه
+        // معملش — وبتبدأ من الأول لما ترجع.
+        com.corewall.qaqc.work.BackgroundWork.start(
+            appContext, com.corewall.qaqc.work.BackgroundWork.JOB_AI, "المساعد بيشتغل…"
+        )
         viewModelScope.launch {
             val level = _currentLevel.value
             // نعرض سؤال المستخدم فوراً
@@ -1116,6 +1122,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             runCatching {
                 agentEngine.ask(cfg, question, appState, knowledge, history, memory) { thought ->
                     _agentStatus.value = thought
+                    // نفس النص اللي في الشاشة بيروح للإشعار — فالمستخدم
+                    // اللي في تطبيق تاني شايف إنه بيتقدّم، مش مستني بلا خبر.
+                    com.corewall.qaqc.work.BackgroundWork.start(
+                        appContext, com.corewall.qaqc.work.BackgroundWork.JOB_AI, thought
+                    )
                 }
             }.onSuccess { run ->
                 keyWorked()
@@ -1147,10 +1158,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _chatError.value = e.aiMessage()
             }
 
-            _chat.value = aiEngine.history(level)
-            _agentStatus.value = null
-            _chatBusy.value = false
-            refreshSuggestions()
+            // الإنهاء في `finally`: أي استثناء بعد الحلقة كان هيسيب
+            // الخدمة شغّالة وإشعار "المساعد بيشتغل…" معلّق للأبد.
+            try {
+                _chat.value = aiEngine.history(level)
+                _agentStatus.value = null
+                _chatBusy.value = false
+                refreshSuggestions()
+            } finally {
+                com.corewall.qaqc.work.BackgroundWork.finish(
+                    appContext, com.corewall.qaqc.work.BackgroundWork.JOB_AI
+                )
+            }
         }
     }
 
@@ -1621,6 +1640,74 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateAiConfig(transform: (com.corewall.qaqc.ai.AiConfig) -> com.corewall.qaqc.ai.AiConfig) =
         settingsStore.updateAiConfig(transform)
+
+    // ------------------------------------------------- تحديث التطبيق
+
+    private val _updateState =
+        MutableStateFlow<com.corewall.qaqc.update.UpdateUi>(com.corewall.qaqc.update.UpdateUi.Idle)
+    val updateState: StateFlow<com.corewall.qaqc.update.UpdateUi> = _updateState
+
+    /**
+     * فحص التحديث. بيتنده لما تتفتح شاشة "عن التطبيق".
+     *
+     * مابيعيدش الفحص لو فيه تحميل شغّال — الفحص وقتها مالوش لازمة
+     * وبيصفّر شريط التقدّم قدام المستخدم.
+     */
+    fun checkForUpdate() {
+        val current = _updateState.value
+        if (current is com.corewall.qaqc.update.UpdateUi.Downloading ||
+            current is com.corewall.qaqc.update.UpdateUi.Checking
+        ) return
+        viewModelScope.launch {
+            _updateState.value = com.corewall.qaqc.update.UpdateUi.Checking
+            val found = runCatching { com.corewall.qaqc.update.AppUpdater.check() }.getOrNull()
+            _updateState.value = found?.let { com.corewall.qaqc.update.UpdateUi.Available(it) }
+                ?: com.corewall.qaqc.update.UpdateUi.UpToDate
+        }
+    }
+
+    /**
+     * تحميل التحديث وفتح شاشة التثبيت.
+     *
+     * في `viewModelScope` مش في نطاق الشاشة: التحميل ٧٠ ميجا وبياخد
+     * دقايق، والمستخدم طبيعي يسيب الشاشة أو التطبيق وهو شغّال. ومسجّل
+     * كشغلانة خلفية عشان النظام مايقتلش العملية في نصّه.
+     */
+    fun downloadAndInstall(context: android.content.Context) {
+        val available = _updateState.value as? com.corewall.qaqc.update.UpdateUi.Available ?: return
+        val app = context.applicationContext
+        viewModelScope.launch {
+            _updateState.value = com.corewall.qaqc.update.UpdateUi.Downloading(0f)
+            com.corewall.qaqc.work.BackgroundWork.start(
+                app, com.corewall.qaqc.work.BackgroundWork.JOB_UPDATE, "بينزّل التحديث…"
+            )
+            try {
+                val file = com.corewall.qaqc.update.AppUpdater.download(app, available.update) { p ->
+                    _updateState.value = com.corewall.qaqc.update.UpdateUi.Downloading(p)
+                }
+                _updateState.value = when {
+                    file == null -> com.corewall.qaqc.update.UpdateUi.Failed("التحميل ماكملش")
+                    !com.corewall.qaqc.update.AppUpdater.canInstall(app) ->
+                        com.corewall.qaqc.update.UpdateUi.NeedsPermission(file)
+                    com.corewall.qaqc.update.AppUpdater.install(app, file) ->
+                        com.corewall.qaqc.update.UpdateUi.Installing
+                    else -> com.corewall.qaqc.update.UpdateUi.Failed("مقدرناش نفتح شاشة التثبيت")
+                }
+            } finally {
+                com.corewall.qaqc.work.BackgroundWork.finish(
+                    app, com.corewall.qaqc.work.BackgroundWork.JOB_UPDATE
+                )
+            }
+        }
+    }
+
+    /** تثبيت ملف اتنزّل خلاص — بعد ما المستخدم يدّي الإذن. */
+    fun installDownloaded(context: android.content.Context, file: java.io.File) {
+        _updateState.value =
+            if (com.corewall.qaqc.update.AppUpdater.install(context, file))
+                com.corewall.qaqc.update.UpdateUi.Installing
+            else com.corewall.qaqc.update.UpdateUi.Failed("مقدرناش نفتح شاشة التثبيت")
+    }
 
     fun switchAiProvider(provider: com.corewall.qaqc.ai.AiProviderId) =
         settingsStore.switchAiProvider(provider)

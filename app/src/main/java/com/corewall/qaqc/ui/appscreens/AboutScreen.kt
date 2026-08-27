@@ -22,19 +22,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import com.corewall.qaqc.BuildConfig
-import kotlinx.coroutines.launch
-import com.corewall.qaqc.update.AvailableUpdate
+import com.corewall.qaqc.MainViewModel
 import com.corewall.qaqc.update.AppUpdater
+import com.corewall.qaqc.update.UpdateUi
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.corewall.qaqc.ui.design.CwProgressBar
 import com.corewall.qaqc.ui.design.CwButtonStyle
 import com.corewall.qaqc.ui.design.CwButton
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import com.corewall.qaqc.ui.design.CwCard
@@ -57,7 +55,7 @@ import com.corewall.qaqc.ui.design.Space
  * موجود. اتشالوا، وفضل اللي فيه معلومة حقيقية.
  */
 @Composable
-fun AboutScreen(modifier: Modifier = Modifier) {
+fun AboutScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val c = LocalCwColors.current
 
     LazyColumn(
@@ -111,7 +109,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        item(key = "update") { UpdateCard() }
+        item(key = "update") { UpdateCard(vm) }
 
         item(key = "project-header") { CwSectionHeader("المشروع") }
         item(key = "project") {
@@ -178,22 +176,23 @@ fun AboutScreen(modifier: Modifier = Modifier) {
  * الفحص بيحصل لما تفتح الشاشة مش عند تشغيل التطبيق: التحديث مش عاجل،
  * وسؤال الشبكة مع كل فتحة بيدفع بطارية وبيانات مقابل حاجة المستخدم
  * بيدوّر عليها لما يحتاجها.
+ *
+ * الحالة كلها في الـViewModel مش هنا. الكارت ده بيعرض بس — فالتحميل
+ * بيكمّل لو خرجت من الشاشة أو من التطبيق، وبترجع تلاقيه واصل فين.
  */
 @Composable
-private fun UpdateCard() {
+private fun UpdateCard(vm: MainViewModel) {
     val c = LocalCwColors.current
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val state by vm.updateState.collectAsStateWithLifecycle()
 
-    var state by remember { mutableStateOf<UpdateUi>(UpdateUi.Checking) }
-
-    LaunchedEffect(Unit) {
-        state = AppUpdater.check()?.let { UpdateUi.Available(it) } ?: UpdateUi.UpToDate
-    }
+    LaunchedEffect(Unit) { vm.checkForUpdate() }
 
     CwCard {
         when (val s = state) {
-            UpdateUi.Checking -> Text("بنشوف فيه تحديث…", style = CwText.codeSmall, color = c.textTertiary)
+            UpdateUi.Idle,
+            UpdateUi.Checking ->
+                Text("بنشوف فيه تحديث…", style = CwText.codeSmall, color = c.textTertiary)
 
             UpdateUi.UpToDate -> Text(
                 "التطبيق محدَّث لآخر إصدار",
@@ -210,25 +209,12 @@ private fun UpdateCard() {
                 )
                 Spacer(Modifier.height(Space.xs))
                 Text(
-                    "هيتنزّل هنا، وبعدين النظام هيسألك توافق على التثبيت.",
+                    "التحميل بيكمّل لو قفلت الشاشة أو فتحت تطبيق تاني.",
                     style = CwText.codeSmall,
                     color = c.textTertiary
                 )
                 Spacer(Modifier.height(Space.sm))
-                CwButton("نزّل وثبّت", {
-                    state = UpdateUi.Downloading(0f)
-                    scope.launch {
-                        val file = AppUpdater.download(context, s.update) { p ->
-                            state = UpdateUi.Downloading(p)
-                        }
-                        state = when {
-                            file == null -> UpdateUi.Failed
-                            !AppUpdater.canInstall(context) -> UpdateUi.NeedsPermission(file)
-                            AppUpdater.install(context, file) -> UpdateUi.Installing
-                            else -> UpdateUi.Failed
-                        }
-                    }
-                })
+                CwButton("نزّل وثبّت", { vm.downloadAndInstall(context) })
             }
 
             is UpdateUi.Downloading -> {
@@ -254,7 +240,7 @@ private fun UpdateCard() {
                     CwButton("افتح الإعداد", { AppUpdater.openInstallPermission(context) })
                     CwButton(
                         "ثبّت",
-                        { if (!AppUpdater.install(context, s.file)) state = UpdateUi.Failed },
+                        { vm.installDownloaded(context, s.file) },
                         style = CwButtonStyle.Secondary
                     )
                 }
@@ -266,26 +252,15 @@ private fun UpdateCard() {
                 color = c.textTertiary
             )
 
-            UpdateUi.Failed -> {
-                Text("مقدرناش نكمّل التحديث", style = CwText.codeSmall, color = c.danger.fg)
+            is UpdateUi.Failed -> {
+                Text(
+                    s.reason.ifBlank { "مقدرناش نكمّل التحديث" },
+                    style = CwText.codeSmall,
+                    color = c.danger.fg
+                )
                 Spacer(Modifier.height(Space.sm))
-                CwButton("جرّب تاني", {
-                    state = UpdateUi.Checking
-                    scope.launch {
-                        state = AppUpdater.check()?.let { UpdateUi.Available(it) } ?: UpdateUi.UpToDate
-                    }
-                })
+                CwButton("جرّب تاني", { vm.checkForUpdate() })
             }
         }
     }
-}
-
-private sealed interface UpdateUi {
-    data object Checking : UpdateUi
-    data object UpToDate : UpdateUi
-    data class Available(val update: AvailableUpdate) : UpdateUi
-    data class Downloading(val progress: Float) : UpdateUi
-    data class NeedsPermission(val file: java.io.File) : UpdateUi
-    data object Installing : UpdateUi
-    data object Failed : UpdateUi
 }
