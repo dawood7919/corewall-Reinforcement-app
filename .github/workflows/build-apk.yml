@@ -37,7 +37,7 @@ jobs:
       # فحص نصّي بيجري في تانيتين قبل بناء مدته خمس دقايق. بيمسك غلطة
       # واحدة بس — لامدا لاحقة على دالة آخر بارامتر فيها مش دالة — لأن
       # الغلطة دي بالذات وقّعت بناءين ورا بعض من غير ما يوصل للمستخدم حاجة.
-      - name: Check for trailing lambdas on non-lambda parameters
+      - name: Fast textual checks that would otherwise fail the build
         run: python3 tools/check_trailing_lambda.py
 
       - name: Build debug APK

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-يمسك غلطة واحدة بالظبط: لامدا لاحقة على دالة آخر بارامتر فيها مش دالة.
+فحوصات نصّية سريعة قبل البناء.
+
+كلها من نوع واحد: غلطة ثمنها في الكومبايلر خمس دقايق، وفي سكربت تانيتين.
+كل واحدة هنا وقّعت بناء فعلاً قبل كده — مش احتياطات نظرية.
+
+١. لامدا لاحقة على دالة آخر بارامتر فيها مش دالة.
 
     fun CwButton(label: String, onClick: () -> Unit, ..., fillWidth: Boolean = false)
 
@@ -13,6 +18,15 @@
 
 بيفحص بس الدوال المعرّفة في المشروع نفسه (اسمها بيبدأ بحرف كبير ومعرّفة
 مرة واحدة، عشان مانتلغبطش في التحميل الزائد).
+
+٢. استيراد متكرر لنفس الاسم في نفس الملف.
+
+    import com.corewall.qaqc.ui.design.Radius
+    ...
+    import com.corewall.qaqc.ui.design.Radius   // ← Conflicting import
+
+كوتلن بيعتبر ده تعارض مش تكرار، وبيوقّع الملف كله. سهل جداً يحصل لما
+تتضاف استيرادات في أكتر من مكان في نفس الملف.
 """
 import re
 import sys
@@ -97,6 +111,27 @@ def is_function_type(param: str) -> bool:
     return False
 
 
+IMPORT = re.compile(r"^import\s+(\S+)\s*$", re.M)
+
+
+def duplicate_imports(files: list[Path]) -> list[str]:
+    """نفس الاسم متستورد مرتين في نفس الملف."""
+    problems = []
+    for f in files:
+        seen: dict[str, int] = {}
+        for m in IMPORT.finditer(f.read_text(encoding="utf-8")):
+            name = m.group(1)
+            line = f.read_text(encoding="utf-8").count("\n", 0, m.start()) + 1
+            if name in seen:
+                problems.append(
+                    f"{f.relative_to(REPO)}:{line}: استيراد متكرر «{name}» "
+                    f"(اتستورد قبل كده في سطر {seen[name]}) — كوتلن بيعتبره تعارض."
+                )
+            else:
+                seen[name] = line
+    return problems
+
+
 def main() -> int:
     files = sorted(SRC.rglob("*.kt"))
     sources = {f: strip_noise(f.read_text(encoding="utf-8")) for f in files}
@@ -139,13 +174,15 @@ def main() -> int:
                         f"«{param.strip()}» مش دالة. حط الـlambda كوسيط عادي."
                     )
 
+    problems += duplicate_imports(files)
+
     if problems:
-        print("لامدا لاحقة على بارامتر مش دالة:\n")
+        print("مشاكل بتوقّع البناء:\n")
         for p in problems:
             print("  " + p)
         print(f"\n{len(problems)} موضع.")
         return 1
-    print(f"trailing-lambda: تمام — {len(known)} دالة متفحوصة في {len(files)} ملف.")
+    print(f"فحص سريع: تمام — {len(known)} دالة و{len(files)} ملف.")
     return 0
 
 
