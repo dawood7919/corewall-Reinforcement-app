@@ -383,9 +383,10 @@ private fun LocalModelCard(vm: MainViewModel, cfg: com.corewall.qaqc.ai.AiConfig
         )
         Spacer(Modifier.height(Space.sm))
         Text(
-            "الملف لازم يكون بصيغة .litertlm. نزّله من litert-community على " +
-                "Hugging Face، وحطّه في التنزيلات، وبعدين اختاره من هنا. " +
-                "أول تشغيل بياخد لحد عشر ثواني عشان الموديل بيتحمّل في الذاكرة.",
+            "الملف لازم يكون بصيغة .task (صيغة MediaPipe). نزّله من " +
+                "litert-community على Hugging Face، حطّه في التنزيلات، " +
+                "وبعدين اختاره من هنا. أول سؤال بياخد ثواني زيادة عشان " +
+                "الموديل بيتحمّل في الذاكرة، واللي بعده بيبقى أسرع.",
             style = CwText.codeSmall,
             color = c.textTertiary
         )

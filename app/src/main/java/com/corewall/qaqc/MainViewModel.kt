@@ -1212,9 +1212,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     appendLine()
                     appendLine("السؤال: $q")
                 }
+                _agentStatus.value = "الموديل المحلي بيفكّر…"
                 val answer = com.corewall.qaqc.ai.local.LocalLlm.generate(
-                    cfg.localModelPath, prompt
-                ) { partial -> _agentStatus.value = partial.takeLast(120) }
+                    appContext, cfg.localModelPath, prompt
+                )
 
                 aiEngine.saveTurn(
                     level, q,
