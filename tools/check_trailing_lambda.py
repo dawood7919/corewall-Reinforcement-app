@@ -19,7 +19,17 @@
 بيفحص بس الدوال المعرّفة في المشروع نفسه (اسمها بيبدأ بحرف كبير ومعرّفة
 مرة واحدة، عشان مانتلغبطش في التحميل الزائد).
 
-٢. استيراد متكرر لنفس الاسم في نفس الملف.
+٢. `when` على enum ناقصها قيمة ومفيهاش `else`.
+
+    when (config.provider) {
+        AiProviderId.OPENAI -> …
+        // ← قيمة جديدة اتضافت للـenum ومحدش زوّدها هنا
+    }
+
+بيحصل دايماً بعد ما تتضاف قيمة جديدة: الكومبايلر بيمسكها، بس بعد خمس
+دقايق وفي ملف واحد في المرة.
+
+٣. استيراد متكرر لنفس الاسم في نفس الملف.
 
     import com.corewall.qaqc.ui.design.Radius
     ...
@@ -113,6 +123,73 @@ def is_function_type(param: str) -> bool:
 
 IMPORT = re.compile(r"^import\s+(\S+)\s*$", re.M)
 
+ENUM_DECL = re.compile(r"^enum class (\w+)\s*(?:\([^)]*\))?\s*\{", re.M)
+WHEN_START = re.compile(r"\bwhen\s*\([^)]*\)\s*\{")
+
+
+def enum_values(sources: dict) -> dict:
+    """اسم الـenum → قيَمه. بيقرا القيَم لحد أول `;` أو نهاية الجسم."""
+    out: dict = {}
+    for text in sources.values():
+        for m in ENUM_DECL.finditer(text):
+            body_start = m.end()
+            depth, i = 1, body_start
+            while i < len(text) and depth > 0:
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                i += 1
+            body = text[body_start:i - 1]
+            body = body.split(";", 1)[0]
+            names = re.findall(r"(?:^|,)\s*([A-Z][A-Z0-9_]*)\s*(?=[,(\n{]|$)", body)
+            if names:
+                out[m.group(1)] = set(names)
+    return out
+
+
+def non_exhaustive_whens(sources: dict, enums: dict) -> list:
+    """`when` بتقارن قيَم enum من غير `else` وناقصها قيمة."""
+    problems = []
+    for f, text in sources.items():
+        for m in WHEN_START.finditer(text):
+            depth, i = 1, m.end()
+            while i < len(text) and depth > 0:
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                i += 1
+            # `when` كـ**جملة** مش لازمة تكون شاملة (تحذير مش خطأ)،
+            # وكـ**تعبير** لازمة. الفرق إن التعبير بيتسند لحاجة: بعد
+            # `=` أو `return` أو كوسيط. من غير التفرقة دي الفحص بيطلّع
+            # نتايج خاطئة على كود شغّال — وفحص بيكدب بيتلغى بعد يومين.
+            head = text.rfind("\n", 0, m.start())
+            before = text[head + 1:m.start()].rstrip()
+            if not before.endswith(("=", "return", "(", ",")):
+                continue
+
+            body = text[m.end():i - 1]
+            if re.search(r"(^|\n)\s*else\s*->", body):
+                continue
+            used = re.findall(r"\b([A-Z]\w*)\.([A-Z][A-Z0-9_]*)\b", body)
+            by_enum: dict = {}
+            for enum, value in used:
+                if enum in enums and value in enums[enum]:
+                    by_enum.setdefault(enum, set()).add(value)
+            for enum, seen in by_enum.items():
+                # قيمة واحدة مش `when` شامل — غالباً مقارنة عادية.
+                if len(seen) < 2:
+                    continue
+                missing = enums[enum] - seen
+                if missing:
+                    line = text.count("\n", 0, m.start()) + 1
+                    problems.append(
+                        f"{f.relative_to(REPO)}:{line}: `when` على {enum} "
+                        f"ناقصها {', '.join(sorted(missing))} ومفيهاش else."
+                    )
+    return problems
+
 
 def duplicate_imports(files: list[Path]) -> list[str]:
     """نفس الاسم متستورد مرتين في نفس الملف."""
@@ -175,6 +252,7 @@ def main() -> int:
                     )
 
     problems += duplicate_imports(files)
+    problems += non_exhaustive_whens(sources, enum_values(sources))
 
     if problems:
         print("مشاكل بتوقّع البناء:\n")

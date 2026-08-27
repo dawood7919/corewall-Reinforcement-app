@@ -131,6 +131,13 @@ fun providerFor(id: AiProviderId): AiProvider = when (id) {
     AiProviderId.OPENROUTER, AiProviderId.OPENAI, AiProviderId.TOKENROUTER -> OpenAiCompatProvider
     AiProviderId.ANTHROPIC -> AnthropicProvider
     AiProviderId.GEMINI -> GeminiProvider
+
+    // المحلي مالوش مزوّد شبكة — مساره منفصل تماماً
+    // (`MainViewModel.askLocal` ← `LocalLlm`). الوصول هنا معناه إن حد
+    // بعت طلب سحابي وهو مختار المحلي، وده غلط برمجة مش حالة تشغيل.
+    AiProviderId.LOCAL -> throw AiError.BadResponse(
+        "الموديل المحلي مابيمرّش من مزوّدي الشبكة."
+    )
 }
 
 /**
