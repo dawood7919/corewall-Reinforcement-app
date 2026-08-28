@@ -74,6 +74,17 @@ class CoreWallApp : Application() {
             // المهملات بتتنضّف مرة عند التشغيل — بعد فتح القاعدة عشان
             // ما تتأخّرش أول شاشة عشان حاجة محدش مستنيها.
             runCatching { repository.purgeOldNoteTrash() }
+            // المهارات المدمجة بتتزرع مرة واحدة. جدول برومبت فاضي معناه
+            // ميزة موجودة ومحدش بيستخدمها — كتابة برومبت كويس شغل
+            // بيتعلّم، مش حاجة تتكتب على الماشي وانت في الموقع.
+            runCatching {
+                val seeded = settingsStore.seededSkillsVersion()
+                if (aiEngine.seedSkills(seeded) >= 0) {
+                    settingsStore.markSkillsSeeded(
+                        com.corewall.qaqc.ai.skills.BuiltInSkills.VERSION
+                    )
+                }
+            }
             // المنبّهات بتضيع مع إعادة التشغيل أو مع إيقاف التطبيق قسري —
             // بنعيد بناءها من القاعدة، ودي عملية رخيصة (صف واحد فيه تذكير).
             runCatching { com.corewall.qaqc.notify.NoteReminders.ensureChannel(this@CoreWallApp) }

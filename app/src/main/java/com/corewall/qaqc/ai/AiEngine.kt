@@ -281,6 +281,39 @@ class AiEngine(
      * بيحوّل الاسم المتخزّن على المستند لبرومبت كامل.
      * لو المستخدم مسح البرومبت بعد ما اتحلّل بيه، بنرجع للعام بدل ما نفشل.
      */
+    /**
+     * بيزرع المهارات المدمجة أول تشغيل.
+     *
+     * **مرة واحدة، ومابيرجّعش الممسوح.** رقم النسخة المزروعة بيتخزّن،
+     * فالزرع مابيتكررش. لو رجّعنا المهارة اللي المستخدم مسحها كل ما
+     * يفتح التطبيق، الميزة بتبقى مضايقة مش مفيدة — والمسح قرار زي أي
+     * قرار تاني.
+     *
+     * والموجود بالاسم مابيتكتبش فوقه: المستخدم ممكن يكون عدّل مهارة
+     * وخلّاها على مقاسه، والتعديل ده أثمن من النص الأصلي.
+     */
+    suspend fun seedSkills(seededVersion: Int): Int = withContext(Dispatchers.IO) {
+        if (seededVersion >= com.corewall.qaqc.ai.skills.BuiltInSkills.VERSION) return@withContext 0
+        val now = System.currentTimeMillis()
+        var added = 0
+        com.corewall.qaqc.ai.skills.BuiltInSkills.ALL.forEach { skill ->
+            if (promptDao.byName(skill.name) == null) {
+                promptDao.upsert(
+                    com.corewall.qaqc.data.db.PromptEntity(
+                        name = skill.name, body = skill.body,
+                        createdAt = now, updatedAt = now
+                    )
+                )
+                added++
+            }
+        }
+        added
+    }
+
+    /** كل المهارات المتاحة — للاختيار من شاشة المحادثة. */
+    suspend fun skills(): List<com.corewall.qaqc.data.db.PromptEntity> =
+        withContext(Dispatchers.IO) { promptDao.getAll() }
+
     suspend fun promptFor(name: String): PromptChoice {
         if (name.isBlank()) return PromptChoice.Default
         val p = withContext(Dispatchers.IO) { promptDao.byName(name) } ?: return PromptChoice.Default

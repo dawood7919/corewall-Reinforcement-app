@@ -93,6 +93,13 @@ class SettingsStore(context: Context) {
     }
 
     /** آخر دور شغّال المستخدم فتحه — عشان التطبيق يفتح من نفس المكان. */
+    /** أعلى نسخة مهارات مدمجة اتزرعت — عشان الزرع مايتكررش. */
+    fun seededSkillsVersion(): Int = prefs.getInt("seededSkills", 0)
+
+    fun markSkillsSeeded(version: Int) {
+        prefs.edit().putInt("seededSkills", version).apply()
+    }
+
     fun getLastLevel(): String? = prefs.getString("lastLevel", null)
 
     fun setLastLevel(level: String) {

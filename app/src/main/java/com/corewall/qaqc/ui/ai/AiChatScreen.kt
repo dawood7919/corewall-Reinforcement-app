@@ -62,6 +62,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -129,6 +133,10 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> vm.attachToChat(uris) }
 
+    var pickingSkill by rememberSaveable { mutableStateOf(false) }
+    val skills by vm.skills.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) { vm.loadSkills() }
     LaunchedEffect(level) { vm.loadKnowledge() }
     LaunchedEffect(messages.size, busy) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size)
@@ -177,6 +185,18 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
 
+        if (pickingSkill) {
+            SkillPickerSheet(
+                skills = skills,
+                onPick = { name ->
+                    pickingSkill = false
+                    vm.askWithSkill(name, input)
+                    input = ""
+                },
+                onDismiss = { pickingSkill = false }
+            )
+        }
+
         error?.let {
             Surface(color = srt.red.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth()) {
                 Text(it, Modifier.padding(Space.lg), style = MaterialTheme.typography.bodySmall, color = srt.red)
@@ -193,7 +213,8 @@ fun AiChatScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             Row(Modifier.padding(Space.md), verticalAlignment = Alignment.Bottom) {
                 AttachButtons(
                     onFiles = { filePicker.launch(arrayOf("*/*")) },
-                    onImages = { imagePicker.launch(arrayOf("image/*")) }
+                    onImages = { imagePicker.launch(arrayOf("image/*")) },
+                    onSkills = { pickingSkill = true }
                 )
                 Spacer(Modifier.width(Space.sm))
                 Surface(
@@ -430,11 +451,109 @@ private fun ChatHeader(
     }
 }
 
+/**
+ * منتقي المهارة.
+ *
+ * المهارة بتتطبّق على اللي مكتوب في الخانة **دلوقتي**. لو الخانة
+ * فاضية، المهارة بتشتغل على الدور الشغّال لوحدها — أغلب المهارات
+ * ("فحص قبل الصبّ"، "تقرير يومي") مالهاش سؤال أصلاً، هي الطلب نفسه.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SkillPickerSheet(
+    skills: List<com.corewall.qaqc.data.db.PromptEntity>,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val srt = LocalSrtColors.current
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.lg)
+                .padding(bottom = Space.lg)
+        ) {
+            Text(
+                "المهارات",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(Space.xs))
+            Text(
+                "المهارة بتقول للمساعد يشتغل إزاي: يبصّ على إيه، بأي ترتيب، " +
+                    "وشكل الإخراج. بتتطبّق على اللي مكتوب في الخانة.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(Space.md))
+
+            if (skills.isEmpty()) {
+                Text(
+                    "مفيش مهارات. اعملها من مكتبة البرومبت في إعدادات المساعد.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    items(skills, key = { it.id }) { skill ->
+                        Surface(
+                            onClick = { onPick(skill.name) },
+                            shape = Radius.shapeMd,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Column(Modifier.padding(Space.md)) {
+                                Text(
+                                    skill.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = srt.purple
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    // أول سطر من المهارة بيقول بتعمل إيه —
+                                    // العنوان لوحده مش كفاية للاختيار.
+                                    skill.body.lineSequence().firstOrNull { it.isNotBlank() }
+                                        .orEmpty(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** أزرار الإرفاق — ملفات وصور. */
 @Composable
-private fun AttachButtons(onFiles: () -> Unit, onImages: () -> Unit) {
+private fun AttachButtons(
+    onFiles: () -> Unit,
+    onImages: () -> Unit,
+    onSkills: () -> Unit
+) {
     val srt = LocalSrtColors.current
     Row(verticalAlignment = Alignment.CenterVertically) {
+        // المهارات جنب الإرفاق مش في قايمة مخبّية: طريقة الشغل بتتختار
+        // وانت بتكتب السؤال، مش قبل ما تفتح الشاشة.
+        Surface(
+            onClick = onSkills, shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(40.dp)
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Filled.AutoAwesome,
+                    contentDescription = "مهارات",
+                    tint = srt.purple,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        Spacer(Modifier.width(Space.xs))
         Surface(
             onClick = onImages, shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(40.dp)

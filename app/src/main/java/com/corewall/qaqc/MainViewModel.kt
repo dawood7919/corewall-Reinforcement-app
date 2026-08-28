@@ -1275,6 +1275,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------- المهارات
+
+    private val _skills =
+        MutableStateFlow<List<com.corewall.qaqc.data.db.PromptEntity>>(emptyList())
+    val skills: StateFlow<List<com.corewall.qaqc.data.db.PromptEntity>> = _skills
+
+    fun loadSkills() {
+        viewModelScope.launch {
+            _skills.value = runCatching { aiEngine.skills() }.getOrDefault(emptyList())
+        }
+    }
+
+    /**
+     * سؤال بمهارة.
+     *
+     * المهارة بتتحطّ **قبل** السؤال مش بعده: الموديل بيقرا بالترتيب،
+     * والتعليمات اللي بتيجي بعد السؤال بتتعامل كملاحظة على الهامش بدل
+     * ما تبقى طريقة الشغل.
+     *
+     * ومابتتخزّنش في المحادثة — اللي بيتحفظ هو سؤال المستخدم زي ما
+     * كتبه، عشان المحادثة تفضل مقروءة بعدين.
+     */
+    fun askWithSkill(skillName: String, question: String) {
+        viewModelScope.launch {
+            val skill = runCatching { aiEngine.promptFor(skillName) }
+                .getOrDefault(com.corewall.qaqc.ai.PromptChoice.Default)
+            val q = question.trim()
+            if (skill.guidance.isBlank()) { askAi(q); return@launch }
+            askAi(
+                buildString {
+                    appendLine("### طريقة الشغل المطلوبة (${skill.name})")
+                    appendLine(skill.guidance)
+                    appendLine()
+                    appendLine("### الطلب")
+                    append(q.ifBlank { "طبّق الطريقة دي على الدور الشغّال." })
+                }
+            )
+        }
+    }
+
     fun clearChat() {
         viewModelScope.launch {
             aiEngine.clearChat(_currentLevel.value)
