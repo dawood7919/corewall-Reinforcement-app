@@ -96,6 +96,82 @@ def from_migrations(path: pathlib.Path) -> set[tuple]:
     }
 
 
+# ── جداول: مش الفهارس بس
+#
+# الفهرس الناقص بيوقّع التطبيق، وكذلك **الجدول** اللي جملة إنشائه في
+# الترحيل مش مطابقة للي Room متوقّعه. ودي أصعب في الملاحظة: جدول FTS
+# مثلاً بيتعرّف بجملة `CREATE VIRTUAL TABLE … USING FTS4(…)` وأي فرق في
+# الأعمدة أو المقسّم بيرمي استثناء بعد الترحيل مباشرة.
+CREATE_TABLE = re.compile(
+    r"CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`\"]?(?P<table>\w+)[`\"]?"
+    r"(?P<rest>.*?)(?=CREATE\s|db\.execSQL|\Z)",
+    re.S | re.I,
+)
+
+
+def canon_sql(sql: str) -> str:
+    """
+    توحيد الشكل قبل المقارنة.
+
+    Room بيصدّر الجملة بمسافات وعلامات تنصيص مختلفة عن اللي بنكتبه
+    بالإيد. اللي بيهمنا الأعمدة وخصائصها، مش المسافات.
+    """
+    s = sql.replace("`", "").replace('"', "").replace("'", "")
+    s = re.sub(r"\s+", " ", s)
+    s = s.replace("IF NOT EXISTS ", "")
+    s = s.replace("( ", "(").replace(" )", ")")
+    return s.strip().rstrip(";").lower()
+
+
+def tables_from_schema(path: pathlib.Path) -> dict:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    out = {}
+    for entity in data["database"]["entities"]:
+        sql = entity.get("createSql", "")
+        if not sql:
+            continue
+        # Room بيحط `${TABLE_NAME}` مكان الاسم في المخطط المصدَّر.
+        sql = sql.replace("${TABLE_NAME}", entity["tableName"])
+        out[entity["tableName"]] = canon_sql(sql)
+    return out
+
+
+def tables_from_migrations(path: pathlib.Path) -> dict:
+    src = join_literals(path.read_text(encoding="utf-8"))
+    out = {}
+    for m in CREATE_TABLE.finditer(src):
+        stmt = "CREATE TABLE " + m.group("table") + m.group("rest")
+        if "VIRTUAL" in m.group(0).upper():
+            stmt = m.group(0)
+        # الترحيل الأحدث للجدول هو اللي بيتقارن — القديم اتغيّر بعده.
+        out[m.group("table")] = canon_sql(stmt)
+    return out
+
+
+def check_tables(schema: pathlib.Path, migrations: pathlib.Path) -> list[str]:
+    """
+    بيقارن **الجداول اللي الترحيلات بتعملها بس**.
+
+    الجداول اللي اتعملت في نسخ قديمة مش موجودة في الترحيلات الحالية —
+    دي طبيعية ومابتتفحصش. اللي بيتفحص: أي جدول ترحيل بيعمله لازم يطابق
+    اللي Room متوقّعه.
+    """
+    want = tables_from_schema(schema)
+    got = tables_from_migrations(migrations)
+    problems = []
+    for table, sql in got.items():
+        expected = want.get(table)
+        if expected is None:
+            continue          # جدول مش كيان — مش من شغل Room
+        if sql != expected:
+            problems.append(
+                f"جدول «{table}» مختلف بين الترحيل والمخطط:\n"
+                f"      الترحيل : {sql}\n"
+                f"      Room    : {expected}"
+            )
+    return problems
+
+
 def describe(idx: tuple) -> str:
     table, name, cols, unique = idx
     return f"    {table}.{name} ({', '.join(cols)}){' UNIQUE' if unique else ''}"
@@ -106,11 +182,24 @@ def main() -> int:
     declared = from_schema(schema_file)
     created = from_migrations(MIGRATIONS)
 
-    if declared == created:
+    table_problems = check_tables(schema_file, MIGRATIONS)
+
+    if declared == created and not table_problems:
         print(f"✓ فهارس Room متطابقة ({len(declared)}) — {schema_file.relative_to(REPO)}")
         for idx in sorted(declared):
             print(describe(idx))
         return 0
+
+    if table_problems:
+        print(f"✗ جداول مش متطابقة — {schema_file.relative_to(REPO)}\n")
+        for p in table_problems:
+            print("  • " + p)
+        print(
+            "\n  الحل: خلّي جملة `CREATE TABLE` في الترحيل نفس اللي Room بيولّده،\n"
+            "  بنفس الأعمدة وترتيبها وخصائصها. لجداول FTS، المقسّم جزء من الجملة.\n"
+        )
+        if declared == created:
+            return 1
 
     print(f"✗ المخطط والترحيلات مش متطابقين — {schema_file.relative_to(REPO)}\n")
     missing = declared - created

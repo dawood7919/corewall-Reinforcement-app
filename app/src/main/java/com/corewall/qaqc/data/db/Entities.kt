@@ -2,6 +2,8 @@ package com.corewall.qaqc.data.db
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Fts4
+import androidx.room.FtsOptions
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
@@ -560,6 +562,66 @@ data class DocumentEntity(
  * key = الكيان (كود حائط / بار مارك / قطر)، والربط بيحصل بالـkey عبر المستندات.
  */
 @Entity(tableName = "doc_facts")
+/**
+ * فقرة من النص الأصلي لمستند — **زي ما اتقرت**، من غير تلخيص ولا استخراج.
+ *
+ * ## ليه بنخزّن النص الخام أصلاً
+ *
+ * التحليل بيرفع صفحات الـPDF لموديل رؤية (أغلى عملية في التطبيق)، بيطلّع
+ * منها [DocFactEntity] بمفاتيح إنجليزي وملخّص ١٦٠ حرف، وبيرمي النص.
+ * فلما السؤال مايطابقش المفتاح — وده بيحصل دايماً لأن السؤال عربي
+ * والحقايق إنجليزي — المعلومة بتبقى ضايعة **رغم إننا دفعنا تمنها**.
+ *
+ * الاستخراج بيقرر إيه المهم **وقت الرفع**، قبل ما يعرف هتسأل عن إيه.
+ * النص الخام مابيقررش، فبيفضل صالح لأي سؤال جاي.
+ *
+ * ## ليه فقرات مش مستند كامل
+ *
+ * الاسترجاع بيرجّع الفقرة، مش الملف. مستند مية صفحة كوحدة واحدة إما
+ * يملا الطلب كله أو يتشال — والاتنين غلط.
+ */
+@Entity(
+    tableName = "doc_chunks",
+    indices = [Index(value = ["documentId"]), Index(value = ["level"])]
+)
+data class DocChunkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val documentId: Long,
+    /** نفس نطاق [DocFactEntity] — الدور أو مكتبة المشروع. */
+    val level: String,
+    /** الصفحة لو معروفة، وإلا صفر. */
+    val page: Int = 0,
+    /** ترتيب الفقرة في المستند — عشان الرجوع للسياق حواليها. */
+    val ordinal: Int = 0,
+    val text: String
+)
+
+/**
+ * فهرس البحث النصّي فوق [DocChunkEntity].
+ *
+ * ## ليه فهرس مش `LIKE`
+ *
+ * `LIKE '%حديد%'` بيدوّر على **السلسلة** دي جوّه النص: بيمشي على كل صف،
+ * ومابيعرفش يرتّب، ومابيفرقش بين كلمة وجزء من كلمة. الفهرس بيقطّع النص
+ * لكلمات مرة واحدة وقت الكتابة، وبيدوّر على **الكلمة**.
+ *
+ * ## ليه `unicode61` بالذات
+ *
+ * المقسّم الافتراضي (`simple`) بيقطّع على المحارف الغير-ASCII بطريقة
+ * بتكسّر العربي. `unicode61` بيتعامل مع يونيكود صح — وده شرط لتطبيق
+ * محتواه عربي، مش تحسين.
+ *
+ * جدول مستقل مش `contentEntity`: النص بيتكرر ومساحة القرص بتزيد، مقابل
+ * إن الفهرس مايحتاجش مزامنة يدوية مع الجدول الأصلي. المساحة أرخص من
+ * فهرس بيخرج عن التزامن من غير ما حد ياخد باله.
+ */
+@Fts4(tokenizer = FtsOptions.TOKENIZER_UNICODE61)
+@Entity(tableName = "doc_chunks_fts")
+data class DocChunkFtsEntity(
+    @PrimaryKey @ColumnInfo(name = "rowid") val rowId: Long,
+    val text: String
+)
+
 data class DocFactEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val documentId: Long,

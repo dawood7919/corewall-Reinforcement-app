@@ -31,6 +31,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CadMeasurementEntity::class,
         DocumentEntity::class,
         DocFactEntity::class,
+        DocChunkEntity::class,
+        DocChunkFtsEntity::class,
         ChatMessageEntity::class,
         FileMetaEntity::class,
         ChatThreadEntity::class,
@@ -52,7 +54,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TakeoffFormulaEntity::class,
         TakeoffAnnotationEntity::class
     ],
-    version = 27,
+    version = 28,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -609,6 +611,42 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * النص الأصلي للمستندات + فهرس بحث عليه.
+         *
+         * جملة `CREATE VIRTUAL TABLE` لازم تطابق اللي Room بيولّده بالحرف —
+         * Room بيقارن مخطط الكيانات بالقاعدة بعد كل ترحيل، وأي اختلاف بيرمي
+         * استثناء والتطبيق بيقفل بعد ثانيتين من الفتح. `tools/check_room_schema.py`
+         * بيقارن الاتنين في الـCI قبل نشر الـAPK.
+         *
+         * الجدولين فاضيين بعد الترحيل: المستندات القديمة اتحللت قبل ما المخزن
+         * ده يوجد، ونصّها مش متسجّل. مابنعيدش تحليلها — بتفضل شغّالة بحقايقها
+         * زي ما هي، والنص بيتسجّل لأي مستند بيتحلّل من دلوقتي.
+         */
+        private val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `doc_chunks` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`documentId` INTEGER NOT NULL, `level` TEXT NOT NULL, " +
+                        "`page` INTEGER NOT NULL, `ordinal` INTEGER NOT NULL, " +
+                        "`text` TEXT NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_doc_chunks_documentId` " +
+                        "ON `doc_chunks` (`documentId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_doc_chunks_level` " +
+                        "ON `doc_chunks` (`level`)"
+                )
+                db.execSQL(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS `doc_chunks_fts` " +
+                        "USING FTS4(`text` TEXT NOT NULL, tokenize=unicode61)"
+                )
+            }
+        }
+
         private val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_filePath` ON `pdf_annotations` (`filePath`)")
@@ -694,7 +732,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27
+                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27,
+                    MIGRATION_27_28
                 ).build().also { instance = it }
             }
     }

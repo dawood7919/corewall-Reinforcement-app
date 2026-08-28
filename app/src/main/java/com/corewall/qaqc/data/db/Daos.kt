@@ -510,6 +510,40 @@ interface DocFactDao {
     @Query("SELECT * FROM doc_facts WHERE level = :level OR level = :globalLevel")
     suspend fun inScope(level: String, globalLevel: String): List<DocFactEntity>
 
+    // ─────────────────────────── النص الأصلي وفهرسه
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChunk(chunk: DocChunkEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun indexChunk(row: DocChunkFtsEntity)
+
+    @Query("DELETE FROM doc_chunks WHERE documentId = :documentId")
+    suspend fun clearChunks(documentId: Long)
+
+    @Query("DELETE FROM doc_chunks_fts WHERE rowid IN (SELECT id FROM doc_chunks WHERE documentId = :documentId)")
+    suspend fun clearChunkIndex(documentId: Long)
+
+    /**
+     * بحث بالكلمة في النص الأصلي.
+     *
+     * `MATCH` بيستخدم الفهرس: بيدوّر على الكلمة، مش على السلسلة جوّه النص،
+     * وبيمشي على المطابق بس مش على كل الصفوف.
+     *
+     * الربط بالـ`rowid` لأن صف الفهرس بياخد نفس `id` الفقرة وقت الكتابة.
+     */
+    @Query(
+        "SELECT c.* FROM doc_chunks c JOIN doc_chunks_fts f ON c.id = f.rowid " +
+            "WHERE doc_chunks_fts MATCH :query AND (c.level = :level OR c.level = :globalLevel) " +
+            "LIMIT :limit"
+    )
+    suspend fun searchChunks(
+        query: String, level: String, globalLevel: String, limit: Int
+    ): List<DocChunkEntity>
+
+    @Query("SELECT COUNT(*) FROM doc_chunks WHERE level = :level OR level = :globalLevel")
+    suspend fun chunkCount(level: String, globalLevel: String): Int
+
     @Query("SELECT * FROM doc_facts")
     suspend fun getAll(): List<DocFactEntity>
 

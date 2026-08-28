@@ -6,6 +6,8 @@ import com.corewall.qaqc.ai.remote.providerFor
 import com.corewall.qaqc.data.db.ChatMessageDao
 import com.corewall.qaqc.data.db.ChatMessageEntity
 import com.corewall.qaqc.data.db.DocFactDao
+import com.corewall.qaqc.data.db.DocChunkEntity
+import com.corewall.qaqc.data.db.DocChunkFtsEntity
 import com.corewall.qaqc.data.db.DocFactEntity
 import com.corewall.qaqc.data.db.DocumentDao
 import com.corewall.qaqc.data.db.DocumentEntity
@@ -109,6 +111,15 @@ class AiEngine(
         /** عدد المستندات في الفهرس — الباقي بيتجاب بأداة عند الحاجة. */
         const val DOC_LIST_LIMIT = 10
 
+        /** طول الفقرة المستهدف بالحروف. */
+        const val CHUNK_CHARS = 700
+
+        /** سقف الفقرات للمستند الواحد — مستند ضخم مايملاش القاعدة. */
+        const val MAX_CHUNKS = 400
+
+        /** أقصى عدد مقاطع في الطلب الواحد. */
+        const val CHUNK_HITS = 6
+
         /**
          * كلمة عربية → أنواع الحقائق اللي المفروض تجيبها.
          *
@@ -202,6 +213,15 @@ class AiEngine(
         }
         if (content is DocumentExtractor.Content.Unsupported) {
             return save(doc.copy(status = "UNSUPPORTED", error = content.reason, analyzedAt = System.currentTimeMillis()))
+        }
+
+        // النص الخام بيتخزّن **قبل** ما يروح للموديل.
+        //
+        // كده لو التحليل نفسه فشل (شبكة، مفتاح، رد مكسور)، النص يفضل
+        // موجود وقابل للبحث. قبل كده، فشل التحليل كان معناه إن الملف
+        // مالوش أي أثر في التطبيق غير اسمه.
+        if (content is DocumentExtractor.Content.Text) {
+            runCatching { storeChunks(doc.id, doc.level, content.text) }
         }
 
         val systemPrompt = AiPrompt.docSystem(knownLevels, prompt.guidance)
@@ -375,6 +395,54 @@ class AiEngine(
         withContext(Dispatchers.IO) { factDao.forDocument(docId) }
 
     // ---------------------------------------------------------------- دعم الوكيل
+
+    /**
+     * بيقطّع نص المستند ويخزّنه ويفهرسه.
+     *
+     * ## حجم الفقرة
+     *
+     * ~٧٠٠ حرف بتقطيع على حدود الفقرات. أصغر من كده بيقطع الجملة عن
+     * سياقها، وأكبر بياكل ميزانية الطلب بحاجات مش مطلوبة. القطع بيدوّر
+     * على سطر فاضي الأول، وبعدين على نهاية جملة — القطع في نص كلمة
+     * بيكسر الفهرسة نفسها.
+     *
+     * الفهرس بياخد **نفس `id`** الفقرة في `rowid`، فالربط بينهم مباشر
+     * من غير عمود زيادة.
+     */
+    private suspend fun storeChunks(documentId: Long, level: String, text: String) =
+        withContext(Dispatchers.IO) {
+            val clean = text.trim()
+            if (clean.isBlank()) return@withContext
+            // إعادة التحليل بتمسح القديم الأول — من غير كده الفقرات
+            // بتتكرر مع كل تحليل والبحث بيرجّع نفس النص مرات.
+            factDao.clearChunkIndex(documentId)
+            factDao.clearChunks(documentId)
+
+            var start = 0
+            var ordinal = 0
+            while (start < clean.length && ordinal < MAX_CHUNKS) {
+                var end = minOf(start + CHUNK_CHARS, clean.length)
+                if (end < clean.length) {
+                    val window = clean.substring(start, end)
+                    val cut = window.lastIndexOf("\n\n").takeIf { it > CHUNK_CHARS / 2 }
+                        ?: window.lastIndexOfAny(charArrayOf('.', '۔', '\n'))
+                            .takeIf { it > CHUNK_CHARS / 2 }
+                    if (cut != null && cut > 0) end = start + cut + 1
+                }
+                val piece = clean.substring(start, end).trim()
+                if (piece.length > 20) {
+                    val id = factDao.insertChunk(
+                        DocChunkEntity(
+                            documentId = documentId, level = level,
+                            ordinal = ordinal, text = piece
+                        )
+                    )
+                    factDao.indexChunk(DocChunkFtsEntity(rowId = id, text = piece))
+                    ordinal++
+                }
+                start = end
+            }
+        }
 
     /** المعرفة المرتبطة بسؤال — نفس الاسترجاع اللي بتستخدمه المحادثة. */
     suspend fun knowledgeFor(level: String, question: String): String = retrieve(level, question)
@@ -634,6 +702,27 @@ class AiEngine(
             .sortedByDescending { it.value }
             .mapNotNull { facts[it.key] }
 
+        // ── البحث في النص الأصلي
+        //
+        // `MATCH` بيشتغل على الكلمة مش على السلسلة، فالكلمة العربية
+        // بتلاقي نفسها في نص عربي — وده اللي `LIKE` ماكانش بيعمله.
+        // المقطع اللي بيطابق أكتر من كلمة بيتقدّم، زي الحقايق بالظبط.
+        val chunkScore = HashMap<Long, Int>()
+        val chunkById = HashMap<Long, DocChunkEntity>()
+        terms.filter { it.length >= 3 }.forEach { t ->
+            // الاقتباس يمنع كلمة فيها رمز من إن تتفسّر كتعبير FTS.
+            val q = "\"" + t.replace("\"", "") + "\""
+            runCatching {
+                factDao.searchChunks(q, level, KnowledgeScope.PROJECT, 30)
+            }.getOrDefault(emptyList()).forEach { c ->
+                chunkById[c.id] = c
+                chunkScore[c.id] = (chunkScore[c.id] ?: 0) + 1
+            }
+        }
+        val chunks = chunkScore.entries
+            .sortedByDescending { it.value }
+            .mapNotNull { chunkById[it.key] }
+
         buildString {
             // ① المستندات: سطر قصير لكل واحد، وعدد محدود.
             //
@@ -660,7 +749,7 @@ class AiEngine(
             }
             appendLine()
 
-            if (ranked.isEmpty()) {
+            if (ranked.isEmpty() && chunks.isEmpty()) {
                 // شيلت الاحتياطي ده وأنا بقلّل التكلفة، وقلت عليه "ضوضاء".
                 // ده كان غلط: هو اللي كان بيخلّي السؤال العام يشتغل. من
                 // غيره، مستند اتحلّل تمامًا بيبان **فاضي** لأن كلمة
@@ -695,12 +784,30 @@ class AiEngine(
                 return@buildString
             }
 
-            // ② الحقايق بالأهم فالأهم لحد ما الميزانية تخلص.
+            // ② مقاطع من النص الأصلي — قبل الحقايق.
+            //
+            // الترتيب مقصود. الحقيقة سطر (`DIAMETER: T25`)؛ المقطع جملة
+            // من المستند فيها السياق. لما الاتنين يطابقوا، الجملة بتجاوب
+            // أسئلة الحقيقة مابتجاوبهاش — وورقة قياس حديثة لقت نفس ده:
+            // المقاطع الحرفية بتغلب الحقايق المستخرجة في المحادثات
+            // الطويلة.
+            var used = length
+            if (chunks.isNotEmpty()) {
+                appendLine("من نصّ المستندات:")
+                for (c in chunks.take(CHUNK_HITS)) {
+                    val name = byId[c.documentId]?.fileName ?: "مستند"
+                    val line = "• [$name] ${c.text.replace('\n', ' ').trim()}\n"
+                    if (used + line.length > KNOWLEDGE_BUDGET * 2 / 3) break
+                    append(line); used += line.length
+                }
+                appendLine()
+            }
+
+            // ③ الحقايق بالأهم فالأهم لحد ما الميزانية تخلص.
             //
             // القص في الآخر (`take(14_000)`) كان أسوأ اختيار ممكن: بيسيب
             // اللي وصل الأول — يعني ترتيب SQLite — وبيرمي اللي بعده، حتى
             // لو كان هو الحقيقة الوحيدة اللي بتجاوب على السؤال.
-            var used = length
             var shownDoc = -1L
             var dropped = 0
             for (f in ranked) {
