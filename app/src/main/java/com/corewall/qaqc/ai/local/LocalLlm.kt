@@ -54,6 +54,22 @@ object LocalLlm {
      */
     private const val MAX_TOKENS = 2048
 
+    /**
+     * بعض الملفات مبنية على سقف kv-cache ثابت، ومكتوب في اسمها:
+     * `..._q8_ekv1280.task` يعني ١٢٨٠ توكن مش أكتر.
+     *
+     * طلب أكبر من اللي الملف اتبنى عليه بيفشل التحميل — والرسالة اللي
+     * بتطلع مابتقولش إن ده السبب. القراية من الاسم شكلها هش، وهي كده
+     * فعلاً، بس البديل إن المستخدم ينزّل جيجا ونص ويلاقيها مش شغّالة
+     * من غير ما حد يقوله ليه.
+     */
+    private val EKV = Regex("""ekv(\d+)""", RegexOption.IGNORE_CASE)
+
+    private fun tokensFor(modelPath: String): Int {
+        val declared = EKV.find(File(modelPath).name)?.groupValues?.get(1)?.toIntOrNull()
+        return if (declared != null) minOf(MAX_TOKENS, declared) else MAX_TOKENS
+    }
+
     private var engine: LlmInference? = null
     private var loadedPath: String? = null
     private var loadedBackend: String? = null
@@ -112,7 +128,7 @@ object LocalLlm {
         return runCatching {
             val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
-                .setMaxTokens(MAX_TOKENS)
+                .setMaxTokens(tokensFor(modelPath))
                 .setPreferredBackend(
                     when (backend) {
                         "CPU" -> LlmInference.Backend.CPU
