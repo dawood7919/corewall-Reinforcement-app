@@ -110,7 +110,8 @@ class SettingsStore(context: Context) {
                 model = aiPrefs.getString("aiModel", null) ?: provider.defaultModel,
                 baseUrl = aiPrefs.getString("aiBaseUrl", null) ?: provider.defaultBaseUrl,
                 imageModel = aiPrefs.getString("aiImageModel", "").orEmpty(),
-                localModelPath = aiPrefs.getString("aiLocalModelPath", "").orEmpty()
+                localModelPath = aiPrefs.getString("aiLocalModelPath", "").orEmpty(),
+                localBackend = aiPrefs.getString("aiLocalBackend", "DEFAULT") ?: "DEFAULT"
             )
         }
     )
@@ -126,6 +127,7 @@ class SettingsStore(context: Context) {
             .putString("aiBaseUrl", next.baseUrl)
             .putString("aiImageModel", next.imageModel)
             .putString("aiLocalModelPath", next.localModelPath)
+            .putString("aiLocalBackend", next.localBackend)
             .apply()
     }
 

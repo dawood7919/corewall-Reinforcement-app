@@ -42,6 +42,7 @@ import com.corewall.qaqc.data.SavedKey
 import com.corewall.qaqc.ui.design.CwBanner
 import com.corewall.qaqc.ui.design.CwButton
 import com.corewall.qaqc.ui.design.CwButtonStyle
+import com.corewall.qaqc.ui.design.CwChip
 import com.corewall.qaqc.ui.design.CwCard
 import com.corewall.qaqc.ui.design.CwCardStyle
 import com.corewall.qaqc.ui.design.CwField
@@ -372,6 +373,39 @@ private fun LocalModelCard(vm: MainViewModel, cfg: com.corewall.qaqc.ai.AiConfig
             )
         }
 
+        if (ready) {
+            Spacer(Modifier.height(Space.lg))
+            Text("المعالج", style = CwText.codeSmall, color = c.textTertiary)
+            Spacer(Modifier.height(Space.xs))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                listOf(
+                    "DEFAULT" to "تلقائي",
+                    "GPU" to "كارت الشاشة",
+                    "CPU" to "المعالج"
+                ).forEach { (value, label) ->
+                    CwChip(
+                        label = label,
+                        selected = cfg.localBackend == value,
+                        onClick = {
+                            // تغيير المعالج بيلزمه إعادة تحميل الموديل،
+                            // والقديم لازم يتقفل الأول عشان مايفضلش
+                            // واخد الرام.
+                            com.corewall.qaqc.ai.local.LocalLlm.release()
+                            vm.updateAiConfig { it.copy(localBackend = value) }
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(Space.xs))
+            Text(
+                "كارت الشاشة بيطلّع الرمز أسرع بمرّات، بس ذاكرته أقل — " +
+                    "الموديل الكبير ممكن مايفتحش عليه خالص. لو فشل التحميل، " +
+                    "بدّل للمعالج.",
+                style = CwText.codeSmall,
+                color = c.textTertiary
+            )
+        }
+
         Spacer(Modifier.height(Space.md))
         Text(
             "الموديل بيشتغل على الجهاز — من غير إنترنت ومن غير ما أي بيانات تخرج. " +
@@ -383,10 +417,10 @@ private fun LocalModelCard(vm: MainViewModel, cfg: com.corewall.qaqc.ai.AiConfig
         )
         Spacer(Modifier.height(Space.sm))
         Text(
-            "الملف لازم يكون بصيغة .task (صيغة MediaPipe). نزّله من " +
-                "litert-community على Hugging Face، حطّه في التنزيلات، " +
-                "وبعدين اختاره من هنا. أول سؤال بياخد ثواني زيادة عشان " +
-                "الموديل بيتحمّل في الذاكرة، واللي بعده بيبقى أسرع.",
+            "الملف بصيغة .task أو .litertlm. نزّله من litert-community على " +
+                "Hugging Face، حطّه في التنزيلات، وبعدين اختاره من هنا. " +
+                "أول سؤال بياخد ثواني زيادة عشان الموديل بيتحمّل في الذاكرة، " +
+                "واللي بعده بيبقى أسرع.",
             style = CwText.codeSmall,
             color = c.textTertiary
         )

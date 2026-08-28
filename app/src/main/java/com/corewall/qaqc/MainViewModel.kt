@@ -1214,7 +1214,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 _agentStatus.value = "الموديل المحلي بيفكّر…"
                 val answer = com.corewall.qaqc.ai.local.LocalLlm.generate(
-                    appContext, cfg.localModelPath, prompt
+                    appContext, cfg.localModelPath, prompt, cfg.localBackend
                 )
 
                 aiEngine.saveTurn(

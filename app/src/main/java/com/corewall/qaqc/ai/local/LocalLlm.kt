@@ -44,11 +44,19 @@ import java.io.File
  */
 object LocalLlm {
 
-    /** طول الرد بالتوكن. أكبر من كده بياكل ذاكرة ووقت من غير فايدة هنا. */
-    private const val MAX_TOKENS = 1024
+    /**
+     * سقف التوكن — **دخل وخرج مع بعض**، مش الرد لوحده.
+     *
+     * ١٠٢٤ كانت ضيقة: السياق والسؤال بياخدوا منها، والباقي للرد. ٢٠٤٨
+     * بتدّي مساحة معقولة للاتنين. الرقم ده بيحدّد حجم الـkv-cache في
+     * الذاكرة كمان، فرفعه أكتر بيزوّد استهلاك الرام على طول — مش بس
+     * وقت الردود الطويلة.
+     */
+    private const val MAX_TOKENS = 2048
 
     private var engine: LlmInference? = null
     private var loadedPath: String? = null
+    private var loadedBackend: String? = null
 
     /**
      * نداء واحد في المرة.
@@ -73,13 +81,14 @@ object LocalLlm {
     suspend fun generate(
         context: Context,
         modelPath: String,
-        prompt: String
+        prompt: String,
+        backend: String = "DEFAULT"
     ): String = lock.withLock {
         withContext(Dispatchers.IO) {
             if (!isReady(modelPath)) {
                 throw LocalModelError("ملف الموديل مش موجود. اختاره تاني من الإعدادات.")
             }
-            val active = ensureEngine(context, modelPath)
+            val active = ensureEngine(context, modelPath, backend)
             val answer = runCatching { active.generateResponse(prompt) }.getOrElse { e ->
                 // المحرّك ممكن يكون بقى في حالة مش سليمة — بنرميه عشان
                 // النداء الجاي يبدأ من نضيف بدل ما يفضل يفشل.
@@ -93,23 +102,40 @@ object LocalLlm {
         }
     }
 
-    private fun ensureEngine(context: Context, modelPath: String): LlmInference {
-        engine?.takeIf { loadedPath == modelPath }?.let { return it }
+    private fun ensureEngine(
+        context: Context,
+        modelPath: String,
+        backend: String
+    ): LlmInference {
+        engine?.takeIf { loadedPath == modelPath && loadedBackend == backend }?.let { return it }
         release()
         return runCatching {
             val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
                 .setMaxTokens(MAX_TOKENS)
+                .setPreferredBackend(
+                    when (backend) {
+                        "CPU" -> LlmInference.Backend.CPU
+                        "GPU" -> LlmInference.Backend.GPU
+                        else -> LlmInference.Backend.DEFAULT
+                    }
+                )
                 .build()
             LlmInference.createFromOptions(context.applicationContext, options).also {
                 engine = it
                 loadedPath = modelPath
+                loadedBackend = backend
             }
         }.getOrElse { e ->
             release()
+            // الرسالة بتفرّق بين السببين لأن التصرّف مختلف: الفشل على
+            // الـGPU غالباً ذاكرته مش كفاية والحل تجرّب المعالج، والفشل
+            // العام غالباً الملف نفسه.
+            val hint = if (backend == "GPU")
+                " جرّب تبدّل للمعالج (CPU) — ذاكرة كارت الشاشة أقل، والموديل الكبير مابيدخلهاش."
+            else " اتأكد إنه ملف .task أو .litertlm مناسب، وإن الجهاز فيه ذاكرة كافية."
             throw LocalModelError(
-                "مقدرناش نفتح الموديل. اتأكد إنه ملف .task مناسب لـMediaPipe " +
-                    "وإن الجهاز فيه ذاكرة كافية. (${e.message ?: e::class.java.simpleName})"
+                "مقدرناش نفتح الموديل.$hint (${e.message ?: e::class.java.simpleName})"
             )
         }
     }
@@ -119,6 +145,7 @@ object LocalLlm {
         runCatching { engine?.close() }
         engine = null
         loadedPath = null
+        loadedBackend = null
     }
 }
 
