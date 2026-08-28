@@ -29,7 +29,18 @@
 بيحصل دايماً بعد ما تتضاف قيمة جديدة: الكومبايلر بيمسكها، بس بعد خمس
 دقايق وفي ملف واحد في المرة.
 
-٣. استيراد متكرر لنفس الاسم في نفس الملف.
+٣. كيان مسجّل في `@Database` ومالوش `@Entity`.
+
+    @Entity(tableName = "doc_facts")
+    /** … توثيق حاجة تانية اندسّ هنا … */
+    @Entity(tableName = "doc_chunks")
+    data class DocChunkEntity(…)        // ← خد الاتنين
+    data class DocFactEntity(…)         // ← فضل من غير تعليق
+
+بيحصل لما تضاف كتلة قبل `data class` من غير حساب التعليقات اللي فوقه.
+الكومبايلر بيمسكها، بس بعد خمس دقايق.
+
+٤. استيراد متكرر لنفس الاسم في نفس الملف.
 
     import com.corewall.qaqc.ui.design.Radius
     ...
@@ -209,6 +220,37 @@ def duplicate_imports(files: list[Path]) -> list[str]:
     return problems
 
 
+DB_ENTITIES = re.compile(r"entities\s*=\s*\[(.*?)\]", re.S)
+
+
+def orphan_entities(sources: dict) -> list:
+    """كل كلاس مسجّل في `@Database` لازم يكون عليه `@Entity` مباشرة."""
+    registered = set()
+    for text in sources.values():
+        for m in DB_ENTITIES.finditer(text):
+            registered |= set(re.findall(r"(\w+)::class", m.group(1)))
+    if not registered:
+        return []
+
+    problems = []
+    for f, text in sources.items():
+        for m in re.finditer(r"^data class (\w+)\s*\(", text, re.M):
+            name = m.group(1)
+            if name not in registered:
+                continue
+            # السطور اللي فوق التعريف على طول: تعليقات وتوثيق وتعليقات
+            # توضيحية. لازم يكون فيهم `@Entity`.
+            head = text[:m.start()]
+            tail = head.rsplit("\n\n", 1)[-1]
+            if "@Entity" not in tail:
+                line = text.count("\n", 0, m.start()) + 1
+                problems.append(
+                    f"{f.relative_to(REPO)}:{line}: «{name}» مسجّل في @Database "
+                    f"ومفيش @Entity ملزوقة بيه — غالباً كتلة اندسّت بينهم."
+                )
+    return problems
+
+
 def main() -> int:
     files = sorted(SRC.rglob("*.kt"))
     sources = {f: strip_noise(f.read_text(encoding="utf-8")) for f in files}
@@ -253,6 +295,7 @@ def main() -> int:
 
     problems += duplicate_imports(files)
     problems += non_exhaustive_whens(sources, enum_values(sources))
+    problems += orphan_entities(sources)
 
     if problems:
         print("مشاكل بتوقّع البناء:\n")

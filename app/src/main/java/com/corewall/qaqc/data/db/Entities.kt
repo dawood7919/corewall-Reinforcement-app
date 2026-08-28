@@ -558,11 +558,6 @@ data class DocumentEntity(
 )
 
 /**
- * حقيقة مستخرجة من مستند — دي حجر بناء الـKnowledge Graph:
- * key = الكيان (كود حائط / بار مارك / قطر)، والربط بيحصل بالـkey عبر المستندات.
- */
-@Entity(tableName = "doc_facts")
-/**
  * فقرة من النص الأصلي لمستند — **زي ما اتقرت**، من غير تلخيص ولا استخراج.
  *
  * ## ليه بنخزّن النص الخام أصلاً
@@ -622,6 +617,11 @@ data class DocChunkFtsEntity(
     val text: String
 )
 
+/**
+ * حقيقة مستخرجة من مستند — دي حجر بناء الـKnowledge Graph:
+ * key = الكيان (كود حائط / بار مارك / قطر)، والربط بيحصل بالـkey عبر المستندات.
+ */
+@Entity(tableName = "doc_facts")
 data class DocFactEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val documentId: Long,
