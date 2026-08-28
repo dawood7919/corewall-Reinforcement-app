@@ -58,11 +58,21 @@ object BackgroundWork {
     fun start(context: Context, id: String, label: String) {
         val first = jobs.value.isEmpty()
         jobs.value = jobs.value + (id to label)
-        if (first) {
+        if (!first) return
+
+        // ── ليه كل ده جوّه `runCatching`
+        //
+        // الإشعار ده **راحة**، مش الشغل نفسه. وتشغيل خدمة أمامية بقى
+        // مليان قيود بتتغيّر مع كل إصدار أندرويد: ممنوع من الخلفية من
+        // 12، النوع إجباري من 14، وميزانية يومية من 15 — وكل واحدة
+        // بترمي استثناء مختلف.
+        //
+        // من غير الحارس ده، أي قيد من دول بيقفل التطبيق **وانت بتبعت
+        // رسالة**. يعني ميزة كل غرضها إنك تسيب التطبيق وهو شغّال بتمنعك
+        // تستخدمه أصلاً. أسوأ نتيجة مقبولة هنا: مفيش إشعار، والرسالة
+        // بتكمّل عادي.
+        runCatching {
             val intent = Intent(context, BackgroundWorkService::class.java)
-            // من أندرويد 8 مايصحّش تبدأ خدمة عادية والتطبيق في الخلفية.
-            // `startForegroundService` بيدّي مهلة قصيرة لازم الخدمة تنادي
-            // فيها `startForeground` — وده أول حاجة بتحصل في `onStartCommand`.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -89,19 +99,30 @@ class BackgroundWorkService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        ensureChannel()
+        runCatching { ensureChannel() }
         // لازم يتنده فوراً — النظام بيقتل الخدمة لو اتأخّر.
-        startInForeground(notification(BackgroundWork.jobs.value.values.toList()))
+        //
+        // ولو رفض (ميزانية خلصت، أو قيد إصدار)، بنوقف الخدمة بهدوء بدل
+        // ما الاستثناء يطلع للنظام ويقفل العملية كلها.
+        val started = runCatching {
+            startInForeground(notification(BackgroundWork.jobs.value.values.toList()))
+        }.isSuccess
+        if (!started) {
+            runCatching { stopSelf() }
+            return START_NOT_STICKY
+        }
 
         if (watcher == null) {
             watcher = scope.launch {
                 BackgroundWork.jobs.collect { current ->
-                    if (current.isEmpty()) {
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                        stopSelf()
-                    } else {
-                        getSystemService(NotificationManager::class.java)
-                            ?.notify(NOTIFICATION_ID, notification(current.values.toList()))
+                    runCatching {
+                        if (current.isEmpty()) {
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                            stopSelf()
+                        } else {
+                            getSystemService(NotificationManager::class.java)
+                                ?.notify(NOTIFICATION_ID, notification(current.values.toList()))
+                        }
                     }
                 }
             }
