@@ -1,6 +1,7 @@
 package com.corewall.qaqc.ai.local
 
 import android.content.Context
+import com.corewall.qaqc.diag.CrashReporter
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +55,14 @@ object LocalLlm {
      * وقت الردود الطويلة.
      */
     private const val MAX_TOKENS = 2048
+
+    /**
+     * أعلى topK مسموح — **لازم يكون واحد** في المحرّك والجلسة.
+     *
+     * ثابت واحد بدل رقمين عشان الغلطة اللي حصلت (الجلسة بتطلب أكتر من
+     * اللي المحرّك اتبنى عليه) تبقى مستحيلة تتكرر.
+     */
+    private const val TOP_K = 40
 
     /**
      * بعض الملفات مبنية على سقف kv-cache ثابت، ومكتوب في اسمها:
@@ -112,6 +121,7 @@ object LocalLlm {
                 throw LocalModelError("ملف الموديل مش موجود. اختاره تاني من الإعدادات.")
             }
             val active = ensureEngine(context, modelPath, backend)
+            CrashReporter.enterNative(context, "الموديل المحلي — توليد رد")
             val answer = runCatching {
                 // جلسة بإعدادات صريحة بدل النداء المباشر.
                 //
@@ -123,13 +133,20 @@ object LocalLlm {
                     active,
                     LlmInferenceSession.LlmInferenceSessionOptions.builder()
                         .setTemperature(0.2f)
-                        .setTopK(40)
+                        .setTopK(TOP_K)
                         .setTopP(0.9f)
                         .build()
                 ).use { session ->
                     session.addQueryChunk(prompt)
                     session.generateResponse()
                 }
+            }.recoverCatching {
+                // الجلسة بإعداداتها ممكن يرفضها بناء معيّن. النداء
+                // البسيط أضعف (عشوائية أعلى) بس بيرد — أحسن من إن
+                // السؤال يضيع.
+                ensureEngine(context, modelPath, backend).generateResponse(prompt)
+            }.also {
+                CrashReporter.leaveNative(context)
             }.getOrElse { e ->
                 // المحرّك ممكن يكون بقى في حالة مش سليمة — بنرميه عشان
                 // النداء الجاي يبدأ من نضيف بدل ما يفضل يفشل.
@@ -150,10 +167,20 @@ object LocalLlm {
     ): LlmInference {
         engine?.takeIf { loadedPath == modelPath && loadedBackend == backend }?.let { return it }
         release()
+        CrashReporter.enterNative(context, "الموديل المحلي — تحميل الملف")
         return runCatching {
             val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
                 .setMaxTokens(tokenBudget(modelPath))
+                // **ده كان سبب القفل.**
+                //
+                // المحرّك بيحجز بفرات أخذ العيّنات على أساس `maxTopK` وقت
+                // إنشائه. الجلسة اللي بتطلب topK أكبر من اللي المحرّك
+                // اتبنى عليه بتكتب برّه البفر — والنتيجة موت العملية في
+                // الكود الأصلي، من غير استثناء جافا ومن غير أي تقرير.
+                //
+                // كنت مضيف الجلسة بـtopK=40 من غير ما أرفع السقف هنا.
+                .setMaxTopK(TOP_K)
                 .setPreferredBackend(
                     when (backend) {
                         "CPU" -> LlmInference.Backend.CPU
@@ -166,6 +193,7 @@ object LocalLlm {
                 engine = it
                 loadedPath = modelPath
                 loadedBackend = backend
+                CrashReporter.leaveNative(context)
             }
         }.getOrElse { e ->
             release()

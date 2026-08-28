@@ -36,7 +36,20 @@ import androidx.compose.ui.unit.sp
 fun CrashReportDialog() {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    var report by remember { mutableStateOf(CrashReporter.pending(context)) }
+    // العطل في الكود الأصلي مابيرميش استثناء — العملية بتموت وخلاص،
+    // فمفيش تقرير. العلامة المتعلّقة هي الدليل الوحيد إن ده اللي حصل،
+    // وبتتعرض بنفس النافذة عشان المستخدم يعرف إن فيه حاجة اتسجّلت.
+    var report by remember {
+        mutableStateOf(
+            CrashReporter.pending(context)
+                ?: CrashReporter.pendingNative(context)?.let { where ->
+                    "التطبيق اتقفل من غير رسالة خطأ.\n\n" +
+                        "آخر حاجة كانت شغّالة: $where\n\n" +
+                        "ده معناه إن اللي وقع مكتبة أصلية (native) مش كود جافا — " +
+                        "الأعطال دي بتقتل العملية من غير ما تسيب أثر مكدّس."
+                }
+        )
+    }
     val text = report ?: return
 
     AlertDialog(
@@ -73,6 +86,7 @@ fun CrashReportDialog() {
         dismissButton = {
             TextButton(onClick = {
                 CrashReporter.clear(context)
+                CrashReporter.leaveNative(context)
                 report = null
             }) { Text("تمام، اقفلها") }
         }

@@ -26,6 +26,7 @@ object CrashReporter {
 
     private const val PREFS = "crash_reports"
     private const val KEY_REPORT = "lastReport"
+    private const val KEY_NATIVE = "insideNative"
 
     /**
      * بيتركّب **أول حاجة** في `onCreate` — أي كود بيجري قبله مش محمي.
@@ -58,6 +59,39 @@ object CrashReporter {
     }
 
     /** التقرير المحفوظ، أو null لو مفيش. */
+    /**
+     * علامة قبل الدخول في كود أصلي.
+     *
+     * ## ليه دي موجودة
+     *
+     * `Thread.setDefaultUncaughtExceptionHandler` بيمسك استثناءات جافا
+     * بس. لما مكتبة أصلية تقع (`SIGSEGV`/`abort`) العملية بتموت **من
+     * غير ما يتنده أصلاً** — فالتطبيق بيقفل ومفيش أي تقرير، والمستخدم
+     * بيقول "بيقفل" وإحنا مالناش أي دليل.
+     *
+     * العلامة دي بتتكتب **قبل** النداء وبتتمسح بعده. لو التطبيق فتح
+     * ولقى علامة لسه مكتوبة، يبقى المرة اللي فاتت مات وهو جوّه الحتة
+     * دي بالظبط. مش أثر مكدّس — بس بيفرّق بين "فين" و"مش عارفين".
+     *
+     * `commit` مش `apply`: الكتابة لازم توصل القرص قبل النداء اللي ممكن
+     * يقتل العملية، و`apply` غير متزامنة.
+     */
+    @Suppress("ApplySharedPref")
+    fun enterNative(context: Context, what: String) {
+        runCatching {
+            prefs(context).edit().putString(KEY_NATIVE, what).commit()
+        }
+    }
+
+    /** خرجنا بالسلامة — العلامة بتتشال. */
+    fun leaveNative(context: Context) {
+        runCatching { prefs(context).edit().remove(KEY_NATIVE).apply() }
+    }
+
+    /** علامة متعلّقة من تشغيلة فاتت، أو `null`. */
+    fun pendingNative(context: Context): String? =
+        runCatching { prefs(context).getString(KEY_NATIVE, null) }.getOrNull()
+
     fun pending(context: Context): String? =
         runCatching {
             context.applicationContext
@@ -73,6 +107,9 @@ object CrashReporter {
                 .edit().remove(KEY_REPORT).apply()
         }
     }
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private fun save(context: Context, report: String) {
         // `commit` مش `apply`: العملية بتموت بعد السطر ده مباشرة، و`apply`
