@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 98
-        versionName = "11.47"
+        versionCode = 99
+        versionName = "11.48"
 
         // PDFium مكتبة أصلية، ومعاها ٤ معماريات = ١٨ ميجا. الأجهزة الحقيقية
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.
@@ -241,7 +241,11 @@ dependencies {
     // ومافيش تعارض. وضع الصيانة يعني مفيش مميزات جديدة — مش إنها واقفة.
     // لما الـtoolchain يترقّى، النقل لـLiteRT-LM بيبقى تغيير ملف واحد
     // (`LocalLlm.kt`) لأن باقي التطبيق مابيعرفش عنها حاجة.
-    implementation("com.google.mediapipe:tasks-genai:0.10.27")
+    // 0.10.29 مش 0.10.27: الملفات الأحدث من جوجل (Gemma-3n وGemma 4)
+    // بتتنشر بصيغة `.litertlm` مش `.task`، والنسخ الأقدم مابتقراهاش.
+    // المستودعات اللي `.task` بتاعتها متاحة بضغطة موقفة عند 1.5B —
+    // يعني الصيغة دي هي الفرق بين موديل ضعيف وموديل محترم.
+    implementation("com.google.mediapipe:tasks-genai:0.10.29")
 
     // التعرّف الضوئي على النص: Tesseract عن طريق tess-two.
     //
