@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>تجربة موديل محلي</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --line:#30363d; --txt:#e6edf3;
+    --dim:#8b949e; --accent:#7c8cff; --ok:#3fb950; --warn:#d29922; --err:#f85149;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       font-size:15px;line-height:1.6;padding:12px;padding-bottom:40px}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+        padding:14px;margin-bottom:12px}
+  label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
+  input,select,textarea,button{font:inherit;width:100%;padding:10px;border-radius:9px;
+        border:1px solid var(--line);background:#0b0f14;color:var(--txt)}
+  input[type=file]{padding:8px}
+  textarea{min-height:80px;resize:vertical}
+  button{background:var(--accent);color:#0b0f14;border:none;font-weight:700;margin-top:12px}
+  button:disabled{opacity:.45;font-weight:500}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);font-weight:600}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  .status{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;
+          word-break:break-word;padding:10px;border-radius:9px;background:#0b0f14;
+          border:1px solid var(--line);margin-top:10px;max-height:260px;overflow:auto}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)} .dim{color:var(--dim)}
+  #out{white-space:pre-wrap;min-height:60px;font-size:15px}
+  .pill{display:inline-block;font-size:12px;padding:2px 9px;border-radius:99px;
+        border:1px solid var(--line);color:var(--dim);margin:0 0 0 6px}
+  .note{font-size:12.5px;color:var(--dim);margin-top:8px}
+  code{font-family:var(--mono);font-size:12.5px;background:#0b0f14;padding:1px 5px;border-radius:5px}
+</style>
+</head>
+<body>
+
+<h1>تجربة موديل محلي <span class="pill" id="gpu">…</span></h1>
+<p class="sub">بيشغّل موديل <code>.task</code> في المتصفح عن طريق MediaPipe — من غير التطبيق.
+الغرض: تعرف المشكلة في <b>الملف</b> ولا في <b>التطبيق</b>.</p>
+
+<div class="card">
+  <label>مسار الموديل على السيرفر</label>
+  <input id="path" value="model.task" placeholder="model.task">
+  <p class="note">حطّ ملف الموديل جنب الصفحة دي في مجلد KSWEB
+  (<code>/htdocs</code>) وسيب الاسم زي ما هو، أو غيّره هنا.</p>
+
+  <label>أو اختار الملف من الجهاز <span class="dim">(للملفات الصغيرة — بيتحمّل في الذاكرة)</span></label>
+  <input type="file" id="file" accept=".task,.bin,.litertlm">
+
+  <div class="row">
+    <div>
+      <label>maxTokens</label>
+      <input id="maxTokens" type="number" value="1024" min="128" step="128">
+    </div>
+    <div>
+      <label>topK</label>
+      <input id="topK" type="number" value="40" min="1">
+    </div>
+    <div>
+      <label>الحرارة</label>
+      <input id="temp" type="number" value="0.2" min="0" max="2" step="0.1">
+    </div>
+  </div>
+
+  <label>نسخة MediaPipe</label>
+  <input id="ver" value="0.10.14">
+  <p class="note">لو التحميل فشل، جرّب نسخة تانية: <code>0.10.14</code> ·
+  <code>0.10.16</code> · <code>0.10.22</code></p>
+
+  <button id="load">حمّل الموديل</button>
+  <div class="status" id="log">جاهز.</div>
+</div>
+
+<div class="card">
+  <label>السؤال</label>
+  <textarea id="q">إنت مساعد مهندس تنفيذ في موقع خرسانة مسلّحة. اشرح في تلات جمل إيه اللي بيتفحص قبل صبّ حائط قص.</textarea>
+  <div class="row">
+    <button id="run" disabled>شغّل</button>
+    <button id="stopBtn" class="ghost" disabled>امسح الرد</button>
+  </div>
+  <div class="status" id="out">—</div>
+  <p class="note" id="timing"></p>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const log = (msg, cls='') => {
+  const el = $('log');
+  el.innerHTML += `\n<span class="${cls}">${msg}</span>`;
+  el.scrollTop = el.scrollHeight;
+};
+
+// WebGPU شرط أساسي — الإصدار ده من MediaPipe بيشتغل عليه.
+// الفحص بدري عشان المستخدم مايستناش تحميل جيجا ويكتشف بعدين.
+$('gpu').textContent = navigator.gpu ? 'WebGPU متاح' : 'مفيش WebGPU';
+$('gpu').className = 'pill ' + (navigator.gpu ? 'ok' : 'err');
+if (!navigator.gpu) {
+  log('⚠ المتصفح ده مافيهوش WebGPU. استخدم Chrome حديث، ولازم الصفحة تتفتح من '
+    + 'http://localhost (KSWEB) مش من file:// — المصدر غير الآمن بيقفل WebGPU.', 'err');
+}
+if (location.protocol === 'file:') {
+  log('⚠ إنت فاتح الصفحة كملف مباشر. شغّلها من KSWEB على localhost.', 'warn');
+}
+
+let llm = null;
+
+$('load').onclick = async () => {
+  const ver = $('ver').value.trim() || '0.10.14';
+  $('load').disabled = true;
+  $('run').disabled = true;
+  $('log').textContent = '';
+  const t0 = performance.now();
+
+  try {
+    log('بيجيب مكتبة MediaPipe ' + ver + ' …');
+    const mod = await import(
+      `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@${ver}`
+    );
+    const { FilesetResolver, LlmInference } = mod;
+
+    log('بيجهّز WASM …');
+    const fileset = await FilesetResolver.forGenAiTasks(
+      `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@${ver}/wasm`
+    );
+
+    const opts = {
+      maxTokens: +$('maxTokens').value || 1024,
+      topK: +$('topK').value || 40,
+      temperature: +$('temp').value,
+      randomSeed: 101,
+    };
+
+    const picked = $('file').files[0];
+    if (picked) {
+      log(`بيقرا الملف من الجهاز (${(picked.size/1e9).toFixed(2)} جيجا) …`);
+      // تحذير حقيقي: المتصفح بيحط الملف كله في الذاكرة هنا.
+      const buf = new Uint8Array(await picked.arrayBuffer());
+      opts.baseOptions = { modelAssetBuffer: buf };
+    } else {
+      const p = $('path').value.trim();
+      log('بينزّل الموديل من: ' + p + ' …');
+      opts.baseOptions = { modelAssetPath: p };
+    }
+
+    llm = await LlmInference.createFromOptions(fileset, opts);
+    const secs = ((performance.now()-t0)/1000).toFixed(1);
+    log(`✔ الموديل اتحمّل في ${secs} ثانية.`, 'ok');
+    $('run').disabled = false;
+  } catch (e) {
+    log('✖ فشل: ' + (e && e.message ? e.message : e), 'err');
+    log('\nالأسباب الشائعة:\n'
+      + '• الملف مش بصيغة .task المتوافقة مع نسخة المكتبة دي\n'
+      + '• الملف اتبنى لأندرويد مش للويب (دوّر على نسخة فيها -Web في الاسم)\n'
+      + '• الذاكرة مش كفاية — جرّب موديل أصغر\n'
+      + '• الصفحة مش على localhost فWebGPU مقفول', 'dim');
+  } finally {
+    $('load').disabled = false;
+  }
+};
+
+$('run').onclick = async () => {
+  if (!llm) return;
+  $('run').disabled = true;
+  $('stopBtn').disabled = false;
+  $('out').textContent = '';
+  $('timing').textContent = '';
+  const t0 = performance.now();
+  let chars = 0;
+
+  try {
+    // البثّ: بيبان وهو بيتكتب، وبيدّي قياس سرعة حقيقي.
+    await llm.generateResponse($('q').value, (partial, done) => {
+      $('out').textContent += partial;
+      chars += partial.length;
+      if (done) {
+        const secs = (performance.now()-t0)/1000;
+        $('timing').textContent =
+          `${chars} حرف في ${secs.toFixed(1)} ثانية — ~${(chars/secs).toFixed(0)} حرف/ثانية`;
+      }
+    });
+  } catch (e) {
+    $('out').textContent += '\n\n✖ ' + (e && e.message ? e.message : e);
+  } finally {
+    $('run').disabled = false;
+  }
+};
+
+$('stopBtn').onclick = () => { $('out').textContent = '—'; $('timing').textContent = ''; };
+</script>
+</body>
+</html>
