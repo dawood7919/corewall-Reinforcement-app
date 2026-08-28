@@ -1216,6 +1216,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
                 val facts = runCatching { aiEngine.knowledgeFor(level, q) }
                     .getOrDefault("").take(contextChars * 2 / 3)
+
+                // حالة المستندات لازم تدخل السياق.
+                //
+                // المستند اللي لسه ما اتحللش مالوش أي حقايق مستخرجة —
+                // يعني المساعد شايف **اسم الملف** وبس. من غير ما نقوله
+                // كده، بيرد "المعلومة مش عندي" وخلاص، والمستخدم بيفهم
+                // إنه غبي بدل ما يفهم إن فيه خطوة ناقصة هو يعملها.
+                val docs = documents.value.filter { it.level == level }
+                val analysed = docs.count { it.status == "DONE" }
+                val waiting = docs.size - analysed
                 val recent = runCatching { aiEngine.historyDigest(level, take = 2) }
                     .getOrDefault("").take(contextChars / 3)
 
@@ -1226,10 +1236,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     appendLine("- جاوب بالعربي، في جملتين أو تلاتة، من غير مقدمات.")
                     appendLine("- استخدم **الحقائق المكتوبة تحت بس**. متخترعش أرقام ولا أكواد.")
                     appendLine("- لو الإجابة مش في الحقائق دي، قول: \"المعلومة دي مش عندي.\"")
+                    if (waiting > 0) {
+                        // التوجيه ده بيحوّل طريق مسدود لخطوة المستخدم
+                        // يقدر يعملها.
+                        appendLine(
+                            "- **مهم:** فيه $waiting مستند لسه ما اتحللش، ومحتواه مش قدامك — " +
+                                "اسم الملف بس. لو السؤال محتاج جوّه مستند من دول، قول إن " +
+                                "المستندات لسه محتاجة تحليل، وإن التحليل بيتشغّل من شاشة " +
+                                "«معرفة الدور» وبيحتاج مفتاح سحابي. متحاولش تجاوب من اسم الملف."
+                        )
+                    }
+                    appendLine("- إنت شغّال محليًا: مالكش أدوات، ومابتقراش PDF، ومابتحسبش كميات.")
                     appendLine()
                     appendLine("## الوضع")
                     appendLine("الدور الشغّال: $level")
                     appendLine("عناصر المسقط: ${planData.elements.size}")
+                    if (docs.isNotEmpty()) {
+                        appendLine("مستندات الدور: $analysed محلّلة، $waiting لسه ما اتحللتش.")
+                    }
                     val open = tasks.value.count { it.level == level && !it.done }
                     if (open > 0) appendLine("مهام مفتوحة في الدور: $open")
                     appendLine()

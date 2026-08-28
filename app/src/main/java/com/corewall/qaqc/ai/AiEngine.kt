@@ -108,6 +108,42 @@ class AiEngine(
 
         /** عدد المستندات في الفهرس — الباقي بيتجاب بأداة عند الحاجة. */
         const val DOC_LIST_LIMIT = 10
+
+        /**
+         * كلمة عربية → أنواع الحقائق اللي المفروض تجيبها.
+         *
+         * أنواع الحقائق متعرّفة في [DocFactEntity.kind] وكلها إنجليزي،
+         * والرسومات إنجليزي. من غير الجدول ده كل سؤال بالعربي بيرجع
+         * صفر حقائق مهما كانت المستندات محلّلة.
+         */
+        val ARABIC_TO_KIND: Map<String, List<String>> = mapOf(
+            "حديد" to listOf("BAR_MARK", "DIAMETER", "QUANTITY"),
+            "تسليح" to listOf("BAR_MARK", "DIAMETER", "QUANTITY"),
+            "سيخ" to listOf("BAR_MARK", "DIAMETER"),
+            "أسياخ" to listOf("BAR_MARK", "DIAMETER"),
+            "قطر" to listOf("DIAMETER"),
+            "أقطار" to listOf("DIAMETER"),
+            "طن" to listOf("QUANTITY", "BAR_MARK", "DIAMETER"),
+            "وزن" to listOf("QUANTITY"),
+            "كمية" to listOf("QUANTITY"),
+            "كميات" to listOf("QUANTITY"),
+            "عدد" to listOf("QUANTITY"),
+            "مقاس" to listOf("DIMENSION"),
+            "مقاسات" to listOf("DIMENSION"),
+            "بعد" to listOf("DIMENSION"),
+            "أبعاد" to listOf("DIMENSION"),
+            "سمك" to listOf("DIMENSION"),
+            "منسوب" to listOf("DIMENSION"),
+            "حائط" to listOf("WALL_REF", "DIMENSION"),
+            "حوائط" to listOf("WALL_REF", "DIMENSION"),
+            "محور" to listOf("GRID"),
+            "محاور" to listOf("GRID"),
+            "ملاحظة" to listOf("NOTE"),
+            "ملاحظات" to listOf("NOTE"),
+            "تاريخ" to listOf("DATE"),
+            "شركة" to listOf("PARTY"),
+            "استشاري" to listOf("PARTY")
+        )
     }
 
     private val json = Json {
@@ -563,12 +599,35 @@ class AiEngine(
         // بيلغي التكرار — يعني أقوى دليل على الصلة بيتمسح.
         val scored = HashMap<String, Int>()
         val facts = HashMap<String, DocFactEntity>()
+
+        fun add(f: DocFactEntity, weight: Int) {
+            val k = "${f.documentId}|${f.key}|${f.value}"
+            facts[k] = f
+            scored[k] = (scored[k] ?: 0) + weight
+        }
+
         terms.forEach { t ->
-            factDao.searchInScope(t, level, KnowledgeScope.PROJECT, 60).forEach { f ->
-                val k = "${f.documentId}|${f.key}|${f.value}"
-                facts[k] = f
-                scored[k] = (scored[k] ?: 0) + 1
-            }
+            factDao.searchInScope(t, level, KnowledgeScope.PROJECT, 60).forEach { add(it, 2) }
+        }
+
+        // ── الجسر بين لغة السؤال ولغة الحقائق
+        //
+        // البحث `LIKE` على نص الحقيقة. الرسومات إنجليزي، فالحقائق
+        // المستخرجة إنجليزي وأرقام. والمستخدم بيسأل **بالعربي**.
+        // يعني سؤال زي "كام طن حديد" مابيطابقش ولا حقيقة واحدة، ومستند
+        // متحلّل تمامًا بيبان كأنه فاضي.
+        //
+        // الكلمة العربية بتترجم لنوع الحقيقة (`kind`) بدل ما تتطابق
+        // نصًّا. مش قاموس — عشرين كلمة هي اللي بيتسأل بيها فعلاً.
+        val kinds = ARABIC_TO_KIND.entries
+            .filter { (word, _) -> terms.any { it.contains(word) || word.contains(it) } }
+            .flatMap { it.value }
+            .toSet()
+        if (kinds.isNotEmpty()) {
+            factDao.inScope(level, KnowledgeScope.PROJECT)
+                .filter { it.kind in kinds }
+                .take(120)
+                .forEach { add(it, 1) }
         }
 
         val ranked = scored.entries
@@ -583,7 +642,18 @@ class AiEngine(
             appendLine("المستندات المتاحة (دور $level + معرفة المشروع):")
             docs.take(DOC_LIST_LIMIT).forEach {
                 val tag = if (KnowledgeScope.isProject(it.level)) "[مشروع]" else "[$level]"
-                appendLine("- $tag ${it.fileName} [${it.docType}] ${it.drawingNumber}".trimEnd())
+                // الملخّص رجع.
+                //
+                // شيلته وأنا بقلّل حجم الكتلة، وده كان غلط: الملخّص هو
+                // خلاصة التحليل نفسه — الحتة الوحيدة اللي بتقول المستند
+                // **فيه إيه** بلغة مقروءة. من غيره الفهرس بقى أسامي
+                // ملفات، والمساعد بقى بيرد "مش عندي" على مستندات
+                // اتحللت فعلاً.
+                val brief = it.summary.trim().take(140)
+                appendLine(
+                    ("- $tag ${it.fileName} [${it.docType}] ${it.drawingNumber}".trimEnd() +
+                        if (brief.isNotBlank()) " — $brief" else "")
+                )
             }
             if (docs.size > DOC_LIST_LIMIT) {
                 appendLine("- (+${docs.size - DOC_LIST_LIMIT} مستند تاني — استخدم list_documents)")
@@ -591,11 +661,37 @@ class AiEngine(
             appendLine()
 
             if (ranked.isEmpty()) {
-                // القديم كان بيرمي ٨٠ حقيقة عشوائية هنا لما مفيش تطابق.
-                // دي مش معرفة — دي ضوضاء بتتدفع بسعر كامل وبتشتّت الموديل
-                // عن اللي هو محتاجه فعلاً.
-                appendLine("مفيش حقايق مستخرجة مطابقة لكلمات السؤال.")
-                appendLine("لو محتاج تفاصيل مستند، استخدم get_document_facts.")
+                // شيلت الاحتياطي ده وأنا بقلّل التكلفة، وقلت عليه "ضوضاء".
+                // ده كان غلط: هو اللي كان بيخلّي السؤال العام يشتغل. من
+                // غيره، مستند اتحلّل تمامًا بيبان **فاضي** لأن كلمة
+                // واحدة في السؤال ما طابقتش.
+                //
+                // الفرق دلوقتي إنه **بميزانية ومرتّب بالمستند**، مش ٨٠
+                // صف عشوائي: عيّنة من كل مستند بتوَرّي إيه اللي فيه،
+                // والباقي بيتجاب بأداة لما يتحدّد المطلوب.
+                val sample = factDao.inScope(level, KnowledgeScope.PROJECT)
+                    .groupBy { it.documentId }
+                    .toList()
+                    .take(6)
+                if (sample.isEmpty()) {
+                    appendLine("المستندات دي لسه ما اتحللتش — مفيش حقايق مستخرجة منها.")
+                    appendLine("التحليل بيتشغّل من شاشة «معرفة الدور».")
+                    return@buildString
+                }
+                appendLine("مفيش تطابق مباشر مع كلمات السؤال. عيّنة من اللي متسجّل:")
+                var used = length
+                for ((docId, group) in sample) {
+                    val d = byId[docId] ?: continue
+                    val header = "من \"${d.fileName}\":\n"
+                    if (used + header.length > KNOWLEDGE_BUDGET) break
+                    append(header); used += header.length
+                    for (f in group.take(8)) {
+                        val line = "  • ${f.kind}: ${f.key} = ${f.value} ${f.unit}".trimEnd() + "\n"
+                        if (used + line.length > KNOWLEDGE_BUDGET) break
+                        append(line); used += line.length
+                    }
+                }
+                appendLine("(مش كل الحقايق — لو حدّدت المطلوب استخدم get_document_facts)")
                 return@buildString
             }
 
