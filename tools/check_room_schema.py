@@ -102,25 +102,16 @@ def from_migrations(path: pathlib.Path) -> set[tuple]:
 # الترحيل مش مطابقة للي Room متوقّعه. ودي أصعب في الملاحظة: جدول FTS
 # مثلاً بيتعرّف بجملة `CREATE VIRTUAL TABLE … USING FTS4(…)` وأي فرق في
 # الأعمدة أو المقسّم بيرمي استثناء بعد الترحيل مباشرة.
-CREATE_TABLE = re.compile(
-    r"CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`\"]?(?P<table>\w+)[`\"]?"
-    r"(?P<rest>.*?)(?=CREATE\s|db\.execSQL|\Z)",
-    re.S | re.I,
-)
+EXEC_SQL = re.compile(r'execSQL\(\s*"((?:[^"\\\\]|\\\\.)*)"', re.S)
 
 
 def canon_sql(sql: str) -> str:
-    """
-    توحيد الشكل قبل المقارنة.
-
-    Room بيصدّر الجملة بمسافات وعلامات تنصيص مختلفة عن اللي بنكتبه
-    بالإيد. اللي بيهمنا الأعمدة وخصائصها، مش المسافات.
-    """
-    s = sql.replace("`", "").replace('"', "").replace("'", "")
-    s = re.sub(r"\s+", " ", s)
-    s = s.replace("IF NOT EXISTS ", "")
-    s = s.replace("( ", "(").replace(" )", ")")
-    return s.strip().rstrip(";").lower()
+    """توحيد الشكل قبل المقارنة — المسافات وعلامات التنصيص مش فارقة."""
+    t = sql.replace("`", "").replace('"', "").replace("'", "")
+    t = re.sub(r"\s+", " ", t)
+    t = t.replace("IF NOT EXISTS ", "")
+    t = t.replace("( ", "(").replace(" )", ")")
+    return t.strip().rstrip(";").lower()
 
 
 def tables_from_schema(path: pathlib.Path) -> dict:
@@ -128,41 +119,65 @@ def tables_from_schema(path: pathlib.Path) -> dict:
     out = {}
     for entity in data["database"]["entities"]:
         sql = entity.get("createSql", "")
-        if not sql:
-            continue
-        # Room بيحط `${TABLE_NAME}` مكان الاسم في المخطط المصدَّر.
-        sql = sql.replace("${TABLE_NAME}", entity["tableName"])
-        out[entity["tableName"]] = canon_sql(sql)
+        if sql:
+            out[entity["tableName"]] = canon_sql(
+                sql.replace("${TABLE_NAME}", entity["tableName"])
+            )
     return out
 
 
-def tables_from_migrations(path: pathlib.Path) -> dict:
+def newest_migration_body(src: str, version: int) -> str:
+    """
+    جسم الترحيل للنسخة الحالية بس.
+
+    ## ليه النسخة الأخيرة بس
+    الجدول اللي اتعمل في نسخة قديمة بيتعدّل بـ`ALTER TABLE` في الترحيلات
+    اللي بعدها، فجملة إنشائه الأصلية **بتختلف عن المخطط الحالي بشكل صحيح**.
+    مقارنتها بيه بتطلّع إنذار كاذب على كود سليم — وفحص بيكدب بيتلغى.
+
+    الترحيل للنسخة الحالية هو الوحيد اللي جداوله المفروض تطابق المخطط
+    بالحرف: مفيش حاجة عدّلت عليها بعده.
+    """
+    head = re.search(rf"private val MIGRATION_\d+_{version}\b", src)
+    if not head:
+        return ""
+    rest = src[head.end():]
+    nxt = re.search(r"private val (MIGRATION_\d+_\d+|\w+)\s*=", rest)
+    return rest[: nxt.start()] if nxt else rest
+
+
+def tables_from_migrations(path: pathlib.Path, version: int) -> dict:
+    """
+    الجداول اللي الترحيل الأخير بيعملها.
+
+    القراية من نصّ `execSQL("…")` نفسه، مش بتعبير عام بيدوّر على `CREATE`:
+    التعبير العام مابيعرفش الجملة بتخلص فين، فبياخد معاها القوس بتاع
+    `execSQL` واللي بعده — وده كان بيطلّع فروق مش موجودة.
+    """
     src = join_literals(path.read_text(encoding="utf-8"))
+    body = newest_migration_body(src, version)
     out = {}
-    for m in CREATE_TABLE.finditer(src):
-        stmt = "CREATE TABLE " + m.group("table") + m.group("rest")
-        if "VIRTUAL" in m.group(0).upper():
-            stmt = m.group(0)
-        # الترحيل الأحدث للجدول هو اللي بيتقارن — القديم اتغيّر بعده.
-        out[m.group("table")] = canon_sql(stmt)
+    for m in EXEC_SQL.finditer(body):
+        stmt = m.group(1)
+        found = re.match(
+            r"\s*CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`\"]?(\w+)",
+            stmt, re.I,
+        )
+        if found:
+            out[found.group(1)] = canon_sql(stmt)
     return out
 
 
-def check_tables(schema: pathlib.Path, migrations: pathlib.Path) -> list[str]:
-    """
-    بيقارن **الجداول اللي الترحيلات بتعملها بس**.
-
-    الجداول اللي اتعملت في نسخ قديمة مش موجودة في الترحيلات الحالية —
-    دي طبيعية ومابتتفحصش. اللي بيتفحص: أي جدول ترحيل بيعمله لازم يطابق
-    اللي Room متوقّعه.
-    """
+def check_tables(schema: pathlib.Path, migrations: pathlib.Path) -> list:
+    """بيقارن جداول الترحيل الأخير باللي Room متوقّعه."""
+    version = int(schema.stem)
     want = tables_from_schema(schema)
-    got = tables_from_migrations(migrations)
+    got = tables_from_migrations(migrations, version)
     problems = []
     for table, sql in got.items():
         expected = want.get(table)
         if expected is None:
-            continue          # جدول مش كيان — مش من شغل Room
+            continue
         if sql != expected:
             problems.append(
                 f"جدول «{table}» مختلف بين الترحيل والمخطط:\n"
