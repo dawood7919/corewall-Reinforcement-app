@@ -98,6 +98,25 @@ object LocalLlm {
      */
     private val lock = Mutex()
 
+    /**
+     * الملف اللي قتل العملية آخر مرة.
+     *
+     * ## ليه ده لازم يتسجّل
+     *
+     * وقوع الكود الأصلي مايتمسكش — يعني موديل مش متوافق بيقفل التطبيق
+     * **مع كل رسالة، للأبد**. المستخدم بيلاقي تطبيق بيموت وهو مش عارف
+     * ليه ولا قادر يوصل لشاشة الإعدادات يغيّر الملف.
+     *
+     * العلامة بتتكتب قبل التحميل وبتتشال بعده. لو لقيناها لسه مكتوبة
+     * لنفس الملف، يبقى الملف ده وقّعنا قبل كده — فبنرفض بدل ما نجرّب
+     * تاني ونموت تاني. رسالة واضحة أحسن من دورة قفل.
+     */
+    private const val PREFS = "local_llm"
+    private const val KEY_LOADING = "loadingPath"
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
     /** الملف موجود فعلاً؟ */
     fun isReady(path: String): Boolean =
         path.isNotBlank() && runCatching { File(path).let { it.isFile && it.length() > 0 } }
@@ -167,6 +186,21 @@ object LocalLlm {
     ): LlmInference {
         engine?.takeIf { loadedPath == modelPath && loadedBackend == backend }?.let { return it }
         release()
+
+        // وقعنا على نفس الملف قبل كده؟ مانجربش تاني.
+        val store = prefs(context)
+        if (store.getString(KEY_LOADING, null) == modelPath) {
+            store.edit().remove(KEY_LOADING).apply()
+            throw LocalModelError(
+                "الملف ده قفل التطبيق آخر مرة اتحمّل فيها، فوقفناه. " +
+                    "غالباً صيغته مش متوافقة مع نسخة المكتبة. " +
+                    "اختار ملف تاني من الإعدادات، أو شيل الموديل المحلي وارجع للسحابي."
+            )
+        }
+        // `commit` مش `apply`: الكتابة لازم توصل القرص قبل نداء ممكن
+        // يقتل العملية.
+        @Suppress("ApplySharedPref")
+        store.edit().putString(KEY_LOADING, modelPath).commit()
         CrashReporter.enterNative(context, "الموديل المحلي — تحميل الملف")
         return runCatching {
             val options = LlmInference.LlmInferenceOptions.builder()
@@ -194,9 +228,13 @@ object LocalLlm {
                 loadedPath = modelPath
                 loadedBackend = backend
                 CrashReporter.leaveNative(context)
+                // اتحمّل بالسلامة — العلامة تتشال عشان التحميل الجاي
+                // مايتمنعش بالغلط.
+                store.edit().remove(KEY_LOADING).apply()
             }
         }.getOrElse { e ->
             release()
+            store.edit().remove(KEY_LOADING).apply()
             // الرسالة بتفرّق بين السببين لأن التصرّف مختلف: الفشل على
             // الـGPU غالباً ذاكرته مش كفاية والحل تجرّب المعالج، والفشل
             // العام غالباً الملف نفسه.
