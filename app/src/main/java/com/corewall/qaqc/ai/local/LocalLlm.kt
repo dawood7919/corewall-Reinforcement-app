@@ -2,6 +2,7 @@ package com.corewall.qaqc.ai.local
 
 import android.content.Context
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -65,7 +66,13 @@ object LocalLlm {
      */
     private val EKV = Regex("""ekv(\d+)""", RegexOption.IGNORE_CASE)
 
-    private fun tokensFor(modelPath: String): Int {
+    /**
+     * سقف التوكن الفعلي للملف ده — دخل وخرج مع بعض.
+     *
+     * مكشوف عشان اللي بيبني البرومبت يقدر يفصّله على المقاس: موديل
+     * سقفه ١٢٨٠ لو بعتّله سياق بألف توكن، مابيبقاش قدامه مكان يرد.
+     */
+    fun tokenBudget(modelPath: String): Int {
         val declared = EKV.find(File(modelPath).name)?.groupValues?.get(1)?.toIntOrNull()
         return if (declared != null) minOf(MAX_TOKENS, declared) else MAX_TOKENS
     }
@@ -105,7 +112,25 @@ object LocalLlm {
                 throw LocalModelError("ملف الموديل مش موجود. اختاره تاني من الإعدادات.")
             }
             val active = ensureEngine(context, modelPath, backend)
-            val answer = runCatching { active.generateResponse(prompt) }.getOrElse { e ->
+            val answer = runCatching {
+                // جلسة بإعدادات صريحة بدل النداء المباشر.
+                //
+                // الافتراضي بيولّد بعشوائية عالية، وده على موديل صغير
+                // بيبان كـ«غباء»: بيسرح، بيخترع، وبيرد على سؤال تاني.
+                // حرارة واطية وtopK محدود بيخلّوه يلزم اللي قدامه —
+                // مابيخلّوهوش أذكى، بيمنعوه يتشتّت.
+                LlmInferenceSession.createFromOptions(
+                    active,
+                    LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                        .setTemperature(0.2f)
+                        .setTopK(40)
+                        .setTopP(0.9f)
+                        .build()
+                ).use { session ->
+                    session.addQueryChunk(prompt)
+                    session.generateResponse()
+                }
+            }.getOrElse { e ->
                 // المحرّك ممكن يكون بقى في حالة مش سليمة — بنرميه عشان
                 // النداء الجاي يبدأ من نضيف بدل ما يفضل يفشل.
                 release()
@@ -128,7 +153,7 @@ object LocalLlm {
         return runCatching {
             val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
-                .setMaxTokens(tokensFor(modelPath))
+                .setMaxTokens(tokenBudget(modelPath))
                 .setPreferredBackend(
                     when (backend) {
                         "CPU" -> LlmInference.Backend.CPU

@@ -1203,15 +1203,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 level = level, role = "user", content = q, createdAt = System.currentTimeMillis()
             )
             try {
+                // الموديل المحلي كان بياخد اسم الدور وعدد العناصر وبس.
+                // يعني كان بيتسأل عن مشروع هو مايعرفش عنه حاجة — والرد
+                // الضعيف الناتج كان بيتقري كـ«غباء»، وهو في الحقيقة
+                // نقص معلومات. الموديل الصغير ضعيف في الاستنتاج، بس
+                // كويس في إنه يقرا نص قدامه ويجاوب منه.
+                //
+                // الميزانية مقسومة على مقاس الموديل: سقف ١٢٨٠ توكن لو
+                // اتملى بالسياق مايبقاش قدامه مكان يرد.
+                val budget = com.corewall.qaqc.ai.local.LocalLlm.tokenBudget(cfg.localModelPath)
+                val contextChars = budget   // ≈ نص الميزانية للدخل
+
+                val facts = runCatching { aiEngine.knowledgeFor(level, q) }
+                    .getOrDefault("").take(contextChars * 2 / 3)
+                val recent = runCatching { aiEngine.historyDigest(level, take = 2) }
+                    .getOrDefault("").take(contextChars / 3)
+
                 val prompt = buildString {
-                    appendLine("إنت مساعد مهندس تنفيذ في موقع بناء. جاوب بالعربي، مختصر وعملي.")
-                    appendLine("لو مش متأكد من رقم، قول إنك مش متأكد — متخمّنش أرقام.")
+                    appendLine("إنت مساعد مهندس تنفيذ في موقع بناء خرسانة مسلّحة.")
                     appendLine()
+                    appendLine("قواعد:")
+                    appendLine("- جاوب بالعربي، في جملتين أو تلاتة، من غير مقدمات.")
+                    appendLine("- استخدم **الحقائق المكتوبة تحت بس**. متخترعش أرقام ولا أكواد.")
+                    appendLine("- لو الإجابة مش في الحقائق دي، قول: \"المعلومة دي مش عندي.\"")
+                    appendLine()
+                    appendLine("## الوضع")
                     appendLine("الدور الشغّال: $level")
-                    appendLine("عدد عناصر المسقط: ${planData.elements.size}")
+                    appendLine("عناصر المسقط: ${planData.elements.size}")
+                    val open = tasks.value.count { it.level == level && !it.done }
+                    if (open > 0) appendLine("مهام مفتوحة في الدور: $open")
                     appendLine()
-                    appendLine("السؤال: $q")
+                    if (facts.isNotBlank()) {
+                        appendLine("## حقائق من مستندات الدور")
+                        appendLine(facts)
+                        appendLine()
+                    }
+                    if (recent.isNotBlank()) {
+                        appendLine("## آخر اللي اتقال")
+                        appendLine(recent)
+                        appendLine()
+                    }
+                    appendLine("## السؤال")
+                    appendLine(q)
                 }
+
                 _agentStatus.value = "الموديل المحلي بيفكّر…"
                 val answer = com.corewall.qaqc.ai.local.LocalLlm.generate(
                     appContext, cfg.localModelPath, prompt, cfg.localBackend
