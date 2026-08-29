@@ -662,11 +662,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 candidate
             }
+            // التأشير بيتكتب **جوّه** الصفحة المنسوخة كتعليقات PDF حقيقية.
+            // ده الفرق بين "التطبيق بيوريني الهايلايت" و"الملف اللي بعتّه
+            // فيه الهايلايت" — والتاني هو المطلوب في مستند رايح لاستشاري.
+            val markup = repo.annotationsForPage(sourcePath, page)
             WirPdf.appendPage(
                 source = source,
                 page = page,
                 dest = dest,
-                workDir = java.io.File(appContext.cacheDir, "wir")
+                workDir = java.io.File(appContext.cacheDir, "wir"),
+                markup = markup,
+                pointsOf = { entity ->
+                    runCatching {
+                        kotlinx.serialization.json.Json
+                            .decodeFromString<List<Float>>(entity.pointsJson)
+                    }.getOrDefault(emptyList())
+                }
             ).onSuccess { pages ->
                 val now = System.currentTimeMillis()
                 val base = existing ?: WirEntity(
@@ -686,11 +697,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         addedAt = now
                     )
                 )
-                // التأشير بيتنقل مع الصفحة — من غير ده الصفحة بتوصل ورق
-                // نضيف، وده مش اللي المستخدم شافه لما بعتها.
-                val moved = repo.copyPageMarkup(sourcePath, page, dest.absolutePath, pages - 1)
+                // القياسات طبقة تطبيق، فبتتنقل كصفوف مع مقياس الصفحة.
+                val measures = repo.copyPageMeasurements(
+                    sourcePath, page, dest.absolutePath, pages - 1
+                )
+                val carried = markup.size + measures
                 onDone(
-                    if (moved > 0) "اتضافت لـ«$clean» مع $moved تأشير — بقى فيه $pages صفحة"
+                    if (carried > 0) "اتضافت لـ«$clean» مع $carried تأشير — بقى فيه $pages صفحة"
                     else "اتضافت لـ«$clean» — بقى فيه $pages صفحة"
                 )
             }.onFailure { e ->
@@ -724,9 +737,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.deleteWir(wir) }
     }
 
-    fun shareWir(wir: WirEntity) {
+    /**
+     * المشاركة بتبعت **نسخة معلّقة** مش الملف الخام.
+     *
+     * الصفحات اللي اتبعتت للطلب تأشيرها متكتوب جوّاها، لكن أي حاجة
+     * المستخدم رسمها **جوّه** الطلب لسه صفوف في القاعدة. مشاركة الملف
+     * الخام كانت هتبعت الصفحات بتأشيرها الأصلي وتسيب مراجعته هو ورا.
+     */
+    fun shareWir(wir: WirEntity, onDone: (String) -> Unit = {}) {
         val file = java.io.File(wir.filePath)
-        if (file.exists()) files.share(file)
+        if (!file.exists()) { onDone("ملف الطلب مش موجود"); return }
+        viewModelScope.launch {
+            PdfOps.ensureInit(appContext)
+            val marks = repo.pdfAnnotationsForFileOnce(wir.filePath)
+            if (marks.isEmpty()) { files.share(file); return@launch }
+            val out = java.io.File(appContext.cacheDir, "${file.nameWithoutExtension}-معلّق.pdf")
+            PdfOps.writeAnnotations(
+                src = file,
+                dest = out,
+                byPage = marks.groupBy { it.page },
+                pointsOf = { entity ->
+                    runCatching {
+                        kotlinx.serialization.json.Json
+                            .decodeFromString<List<Float>>(entity.pointsJson)
+                    }.getOrDefault(emptyList())
+                }
+            ).onSuccess { files.share(out) }
+                .onFailure { files.share(file); onDone("اتشارك الملف من غير آخر تأشير") }
+        }
     }
 
     // -------- Site Photos --------

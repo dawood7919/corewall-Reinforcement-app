@@ -2,6 +2,7 @@ package com.corewall.qaqc.pdfengine
 
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
+import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,9 +36,20 @@ object WirPdf {
         source: File,
         page: Int,
         dest: File,
-        workDir: File
+        workDir: File,
+        /**
+         * التأشير اللي على الصفحة الأصلية.
+         *
+         * بيتكتب **جوّه الـPDF** كتعليقات حقيقية مش بيتنسخ كصفوف في
+         * القاعدة. الفرق ده هو كل الموضوع: الـWIR مستند بيسيب التطبيق —
+         * بيتبعت للاستشاري ويتطبع ويتوقّع عليه. تأشير عايش في قاعدة
+         * بيانات على تليفون واحد **مش موجود** في الملف اللي بيوصلهم.
+         */
+        markup: List<PdfAnnotationEntity> = emptyList(),
+        pointsOf: (PdfAnnotationEntity) -> List<Float> = { emptyList() }
     ): Result<Int> = withContext(Dispatchers.IO) {
         val single = File(workDir, "wir-page-${System.currentTimeMillis()}.pdf")
+        val inked = File(workDir, "wir-inked-${System.currentTimeMillis()}.pdf")
         runCatching {
             require(source.exists()) { "الملف الأصلي مش موجود" }
             require(workDir.exists() || workDir.mkdirs()) { "مقدرناش نجهّز مجلد مؤقّت" }
@@ -55,8 +67,20 @@ object WirPdf {
             ).getOrThrow()
             check(single.exists() && single.length() > MIN_PDF_BYTES) { "الصفحة اتكتبت فاضية" }
 
+            // الصفحة المستخرجة صفحة واحدة، ففهرسها جوّه ملفها صفر مهما كان
+            // رقمها في الأصل.
+            val ready = if (markup.isEmpty()) single else {
+                PdfOps.writeAnnotations(
+                    src = single,
+                    dest = inked,
+                    byPage = mapOf(0 to markup),
+                    pointsOf = pointsOf
+                ).getOrThrow()
+                if (inked.exists() && inked.length() > MIN_PDF_BYTES) inked else single
+            }
+
             if (!dest.exists()) {
-                single.copyTo(dest, overwrite = true)
+                ready.copyTo(dest, overwrite = true)
                 return@runCatching 1
             }
 
@@ -67,7 +91,7 @@ object WirPdf {
             PDFMergerUtility().apply {
                 destinationFileName = merged.absolutePath
                 addSource(dest)
-                addSource(single)
+                addSource(ready)
             }.mergeDocuments(MemoryUsageSetting.setupTempFileOnly().setTempDir(workDir))
 
             val pages = PDDocument.load(merged, MemoryUsageSetting.setupTempFileOnly())
@@ -82,7 +106,7 @@ object WirPdf {
             }
             backup.delete()
             pages
-        }.also { single.delete() }
+        }.also { single.delete(); inked.delete() }
     }
 
     /** عدد صفحات ملف موجود — للمزامنة لو الملف اتعدّل من برّه. */

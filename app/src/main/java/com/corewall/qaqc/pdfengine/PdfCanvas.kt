@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -93,8 +94,24 @@ fun PdfCanvas(
     onTap: (Offset, PointerKind) -> Unit = { _, _ -> },
     /** ضغطة مطوّلة — بيبدأ بيها تحديد النص. */
     onLongPress: (Offset, PointerKind) -> Unit = { _, _ -> },
-    /** بيترسم فوق الصفحات — التعليقات والقياسات. */
-    overlay: DrawScope.(PdfViewerState) -> Unit = {}
+    /** بيترسم فوق الصفحات — العلامات المحفوظة اللي بتتغيّر مع البيانات بس. */
+    overlay: DrawScope.(PdfViewerState) -> Unit = {},
+    /**
+     * الطبقة الحيّة — الخط اللي بيتكتب دلوقتي، صندوق التحديد، القياس
+     * اللي لسه بيتحطّ.
+     *
+     * **ليه طبقة منفصلة**: الرسم في Compose بيتبع الحالة اللي اتقرت جوّه
+     * كل عقدة رسم. لما الخط الجاري كان بيتقري في نفس الـ`Canvas` اللي
+     * بيرسم الصفحات، كل عيّنة من القلم (عشرات في الثانية، والعيّنات
+     * التاريخية بتضاعفها) كانت بتبطّل صلاحية العقدة كلها — يعني
+     * [drawPages] بتتنفّذ من أول وجديد: ورقة بيضا وطبقات بلاطات لكل صفحة
+     * ظاهرة، في كل عيّنة.
+     *
+     * دلوقتي الصفحات في عقدة، والحبر في عقدة فوقها. الحبر بيبطّل عقدته
+     * هو بس، والصفحات بتترسم من قايمة العرض المسجّلة على الـGPU من غير أي
+     * شغل CPU. ده اللي بيخلّي طرف القلم يمشي مع الإيد.
+     */
+    liveOverlay: DrawScope.(PdfViewerState) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val flingJob = remember { arrayOfNulls<Job>(1) }
@@ -157,7 +174,7 @@ fun PdfCanvas(
         }
     }
 
-    Canvas(
+    Box(
         modifier
             .fillMaxSize()
             .onSizeChanged { state.updateViewport(it) }
@@ -213,8 +230,13 @@ fun PdfCanvas(
                 }
             }
     ) {
-        drawPages(state, engine, session)
-        overlay(state)
+        Canvas(Modifier.fillMaxSize()) {
+            drawPages(state, engine, session)
+            overlay(state)
+        }
+        Canvas(Modifier.fillMaxSize()) {
+            liveOverlay(state)
+        }
     }
 }
 

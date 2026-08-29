@@ -340,55 +340,37 @@ class AppRepository(context: Context) {
 
     suspend fun addWirItem(item: WirItemEntity): Long = db.wirDao().upsertItem(item)
 
+    /** تأشير صفحة واحدة — بيتكتب جوّه الـPDF وقت الإرسال لطلب فحص. */
+    suspend fun annotationsForPage(path: String, page: Int): List<PdfAnnotationEntity> =
+        db.pdfAnnotationDao().forPage(path, page)
+
     /**
-     * بينقل التأشير مع الصفحة.
+     * بينقل القياسات ومعايرة المقياس مع الصفحة.
      *
-     * التعليقات مخزّنة في القاعدة بمسار الملف ورقم الصفحة، مش متحبّرة جوّه
-     * الـPDF — وده مقصود عشان تفضل قابلة للتعديل والمسح. بس معناه إن نسخ
-     * الصفحة لملف تاني بينقل الورق من غير اللي اتكتب عليه، لو مانقلناش
-     * الصفوف دي كمان.
+     * التعليقات **مش** هنا: دي بتتكتب جوّه الـPDF نفسه عشان الملف اللي
+     * بيسيب التطبيق يبقى شايلها. القياسات طبقة تطبيق (رقم ووحدة محسوبين
+     * من المقياس) فبتفضل صفوف، والنقط منسّبة (٠..١) فالنقل مايحتاجش أي
+     * تحويل — نفس النسب على نفس الصفحة = نفس المكان.
      *
-     * النقط متخزّنة منسّبة (٠..١) لأبعاد الصفحة، فالنقل مايحتاجش أي تحويل:
-     * نفس النسب على نفس الصفحة = نفس المكان بالظبط.
-     *
-     * والنسخة **مستقلة**: تعديلها في الـWIR مابيأثرش على الرسمة الأصلية،
-     * وده الصح — التأشير للفحص مش تعديل على المستند المعتمد.
+     * والمقياس بينتقل معاها: من غيره القياسات المنقولة بتعرض أرقام غلط،
+     * وده أسوأ من إنها ماتظهرش.
      */
-    suspend fun copyPageMarkup(
+    suspend fun copyPageMeasurements(
         fromPath: String,
         fromPage: Int,
         toPath: String,
         toPage: Int
     ): Int {
-        val annotations = db.pdfAnnotationDao().forPage(fromPath, fromPage)
-        db.pdfAnnotationDao().upsertAll(
-            annotations.map { it.copy(id = 0, filePath = toPath, page = toPage) }
-        )
         val measurements = db.pdfMeasurementDao().forPage(fromPath, fromPage)
         db.pdfMeasurementDao().upsertAll(
             measurements.map { it.copy(id = 0, filePath = toPath, page = toPage) }
         )
-        // المقياس بينتقل كمان — من غيره القياسات المنقولة بتظهر بأرقام
-        // غلط، وده أسوأ من إنها ماتظهرش.
         val scale = db.pdfScaleDao().forPage(fromPath, fromPage)
             ?: db.pdfScaleDao().forPage(fromPath, PdfScaleEntity.WHOLE_DOCUMENT)
         if (scale != null) {
             db.pdfScaleDao().upsert(scale.copy(filePath = toPath, page = toPage))
         }
-        return annotations.size + measurements.size
-    }
-
-    /**
-     * المسح بيشيل الملف والتعليقات كمان.
-     *
-     * سيب التعليقات وراك معناه إن WIR جديد بنفس الاسم هيرث هايلايت طلب
-     * قديم — المسار هو المفتاح، والاسم بيتكرر بطبيعة الشغل.
-     */
-    suspend fun deleteWir(wir: WirEntity) {
-        db.wirDao().clearItems(wir.id)
-        db.wirDao().delete(wir.id)
-        db.pdfAnnotationDao().clearForFile(wir.filePath)
-        runCatching { java.io.File(wir.filePath).delete() }
+        return measurements.size
     }
 
     // ---------- Manpower (ملفات الحضور + السجلات اليومية) ----------
@@ -412,6 +394,10 @@ class AppRepository(context: Context) {
      * العارض بيفتح ملف واحد، فمالوش لازمة يشترك في تعليقات وعلامات
      * وقياسات كل الملفات. الاشتراك بيبدأ مع فتح الملف وبيقف مع قفله.
      */
+    /** لقطة واحدة لتعليقات ملف — للتصدير والمشاركة. */
+    suspend fun pdfAnnotationsForFileOnce(filePath: String): List<PdfAnnotationEntity> =
+        db.pdfAnnotationDao().getAll().filter { it.filePath == filePath }
+
     fun pdfAnnotationsFor(filePath: String): Flow<List<PdfAnnotationEntity>> =
         db.pdfAnnotationDao().observeForFile(filePath)
 

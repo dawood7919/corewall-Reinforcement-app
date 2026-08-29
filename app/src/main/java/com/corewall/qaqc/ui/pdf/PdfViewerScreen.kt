@@ -386,6 +386,14 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     var grabbed by remember(path) { mutableStateOf<BoxHandle?>(null) }
     var grabFrom by remember(path) { mutableStateOf<Rect?>(null) }
     var liveBox by remember(path) { mutableStateOf<Rect?>(null) }
+    /**
+     * فيه تحويل شغّال دلوقتي؟
+     *
+     * منطقي مش الصندوق نفسه: طبقة الصفحات بتقراه عشان تتخطّى الأشكال
+     * اللي بترسم متحوّلة فوق، ولو قرت الصندوق كانت هتتبطّل صلاحيتها مع كل
+     * إطار — وده بالظبط اللي فصلنا الطبقتين عشان نمنعه.
+     */
+    var transforming by remember(path) { mutableStateOf(false) }
     var dragLast by remember(path) { mutableStateOf(Offset.Zero) }
     /** نقطة بداية مستطيل التحديد — لازم تتحفظ لوحدها، لأن المستطيل
      *  المرتّب بيفقد معلومة "بدأنا من أنهي ركن" أول ما تسحب لفوق أو لليسار. */
@@ -398,6 +406,24 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
         grabbed = null
         grabFrom = null
         liveBox = null
+        transforming = false
+    }
+
+    /**
+     * بيضيف عيّنة للخط لو بعيدة كفاية عن اللي قبلها.
+     *
+     * الجهاز بيدّي عيّنات كتير جداً — العيّنات التاريخية لوحدها بتضاعف
+     * العدد — وكل عيّنة زيادة تكلفتها بتتدفع **في كل إطار**: مسار التنعيم
+     * بيتبني من الأول من كل النقط. خط بألفين نقطة معناه ألفين عملية مسار
+     * في كل رسمة، فالخط بيبقى أبطأ كل ما يطول. وده بالظبط الإحساس بإن
+     * الكتابة بتلهث ورا القلم.
+     *
+     * ٣ بكسل أقل من سُمك أي خط بنرسمه، فالشكل الناتج مايفرقش بالعين —
+     * بس عدد النقط بيقلّ لأضعاف.
+     */
+    fun addSample(p: Offset) {
+        val last = draft.lastOrNull()
+        if (last == null || (p - last).getDistanceSquared() >= MIN_SAMPLE_SQ) draft += p
     }
 
     /** بيرمي الخط الحالي من غير ما يحفظه — للإلغاء ولخط قصير مالوش معنى. */
@@ -475,7 +501,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     fun commitTransform() {
         val from = grabFrom
         val to = liveBox
-        grabbed = null; grabFrom = null; liveBox = null
+        grabbed = null; grabFrom = null; liveBox = null; transforming = false
         if (from == null || to == null || !to.movedFrom(from)) return
         val edited = selectedIds.mapNotNull { id ->
             val entity = fileAnnotations.firstOrNull { it.id == id } ?: return@mapNotNull null
@@ -643,6 +669,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                                 grabbed = handle
                                 grabFrom = box
                                 liveBox = box
+                                transforming = true
                             } else {
                                 // سحب على الفاضي = مستطيل تحديد جديد، والقديم
                                 // بيتفضّى فوراً مش في الآخر — غير كده الشاشة
@@ -678,7 +705,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         }
                     } else if (draftPage >= 0) {
                         if (tool.freeform) {
-                            draft += p
+                            addSample(p)
                         } else {
                             val first = draft.firstOrNull() ?: p
                             draft.clear(); draft += first; draft += p
@@ -708,7 +735,8 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 },
                 onDrawCancel = {
                     if (tool == PdfTool.SELECT) {
-                        marquee = null; grabbed = null; grabFrom = null; liveBox = null
+                        marquee = null; grabbed = null; grabFrom = null
+                        liveBox = null; transforming = false
                     } else {
                         discardDraft()
                     }
@@ -727,7 +755,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     if (draftPage >= 0) {
                         draftPressure.add(pressure)
                         if (tool.freeform) {
-                            draft += point
+                            addSample(point)
                         } else {
                             // الأشكال نقطتين: مكان نزول القلم، ومكانه دلوقتي.
                             val first = draft.firstOrNull() ?: point
@@ -806,22 +834,31 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         }
                     }
                 },
+                // ── الطبقة الثابتة: بتتغيّر لما البيانات تتغيّر بس.
                 overlay = { s ->
-                    // ترتيب الطبقات: البحث تحت، التعليقات فوقه، التحديد فوق
-                    // الكل — التحديد حاجة لحظية والمستخدم لازم يشوف حدودها.
                     if (searchOpen) {
                         drawSearchLayer(s, hitsByPage, search.activeHit, c.warning.solid, c.accent)
                     }
-                    // أثناء شدّ الصندوق بنرسم الأشكال في مكانها الجديد
-                    // مباشرة. من غير المعاينة دي "اظبط أبعاده" بتبقى تخمين:
-                    // بتشدّ صندوق فاضي وتستنى ترفع إيدك عشان تشوف النتيجة.
-                    val previewFrom = grabFrom
-                    val previewTo = liveBox
-                    val previewing = previewFrom != null && previewTo != null
+                    // أثناء شدّ الصندوق الأشكال المحدّدة بترسم في الطبقة
+                    // الحيّة بمكانها الجديد، فبنتخطّاها هنا. المفتاح
+                    // `transforming` منطقي (بيتغيّر مرتين في الحركة كلها)
+                    // مش `liveBox` اللي بيتغيّر كل إطار — غير كده كنا
+                    // هنرجّع نفس المشكلة اللي فصلنا الطبقتين عشانها.
                     drawAnnotations(
                         s, annotationsByPage, annotationPoints,
-                        skip = if (previewing) selectedIds.toSet() else emptySet()
+                        skip = if (transforming) selectedIds.toSet() else emptySet()
                     )
+                    drawMeasurements(
+                        state = s,
+                        itemsByPage = measurementsByPage,
+                        pointsOf = { m -> measurementPoints[m.id].orEmpty() },
+                        scaleOf = { page -> scaleFor(page) }
+                    )
+                },
+                // ── الطبقة الحيّة: كل عيّنة قلم بتلمس دي بس.
+                liveOverlay = { s ->
+                    val previewFrom = grabFrom
+                    val previewTo = liveBox
                     if (previewFrom != null && previewTo != null) {
                         selectedIds.forEach { id ->
                             val item = fileAnnotations.firstOrNull { it.id == id }
@@ -839,16 +876,20 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                             }
                         }
                     }
+
                     if (draft.size >= 2) {
+                        // نفس معامل الضغط اللي هيتحفظ بيه. من غيره الخط
+                        // بيتغيّر سُمكه فجأة أول ما ترفع القلم — وده اللي
+                        // بيحسّس إن الكتابة "غير مستقرة".
                         drawAnnotation(
                             tool, Color(style.colorArgb), draft,
-                            style.widthPt, style.opacity, s.zoom
+                            style.widthPt * pressureWidthFactor(draftPressure.value),
+                            style.opacity, s.zoom
                         )
                     }
+
                     if (selection.isActive) drawSelection(s, selection.quads, c.accent)
 
-                    // صندوق التحديد ومقابضه فوق الأشكال — لازم يبانوا حتى
-                    // لو الشكل نفسه غامق.
                     if (tool == PdfTool.SELECT && selectPage >= 0) {
                         drawObjectSelection(
                             state = s,
@@ -862,14 +903,6 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         )
                     }
 
-                    // القياس فوق الكل: هو النتيجة اللي المستخدم بيقرأها،
-                    // ولو تعليق غطّاه بيبقى الرقم موجود ومش مقروء.
-                    drawMeasurements(
-                        state = s,
-                        itemsByPage = measurementsByPage,
-                        pointsOf = { m -> measurementPoints[m.id].orEmpty() },
-                        scaleOf = { page -> scaleFor(page) }
-                    )
                     if (measure.enabled) {
                         drawMeasureDraft(s, measure, pageScale, Color(MEASURE_COLOR))
                     }
@@ -1395,6 +1428,9 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
  * وأي فرق في مسافة أو سطر بيلغي النتيجة. أول كام حرف هي اللي بتنفع.
  */
 /** نصف قطر مسك مقبض الصندوق بالبكسل. */
+/** أقل مسافة بين عيّنتين في الخط الحر، بالبكسل مربّعة. */
+private const val MIN_SAMPLE_SQ = 9f
+
 private const val HANDLE_GRAB_PX = 28f
 
 /** سماحية اختيار شكل بالنقر، بالبكسل — إصبع مش فأرة. */
