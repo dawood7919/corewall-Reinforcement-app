@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -40,6 +41,7 @@ import com.corewall.qaqc.ui.design.Space
  * فالصفحة تتضاف في آخره. القايمة موجودة عشان الاسم مايتكتبش غلط —
  * "WIR-CW-12" و"WIR CW 12" طلبين مختلفين لو الكتابة هي الطريق الوحيد.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SendToWirSheet(
     page: Int,

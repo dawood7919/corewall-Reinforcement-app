@@ -251,6 +251,60 @@ def orphan_entities(sources: dict) -> list:
     return problems
 
 
+# ═══════════════════════════════════════════ ٥) opt-in ناقص
+
+# رموز بتحتاج @OptIn، والأنوتيشن اللي بتفتحها.
+#
+# الجدول ده **مبني على اللي وقعنا فيه فعلاً** مش على كل API تجريبي في
+# Compose: البناء بيعامل الـopt-in الناقص كـخطأ، فنسيان سطر واحد بيكلّف
+# خمس دقايق بناء. أي رمز بيتضاف هنا لازم يتجرّب على الشجرة الحالية الأول —
+# لو طلّع نتيجة على كود شغّال يبقى الصف غلط، مش الكود.
+#
+# الفحص على مستوى **الملف** مش الدالة: بيمسك النسيان الكامل (اللي بيحصل)،
+# ومابيمسكش @OptIn متحطّة على دالة غير اللي بتستخدم الرمز. ده مقصود —
+# صفر إنذار كاذب أهم من تغطية كاملة في فحص بيجري قبل كل بناء.
+OPT_IN = {
+    "ExperimentalMaterial3Api": (
+        "ModalBottomSheet",
+        "rememberModalBottomSheetState",
+        "BottomSheetScaffold",
+        "rememberBottomSheetScaffoldState",
+    ),
+    "ExperimentalLayoutApi": (
+        "FlowRow",
+        "FlowColumn",
+    ),
+    "ExperimentalFoundationApi": (
+        "stickyHeader",
+    ),
+}
+
+
+def missing_opt_in(sources: dict) -> list:
+    out = []
+    for f, text in sources.items():
+        for annotation, symbols in OPT_IN.items():
+            hits = [
+                s for s in symbols
+                if re.search(r"(?<![\w.])" + s + r"\s*[(<]", text)
+            ]
+            if not hits:
+                continue
+            # التعريف نفسه (لو المشروع عرّف رمز بنفس الاسم) مش استدعاء.
+            if re.search(r"fun\s+(" + "|".join(hits) + r")\s*[(<]", text):
+                continue
+            if annotation in re.findall(r"@(?:file:)?OptIn\(([^)]*)\)", text) \
+                    or any(annotation in g for g in re.findall(r"@(?:file:)?OptIn\(([^)]*)\)", text)):
+                continue
+            line = text.count("\n", 0, text.index(hits[0])) + 1
+            out.append(
+                f"{f.relative_to(REPO)}:{line}: "
+                f"{hits[0]} محتاج @OptIn({annotation}::class) — من غيره "
+                f"الكومبايلر بيرمي خطأ مش تحذير."
+            )
+    return out
+
+
 def main() -> int:
     files = sorted(SRC.rglob("*.kt"))
     sources = {f: strip_noise(f.read_text(encoding="utf-8")) for f in files}
@@ -296,6 +350,7 @@ def main() -> int:
     problems += duplicate_imports(files)
     problems += non_exhaustive_whens(sources, enum_values(sources))
     problems += orphan_entities(sources)
+    problems += missing_opt_in(sources)
 
     if problems:
         print("مشاكل بتوقّع البناء:\n")
