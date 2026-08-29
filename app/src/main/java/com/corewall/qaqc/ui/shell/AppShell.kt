@@ -107,6 +107,7 @@ import com.corewall.qaqc.ui.takeoff.TakeoffDataScreen
 import com.corewall.qaqc.ui.takeoff.TakeoffFormulasScreen
 import com.corewall.qaqc.ui.takeoff.TakeoffEditorScreen
 import com.corewall.qaqc.ui.pdf.PdfOrganizerScreen
+import com.corewall.qaqc.ui.pdf.RevisionMergeScreen
 import com.corewall.qaqc.ui.pdf.PdfViewerScreen
 import com.corewall.qaqc.ui.pour.PourReadinessScreen
 import com.corewall.qaqc.ui.settings.SettingsScreen
@@ -352,6 +353,11 @@ private fun Destination(vm: MainViewModel, dest: Dest, modifier: Modifier) {
             path = dest.path,
             onClose = { vm.back() },
             onOpenFile = { vm.openPdf(it) }
+        )
+        is Dest.RevisionMerge -> RevisionMergeScreen(
+            paths = dest.paths,
+            onClose = { vm.back() },
+            onOpenFile = { vm.filesChanged(); vm.openPdf(it) }
         )
         is Dest.CadViewer -> CadViewerScreen(path = dest.path, files = vm.files, onClose = { vm.closeCad() })
         is Dest.ImageViewer -> ImageViewerScreen(files = vm.files, path = dest.path, onClose = { vm.closeImage() })

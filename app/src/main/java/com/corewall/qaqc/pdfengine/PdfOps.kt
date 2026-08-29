@@ -9,6 +9,7 @@ import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.cos.COSDictionary
 import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
@@ -85,10 +86,15 @@ object PdfOps {
     suspend fun applyPagePlan(
         src: File,
         dest: File,
-        plan: List<PagePlan>
+        plan: List<PagePlan>,
+        /**
+         * فين المستند يتقري: الرام (الافتراضي) ولا ملف مؤقّت. ست رسومات
+         * A0 ملزوق ممكن يبقى مئات الميجات، وقرايته في الرام بتقفل التطبيق.
+         */
+        memory: MemoryUsageSetting? = null
     ): Result<Unit> = io {
         require(plan.isNotEmpty()) { "لازم تسيب صفحة واحدة على الأقل" }
-        PDDocument.load(src).use { doc ->
+        PDDocument.load(src, memory ?: MemoryUsageSetting.setupMainMemoryOnly()).use { doc ->
             val tree = doc.pages
             val original = (0 until tree.count).map { tree.get(it) }
             require(plan.all { it.source in original.indices }) { "رقم صفحة خارج المستند" }

@@ -235,6 +235,17 @@ sealed interface Dest {
         override val fullScreen = true
     }
 
+    /**
+     * بناء الست النهائي من إصدارات إرسالية — بيتفتح من اختيار ملفات
+     * متعدّدة في شاشة الملفات، فمش في [NavGraph.pushable].
+     */
+    @Immutable
+    data class RevisionMerge(val paths: List<String>) : Dest {
+        override val title = "الإصدار النهائي"
+        override val fullScreen = true
+        override val stateKey = "revision-merge"
+    }
+
     @Immutable
     data class CadViewer(val path: String) : Dest {
         override val title = "عارض المخطط"

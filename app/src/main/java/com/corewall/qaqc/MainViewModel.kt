@@ -45,6 +45,7 @@ import com.corewall.qaqc.notify.NoteReminders
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
@@ -2068,7 +2069,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
 
     fun openPdf(path: String) { navigator.push(Dest.PdfViewer(path)) }
+
+    fun openRevisionMerge(paths: List<String>) {
+        navigator.push(Dest.RevisionMerge(paths))
+    }
+
+    /**
+     * بيزيد مع كل ملف اتعمل من جوّه التطبيق. شاشة الملفات بتقرا المجلد
+     * في الخلفية بمفاتيح ثابتة، فمن غير الإشارة دي الملف الجديد مابيبانش
+     * غير لما تخرج من الشاشة وترجع.
+     */
+    fun filesChanged() { _filesRevision.value++ }
+
     fun openPdfOrganizer(path: String) { navigator.push(Dest.PdfOrganizer(path)) }
+
+    private val _filesRevision = MutableStateFlow(0)
+    val filesRevision: StateFlow<Int> = _filesRevision.asStateFlow()
+
     fun closePdf() { back() }
 
     /**

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -116,6 +117,7 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val favourites by vm.fileFavourites.collectAsStateWithLifecycle()
     val recent by vm.fileRecent.collectAsStateWithLifecycle()
     val documents by vm.documents.collectAsStateWithLifecycle()
+    val filesRevision by vm.filesRevision.collectAsStateWithLifecycle()
 
     var subPath by rememberSaveable(level) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
@@ -148,7 +150,7 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
      * أو اتنين. `emptyList()` كقيمة أولية مقصودة: الحالة الفاضية بتظهر
      * لجزء من الثانية بس، وأحسن من إطار ضايع.
      */
-    val entries by produceState(initialValue = emptyList<File>(), currentDir, refresh) {
+    val entries by produceState(initialValue = emptyList<File>(), currentDir, refresh, filesRevision) {
         value = withContext(Dispatchers.IO) { vm.files.list(currentDir) }
     }
 
@@ -306,6 +308,8 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             SelectionBar(
                 count = selection.size,
                 single = selection.singleOrNull()?.let(::File),
+                canMergeRevisions = selection.size >= 2 &&
+                    selection.all { it.endsWith(".pdf", ignoreCase = true) },
                 onClear = { selection = emptySet() },
                 onFavourite = {
                     selection.forEach { vm.toggleFileFavourite(it) }
@@ -321,6 +325,14 @@ fun FilesScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                     }
                     selection = emptySet()
+                },
+                // الترتيب هنا هو ترتيب العرض في المجلد؛ الشاشة بترتّبهم
+                // بالرقم اللي في آخر الاسم وبتسيب المستخدم يعدّل.
+                onMergeRevisions = {
+                    val ordered = shown.map { it.absolutePath }.filter { it in selection }
+                    val picked = ordered + (selection - ordered.toSet())
+                    selection = emptySet()
+                    vm.openRevisionMerge(picked)
                 }
             )
         }
@@ -588,12 +600,15 @@ private fun SearchResults(results: List<FileSearchHit>, onOpen: (String) -> Unit
 private fun SelectionBar(
     count: Int,
     single: File?,
+    /** فيه ملفين PDF أو أكتر مختارين — الدمج بالإصدارات ممكن. */
+    canMergeRevisions: Boolean,
     onClear: () -> Unit,
     onFavourite: () -> Unit,
     onDelete: () -> Unit,
     onShare: (File) -> Unit,
     onAnalyze: (File) -> Unit,
-    onAddToProject: (File) -> Unit
+    onAddToProject: (File) -> Unit,
+    onMergeRevisions: () -> Unit
 ) {
     val c = LocalCwColors.current
     Row(
@@ -611,6 +626,9 @@ private fun SelectionBar(
             modifier = Modifier.weight(1f),
             maxLines = 1
         )
+        if (canMergeRevisions) {
+            CwIconButton(Icons.Filled.Layers, "الإصدار النهائي", onMergeRevisions)
+        }
         if (single != null) {
             CwIconButton(Icons.Filled.AutoAwesome, "حلّل الملف", { onAnalyze(single) })
             CwIconButton(Icons.Filled.Hub, "ضمّه لمعرفة المشروع", { onAddToProject(single) })
