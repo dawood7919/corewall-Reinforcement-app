@@ -254,6 +254,9 @@ interface PdfAnnotationDao {
 
     @Query("DELETE FROM pdf_annotations WHERE id = (SELECT MAX(id) FROM pdf_annotations WHERE filePath = :filePath AND page = :page)")
     suspend fun deleteLast(filePath: String, page: Int)
+
+    @Query("DELETE FROM pdf_annotations WHERE filePath = :filePath")
+    suspend fun clearForFile(filePath: String)
 }
 
 @Dao
@@ -891,4 +894,51 @@ interface TakeoffDao {
 
     @Query("DELETE FROM takeoff_annotations WHERE drawingId = :drawingId")
     suspend fun clearDrawingAnnotations(drawingId: Long)
+}
+
+/**
+ * طلبات الفحص وصفحاتها.
+ *
+ * الطلب بيتخزّن بالدور، بس القايمة بتتقري كلها والفلترة بتحصل فوق —
+ * نفس نمط باقي الشاشات المربوطة بالدور الشغّال، وعدد الطلبات في مشروع
+ * واحد بالمئات مش بالآلاف.
+ */
+@Dao
+interface WirDao {
+    @Query("SELECT * FROM wirs ORDER BY updatedAt DESC")
+    fun observeAll(): Flow<List<WirEntity>>
+
+    @Query("SELECT * FROM wirs ORDER BY updatedAt DESC")
+    suspend fun getAll(): List<WirEntity>
+
+    @Query("SELECT * FROM wirs WHERE id = :id")
+    suspend fun byId(id: Long): WirEntity?
+
+    /** الاسم مفتاح المستخدم: "أرسل لـWIR" باسم موجود بيضيف على نفس الملف. */
+    @Query("SELECT * FROM wirs WHERE level = :level AND name = :name LIMIT 1")
+    suspend fun byName(level: String, name: String): WirEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: WirEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<WirEntity>)
+
+    @Query("DELETE FROM wirs WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("SELECT * FROM wir_items WHERE wirId = :wirId ORDER BY page")
+    fun observeItems(wirId: Long): Flow<List<WirItemEntity>>
+
+    @Query("SELECT * FROM wir_items ORDER BY wirId, page")
+    suspend fun allItems(): List<WirItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertItem(item: WirItemEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertItems(items: List<WirItemEntity>)
+
+    @Query("DELETE FROM wir_items WHERE wirId = :wirId")
+    suspend fun clearItems(wirId: Long)
 }

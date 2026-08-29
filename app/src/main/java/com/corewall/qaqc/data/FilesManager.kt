@@ -63,6 +63,28 @@ class FilesManager(private val context: Context) {
         return dir.ensure()
     }
 
+    /**
+     * مجلد طلبات الفحص (WIR) لكل دور.
+     *
+     * منفصل عن مجلد ملفات الدور عن قصد: ملف الـWIR بيتولّد وبيتعدّل من
+     * التطبيق، ومش المفروض يتلخبط مع الملفات اللي المستخدم رافعها.
+     */
+    fun wirDir(level: String): File = File(root, "wir/${sanitize(level)}").ensure()
+
+    /**
+     * اسم ملف آمن من اسم كتبه المستخدم.
+     *
+     * [sanitize] بيشيل أي حرف مش لاتيني — وده صح لأسماء الأدوار الجاية من
+     * الأكواد، وغلط تماماً لاسم كتبه مهندس بالعربي: "قواطيع الدور الأول"
+     * كانت هتبقى شرطات سفلية. هنا بنشيل المحارف اللي نظام الملفات نفسه
+     * بيرفضها بس.
+     */
+    fun safeFileName(name: String): String =
+        name.replace(Regex("[\\\\/:*?\"<>|\\x00-\\x1F]"), "_")
+            .trim()
+            .take(80)
+            .ifBlank { "WIR" }
+
     private fun sanitize(name: String) = name.replace(Regex("[^A-Za-z0-9._\\- ]"), "_")
 
     /** تنظيف مسار مجلد نسبي (يمنع الخروج خارج الجذر). */

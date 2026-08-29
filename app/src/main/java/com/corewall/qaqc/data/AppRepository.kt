@@ -21,6 +21,8 @@ import com.corewall.qaqc.data.db.PdfScaleEntity
 import com.corewall.qaqc.data.db.RangeEditEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
+import com.corewall.qaqc.data.db.WirEntity
+import com.corewall.qaqc.data.db.WirItemEntity
 import com.corewall.qaqc.data.model.BeamRange
 import com.corewall.qaqc.data.model.PlanData
 import com.corewall.qaqc.data.model.ScheduleData
@@ -323,6 +325,32 @@ class AppRepository(context: Context) {
     suspend fun deleteSitePhoto(photo: SitePhotoEntity) {
         db.sitePhotoDao().delete(photo.id)
         runCatching { java.io.File(photo.filePath).delete() }
+    }
+
+    // ---------- WIR (طلبات فحص الأعمال) ----------
+
+    val wirs: Flow<List<WirEntity>> = db.wirDao().observeAll()
+
+    fun wirItems(wirId: Long): Flow<List<WirItemEntity>> = db.wirDao().observeItems(wirId)
+
+    suspend fun wirByName(level: String, name: String): WirEntity? =
+        db.wirDao().byName(level, name)
+
+    suspend fun saveWir(wir: WirEntity): Long = db.wirDao().upsert(wir)
+
+    suspend fun addWirItem(item: WirItemEntity): Long = db.wirDao().upsertItem(item)
+
+    /**
+     * المسح بيشيل الملف والتعليقات كمان.
+     *
+     * سيب التعليقات وراك معناه إن WIR جديد بنفس الاسم هيرث هايلايت طلب
+     * قديم — المسار هو المفتاح، والاسم بيتكرر بطبيعة الشغل.
+     */
+    suspend fun deleteWir(wir: WirEntity) {
+        db.wirDao().clearItems(wir.id)
+        db.wirDao().delete(wir.id)
+        db.pdfAnnotationDao().clearForFile(wir.filePath)
+        runCatching { java.io.File(wir.filePath).delete() }
     }
 
     // ---------- Manpower (ملفات الحضور + السجلات اليومية) ----------

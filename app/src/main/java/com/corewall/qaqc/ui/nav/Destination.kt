@@ -275,7 +275,8 @@ enum class DataSection(val label: String) {
     FILES("الملفات"),
     TASKS("المهام"),
     NOTES("الملاحظات"),
-    PHOTOS("الصور")
+    PHOTOS("الصور"),
+    WIR("WIR")
 }
 
 /** أقسام شاشة العمالة — تبويب داخلي كمان. */

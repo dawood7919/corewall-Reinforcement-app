@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Straighten
@@ -266,6 +267,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     var watermarkOpen by remember(path) { mutableStateOf(false) }
     var mergeOpen by remember(path) { mutableStateOf(false) }
     var splitOpen by remember(path) { mutableStateOf(false) }
+    var wirOpen by remember(path) { mutableStateOf(false) }
     var opRunning by remember(path) { mutableStateOf(false) }
     var opProgress by remember(path) { mutableStateOf<Pair<Int, Int>?>(null) }
 
@@ -282,6 +284,9 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
 
     val fileBookmarks by remember(path) { vm.pdfBookmarksFor(path) }
         .collectAsStateWithLifecycle(emptyList())
+
+    /** طلبات الفحص المفتوحة — عشان الإرسال يختار من الموجود بدل ما يكتب. */
+    val wirs by vm.wirs.collectAsStateWithLifecycle()
 
     /**
      * استرجاع آخر موقع — بيشتغل مرة واحدة عند فتح الملف.
@@ -737,7 +742,8 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                             active.allSizes()
                         )
                     },
-                    onExport = { exportLauncher.launch("${file.nameWithoutExtension}-معلّق.pdf") }
+                    onExport = { exportLauncher.launch("${file.nameWithoutExtension}-معلّق.pdf") },
+                    onSendToWir = { wirOpen = true }
                 )
             }
 
@@ -987,6 +993,20 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         }
                     },
                     onDismiss = { if (!opRunning) mergeOpen = false }
+                )
+            }
+
+            if (wirOpen) {
+                SendToWirSheet(
+                    page = state.currentPage,
+                    existing = wirs,
+                    onSend = { name ->
+                        wirOpen = false
+                        vm.sendPageToWir(name, path, state.currentPage) { message ->
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    onDismiss = { wirOpen = false }
                 )
             }
 
@@ -1301,7 +1321,8 @@ private fun TopChrome(
     onTogglePerf: () -> Unit,
     onToggleRail: () -> Unit,
     onToggleMode: () -> Unit,
-    onExport: () -> Unit
+    onExport: () -> Unit,
+    onSendToWir: () -> Unit
 ) {
     val c = LocalCwColors.current
     var menuOpen by remember { mutableStateOf(false) }
@@ -1368,6 +1389,11 @@ private fun TopChrome(
                     DropdownMenuItem(
                         text = { Text(if (perfVisible) "إخفاء مؤشرات الأداء" else "إظهار مؤشرات الأداء") },
                         onClick = { menuOpen = false; onTogglePerf() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("أرسل الصفحة لـWIR") },
+                        leadingIcon = { Icon(Icons.Filled.FactCheck, contentDescription = null) },
+                        onClick = { menuOpen = false; onSendToWir() }
                     )
                     DropdownMenuItem(
                         text = { Text("تنظيم الصفحات") },

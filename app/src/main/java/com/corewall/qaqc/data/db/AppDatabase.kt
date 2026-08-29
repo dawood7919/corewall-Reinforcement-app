@@ -52,9 +52,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TakeoffCategoryEntity::class,
         TakeoffGroupEntity::class,
         TakeoffFormulaEntity::class,
-        TakeoffAnnotationEntity::class
+        TakeoffAnnotationEntity::class,
+        WirEntity::class,
+        WirItemEntity::class
     ],
-    version = 28,
+    version = 29,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -90,6 +92,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pdfScaleDao(): PdfScaleDao
     abstract fun noteLabelDao(): NoteLabelDao
     abstract fun noteLabelLinkDao(): NoteLabelLinkDao
+    abstract fun wirDao(): WirDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -647,6 +650,39 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * طلبات الفحص (WIR).
+         *
+         * الجملتين دول لازم يطابقوا اللي Room بيولّده حرف بحرف — أي فرق
+         * (فهرس ناقص، ترتيب عمود، `NOT NULL` زيادة) بيخلّي Room يرمي عند
+         * أول فتح والتطبيق يقفل. `tools/check_room_schema.py` بيقارنهم
+         * بالمخطط المصدَّر في الـCI قبل نشر الـAPK.
+         */
+        private val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wirs` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, `level` TEXT NOT NULL, " +
+                        "`filePath` TEXT NOT NULL, `pageCount` INTEGER NOT NULL, " +
+                        "`status` TEXT NOT NULL, `note` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_wirs_level` ON `wirs` (`level`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wir_items` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`wirId` INTEGER NOT NULL, `sourcePath` TEXT NOT NULL, " +
+                        "`sourceName` TEXT NOT NULL, `sourcePage` INTEGER NOT NULL, " +
+                        "`page` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_wir_items_wirId` " +
+                        "ON `wir_items` (`wirId`)"
+                )
+            }
+        }
+
         private val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_annotations_filePath` ON `pdf_annotations` (`filePath`)")
@@ -733,7 +769,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                     MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27,
-                    MIGRATION_27_28
+                    MIGRATION_27_28, MIGRATION_28_29
                 ).build().also { instance = it }
             }
     }

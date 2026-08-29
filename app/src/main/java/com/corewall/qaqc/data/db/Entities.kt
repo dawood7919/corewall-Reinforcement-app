@@ -1015,3 +1015,49 @@ data class TakeoffAnnotationEntity(
     val visible: Boolean = true,
     val createdAt: Long
 )
+
+/**
+ * طلب فحص أعمال (WIR) — ملف PDF واحد بيتجمّع فيه الصفحات المطلوب فحصها.
+ *
+ * ليه ملف واحد مش مجموعة صور أو سجلات: الـWIR بيروح للاستشاري كملف
+ * يتطبع ويتوقّع عليه. ولإنه PDF عادي على القرص، كل أدوات العارض بتشتغل
+ * عليه من غير أي كود جديد — هايلايت، سحابة، سهم، نص، وتصدير نسخة
+ * بتعليقات PDF حقيقية.
+ *
+ * التعليقات بتتخزّن في `pdf_annotations` بمسار الملف ورقم الصفحة، فإضافة
+ * صفحة جديدة **في الآخر** مابتحركش أي تعليق موجود.
+ */
+@Serializable
+@Entity(tableName = "wirs", indices = [Index(value = ["level"])])
+data class WirEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val level: String,
+    val filePath: String,
+    val pageCount: Int = 0,
+    /** OPEN | SUBMITTED | APPROVED | REJECTED */
+    val status: String = "OPEN",
+    val note: String = "",
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * صفحة جوّه WIR ومصدرها.
+ *
+ * من غير السطر ده الـWIR بيبقى ورق مقطوع من غير مرجع: أول سؤال بيتسأل
+ * على أي صفحة متأشّر عليها هو "دي من أنهي لوحة وأنهي صفحة فيها".
+ */
+@Serializable
+@Entity(tableName = "wir_items", indices = [Index(value = ["wirId"])])
+data class WirItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val wirId: Long,
+    val sourcePath: String,
+    val sourceName: String,
+    /** فهرس الصفحة في الملف الأصلي (من صفر). */
+    val sourcePage: Int,
+    /** فهرس الصفحة جوّه ملف الـWIR (من صفر). */
+    val page: Int,
+    val addedAt: Long
+)

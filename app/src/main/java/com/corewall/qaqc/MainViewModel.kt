@@ -21,6 +21,10 @@ import com.corewall.qaqc.data.db.PdfMeasurementEntity
 import com.corewall.qaqc.data.db.PdfScaleEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
+import com.corewall.qaqc.data.db.WirEntity
+import com.corewall.qaqc.data.db.WirItemEntity
+import com.corewall.qaqc.pdfengine.PdfOps
+import com.corewall.qaqc.pdfengine.WirPdf
 import com.corewall.qaqc.creative.CreativeDocumentContent
 import com.corewall.qaqc.creative.CreativePdfExporter
 import com.corewall.qaqc.creative.CreativeTemplate
@@ -616,6 +620,108 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val viewingImage: StateFlow<String?> = _viewingImage
     fun openImage(path: String) { navigator.push(Dest.ImageViewer(path)) }
     fun closeImage() { back() }
+
+    // -------- WIR (طلبات فحص الأعمال) --------
+
+    /**
+     * طلبات الدور الشغّال. الطلب مربوط بالدور زي كل حاجة تانية في التطبيق:
+     * "الحوائط اللي هتتفحص" سؤال بيتسأل جوّه دور، مش على المشروع كله.
+     */
+    val wirs: StateFlow<List<WirEntity>> by lazy {
+        combine(repo.wirs, _currentLevel) { all, level -> all.filter { it.level == level } }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    }
+
+    fun wirItems(wirId: Long) = repo.wirItems(wirId)
+
+    /**
+     * بيبعت صفحة من أي PDF لطلب فحص.
+     *
+     * الاسم هو المفتاح: اسم موجود → الصفحة بتتضاف في آخر نفس الملف؛ اسم
+     * جديد → طلب جديد. ده اللي بيخلّي بناء الطلب يمشي مع التصفّح — تلاقي
+     * تفصيلة، تبعتها، تكمّل — من غير ما تسيب الرسمة.
+     */
+    fun sendPageToWir(name: String, sourcePath: String, page: Int, onDone: (String) -> Unit) {
+        val clean = name.trim()
+        if (clean.isBlank()) { onDone("اكتب اسم للطلب الأول"); return }
+        viewModelScope.launch {
+            PdfOps.ensureInit(appContext)
+            val level = _currentLevel.value
+            val source = java.io.File(sourcePath)
+            val existing = repo.wirByName(level, clean)
+            val dest = existing?.let { java.io.File(it.filePath) } ?: run {
+                // ملف قديم بنفس الاسم من طلب اتمسح: الإضافة عليه معناها
+                // صفحات من طلب قديم بتظهر في طلب جديد.
+                val dir = files.wirDir(level)
+                var candidate = java.io.File(dir, "${files.safeFileName(clean)}.pdf")
+                var i = 2
+                while (candidate.exists()) {
+                    candidate = java.io.File(dir, "${files.safeFileName(clean)} ($i).pdf")
+                    i++
+                }
+                candidate
+            }
+            WirPdf.appendPage(
+                source = source,
+                page = page,
+                dest = dest,
+                workDir = java.io.File(appContext.cacheDir, "wir")
+            ).onSuccess { pages ->
+                val now = System.currentTimeMillis()
+                val base = existing ?: WirEntity(
+                    name = clean, level = level, filePath = dest.absolutePath,
+                    createdAt = now, updatedAt = now
+                )
+                val id = repo.saveWir(
+                    base.copy(filePath = dest.absolutePath, pageCount = pages, updatedAt = now)
+                )
+                repo.addWirItem(
+                    WirItemEntity(
+                        wirId = if (existing != null) existing.id else id,
+                        sourcePath = sourcePath,
+                        sourceName = source.name,
+                        sourcePage = page,
+                        page = pages - 1,
+                        addedAt = now
+                    )
+                )
+                onDone("اتضافت لـ«$clean» — بقى فيه $pages صفحة")
+            }.onFailure { e ->
+                onDone("مقدرناش نضيف الصفحة: ${e.message ?: "خطأ غير معروف"}")
+            }
+        }
+    }
+
+    /**
+     * تغيير الاسم بيغيّر **الاسم بس**، الملف بيفضل مكانه.
+     *
+     * التعليقات متخزّنة بمسار الملف، فنقل الملف معناه ضياع كل هايلايت
+     * اتعمل عليه. الاسم للعرض والملف للتخزين — والاتنين مالهمش لازمة
+     * يبقوا نفس الحاجة.
+     */
+    fun renameWir(wir: WirEntity, name: String) {
+        val clean = name.trim()
+        if (clean.isBlank() || clean == wir.name) return
+        viewModelScope.launch {
+            repo.saveWir(wir.copy(name = clean, updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    fun setWirStatus(wir: WirEntity, status: String) {
+        viewModelScope.launch {
+            repo.saveWir(wir.copy(status = status, updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    fun deleteWir(wir: WirEntity) {
+        viewModelScope.launch { repo.deleteWir(wir) }
+    }
+
+    fun shareWir(wir: WirEntity) {
+        val file = java.io.File(wir.filePath)
+        if (file.exists()) files.share(file)
+    }
 
     // -------- Site Photos --------
 
