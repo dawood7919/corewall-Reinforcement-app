@@ -80,6 +80,16 @@ fun PdfCanvas(
     onInkMove: (Offset, Float) -> Unit = { _, _ -> },
     /** بيقول لطبقة التنقّل تتجاهل مؤشّرات معيّنة (القلم في وضع القلم). */
     gestureAccept: (PointerKind) -> Boolean = { true },
+    /**
+     * النقر يفضل شغّال حتى مع [drawingActive].
+     *
+     * أدوات الرسم مش محتاجة النقر — نقرة مالهاش معنى وسط رسم خط، فبنقفله.
+     * أداة التحديد عكس كده تماماً: **النقر هو فعلها الأساسي**، والسحب
+     * للمستطيل. الطبقتين بيتعايشوا زي ما التنقّل والنقر بيتعايشوا دلوقتي —
+     * كاشف السحب مابيستهلكش الحدث غير بعد ما يعدّي عتبة اللمس، والنقرة
+     * مابتعدّيهاش.
+     */
+    tapsWhileDrawing: Boolean = false,
     onTap: (Offset, PointerKind) -> Unit = { _, _ -> },
     /** ضغطة مطوّلة — بيبدأ بيها تحديد النص. */
     onLongPress: (Offset, PointerKind) -> Unit = { _, _ -> },
@@ -193,8 +203,8 @@ fun PdfCanvas(
             }
             // ③ النقر — بيوصل معاه نوع المؤشّر عشان القياس يفرّق بين
             //    نقرة القلم ونقرة الصباع.
-            .pointerInput(drawingActive) {
-                if (!drawingActive) {
+            .pointerInput(drawingActive, tapsWhileDrawing) {
+                if (!drawingActive || tapsWhileDrawing) {
                     detectPdfTaps(
                         onTap = { point, kind -> onTap(point, kind) },
                         onLongPress = { point, kind -> onLongPress(point, kind) },

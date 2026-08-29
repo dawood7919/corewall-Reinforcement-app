@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Highlight
+import androidx.compose.material.icons.filled.HighlightAlt
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Remove
@@ -50,6 +51,16 @@ enum class PdfTool(
     val filled: Boolean = false
 ) {
     PAN(null, "تنقّل", Icons.Filled.PanTool),
+
+    /**
+     * تحديد وتعديل — مش أداة رسم، فمالهاش `id` ومابتنتجش علامة.
+     *
+     * نقرة بتختار الشكل اللي تحتها، وسحب على الفاضي بيرسم مستطيل تحديد
+     * وكل شكل بيلمسه بيتحدّد. زرار واحد لأن الاتنين نفس النية: "عايز أمسك
+     * حاجة موجودة"، والتفريق بينهم هو نفس التفريق بين نقرة وسحب في أي
+     * محرّر.
+     */
+    SELECT(null, "تحديد", Icons.Filled.HighlightAlt),
 
     PEN(PdfAnnotationEntity.TOOL_FREEHAND, "قلم", Icons.Filled.Draw, freeform = true, defaultWidthPt = 2f),
 
@@ -139,7 +150,7 @@ fun DrawScope.drawAnnotation(
     )
 
     when (tool) {
-        PdfTool.PAN -> Unit
+        PdfTool.PAN, PdfTool.SELECT -> Unit
 
         PdfTool.HIGHLIGHT ->
             drawRect(paint, rect.topLeft, Size(rect.width, rect.height))

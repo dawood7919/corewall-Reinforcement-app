@@ -60,8 +60,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -114,6 +118,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.math.max
+import kotlin.math.min
 import java.io.File
 
 private val json = Json
@@ -370,6 +376,30 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
      */
     val redoStack = remember(path) { mutableStateListOf<PdfAnnotationEntity>() }
 
+    // ── تحديد الأشكال وتعديلها
+    /** العلامات المحدّدة دلوقتي. صفحة واحدة بس — التحديد عبر صفحات مالوش معنى. */
+    val selectedIds = remember(path) { mutableStateListOf<Long>() }
+    var selectPage by remember(path) { mutableIntStateOf(-1) }
+    /** مستطيل التحديد أثناء السحب — بالإحداثيات المنسّبة للصفحة. */
+    var marquee by remember(path) { mutableStateOf<Rect?>(null) }
+    /** المقبض اللي ماسكه دلوقتي، وصندوق البداية والصندوق الحيّ. */
+    var grabbed by remember(path) { mutableStateOf<BoxHandle?>(null) }
+    var grabFrom by remember(path) { mutableStateOf<Rect?>(null) }
+    var liveBox by remember(path) { mutableStateOf<Rect?>(null) }
+    var dragLast by remember(path) { mutableStateOf(Offset.Zero) }
+    /** نقطة بداية مستطيل التحديد — لازم تتحفظ لوحدها، لأن المستطيل
+     *  المرتّب بيفقد معلومة "بدأنا من أنهي ركن" أول ما تسحب لفوق أو لليسار. */
+    var marqueeAnchor by remember(path) { mutableStateOf(Offset.Zero) }
+
+    fun clearSelection() {
+        selectedIds.clear()
+        selectPage = -1
+        marquee = null
+        grabbed = null
+        grabFrom = null
+        liveBox = null
+    }
+
     /** بيرمي الخط الحالي من غير ما يحفظه — للإلغاء ولخط قصير مالوش معنى. */
     fun discardDraft() {
         draft.clear()
@@ -434,6 +464,26 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     // مع التمرير، يعني الشاشة دي بتعيد التركيب كتير وهي فاتحة.
     val pageAnnotations = remember(fileAnnotations, state.currentPage) {
         fileAnnotations.filter { it.page == state.currentPage }
+    }
+
+    /** صندوق التحديد الحالي — اتحاد صناديق الأشكال المحدّدة. */
+    fun selectionBox(): Rect? = unionBounds(
+        selectedIds.mapNotNull { id -> annotationBounds(annotationPoints[id].orEmpty()) }
+    )
+
+    /** بيحفظ التحويل من [grabFrom] لـ[liveBox] على كل شكل محدّد. */
+    fun commitTransform() {
+        val from = grabFrom
+        val to = liveBox
+        grabbed = null; grabFrom = null; liveBox = null
+        if (from == null || to == null || !to.movedFrom(from)) return
+        val edited = selectedIds.mapNotNull { id ->
+            val entity = fileAnnotations.firstOrNull { it.id == id } ?: return@mapNotNull null
+            val points = annotationPoints[id].orEmpty()
+            if (points.isEmpty()) return@mapNotNull null
+            entity.copy(pointsJson = json.encodeToString(transformPoints(points, from, to)))
+        }
+        vm.updatePdfAnnotations(edited)
     }
 
     fun undo() {
@@ -570,16 +620,63 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                 session = active,
                 // في وضع القلم الإيماءات بتفضل شغّالة عشان الصباع يمرّر
                 // ويكبّر، والقلم بياخد الحبر من طبقته.
-                drawingActive = tool.isDrawing && !measure.enabled && !settings.stylusOnly,
+                // التحديد بياخد السحب زي الرسم، بس **حتى في وضع القلم**:
+                // التحديد مش حبر، والصباع المفروض يعرف يمسك شكل.
+                drawingActive = !measure.enabled &&
+                    (tool == PdfTool.SELECT || (tool.isDrawing && !settings.stylusOnly)),
                 onDrawStart = { p ->
-                    state.pageHit(p)?.let { hit ->
-                        draftPage = hit.page
-                        draft.clear()
-                        draft += p
+                    if (tool == PdfTool.SELECT) {
+                        val hit = state.pageHit(p)
+                        val at = hit?.let { state.pointOnPage(it.page, p) }
+                        if (hit != null && at != null) {
+                            dragLast = p
+                            // المقابض بتخصّ صفحة التحديد بس. سحب على صفحة
+                            // تانية معناه تحديد جديد، مش تعديل على القديم.
+                            val box = if (hit.page == selectPage) selectionBox() else null
+                            val handle = box?.let {
+                                handleAt(
+                                    it, at.x, at.y,
+                                    state.normalisedTolerance(hit.page, HANDLE_GRAB_PX)
+                                )
+                            }
+                            if (handle != null && box != null) {
+                                grabbed = handle
+                                grabFrom = box
+                                liveBox = box
+                            } else {
+                                // سحب على الفاضي = مستطيل تحديد جديد، والقديم
+                                // بيتفضّى فوراً مش في الآخر — غير كده الشاشة
+                                // بترسم صناديق صفحة تانية فوق دي.
+                                selectedIds.clear()
+                                selectPage = hit.page
+                                marqueeAnchor = at
+                                marquee = Rect(at.x, at.y, at.x, at.y)
+                            }
+                        }
+                    } else {
+                        state.pageHit(p)?.let { hit ->
+                            draftPage = hit.page
+                            draft.clear()
+                            draft += p
+                        }
                     }
                 },
                 onDrawMove = { p ->
-                    if (draftPage >= 0) {
+                    if (tool == PdfTool.SELECT) {
+                        val page = selectPage
+                        val at = if (page >= 0) state.pointOnPage(page, p) else null
+                        val was = if (page >= 0) state.pointOnPage(page, dragLast) else null
+                        if (at != null && was != null) {
+                            val handle = grabbed
+                            val current = marquee
+                            if (handle != null) {
+                                liveBox = liveBox?.let { handle.applyTo(it, at.x - was.x, at.y - was.y) }
+                            } else if (current != null) {
+                                marquee = rectOf(marqueeAnchor, at)
+                            }
+                            dragLast = p
+                        }
+                    } else if (draftPage >= 0) {
                         if (tool.freeform) {
                             draft += p
                         } else {
@@ -588,8 +685,34 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         }
                     }
                 },
-                onDrawEnd = { commitDraft() },
-                onDrawCancel = { discardDraft() },
+                onDrawEnd = {
+                    if (tool == PdfTool.SELECT) {
+                        val box = marquee
+                        if (box != null) {
+                            marquee = null
+                            // مستطيل صغير جداً = نقرة اتعاملت كسحب. سيبها
+                            // للنقرة تتعامل معاها بدل ما نفضّي التحديد.
+                            if (box.width > MARQUEE_MIN || box.height > MARQUEE_MIN) {
+                                val picked = annotationsByPage[selectPage].orEmpty().filter { a ->
+                                    annotationBounds(annotationPoints[a.id].orEmpty())
+                                        ?.touches(box) == true
+                                }
+                                selectedIds.addAll(picked.map { it.id })
+                            }
+                        } else {
+                            commitTransform()
+                        }
+                    } else {
+                        commitDraft()
+                    }
+                },
+                onDrawCancel = {
+                    if (tool == PdfTool.SELECT) {
+                        marquee = null; grabbed = null; grabFrom = null; liveBox = null
+                    } else {
+                        discardDraft()
+                    }
+                },
                 inkAccept = inkAccept,
                 onInkStart = { point, pressure ->
                     state.pageHit(point)?.let { hit ->
@@ -613,6 +736,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     }
                 },
                 gestureAccept = gestureAccept,
+                tapsWhileDrawing = tool == PdfTool.SELECT,
                 onTap = { point, kind ->
                     when {
                         // في وضع القياس النقرة بتحطّ نقطة. إخفاء الواجهة
@@ -626,6 +750,40 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                             if (hit != null) measure.addPoint(hit.page, hit.nx, hit.ny)
                         }
                         measure.enabled -> chromeVisible = !chromeVisible
+                        // نقرة بأداة التحديد بتمسك الشكل اللي تحتها.
+                        tool == PdfTool.SELECT -> {
+                            val hit = state.pageHit(point)
+                            val picked = hit?.let { h ->
+                                val tolerance = state.normalisedTolerance(h.page, HIT_TOLERANCE_PX)
+                                annotationsByPage[h.page].orEmpty()
+                                    .filter { a ->
+                                        annotationHit(
+                                            PdfTool.fromId(a.tool),
+                                            annotationPoints[a.id].orEmpty(),
+                                            h.nx, h.ny, tolerance
+                                        )
+                                    }
+                                    // الأصغر مساحة هو الأقرب لنية المستخدم:
+                                    // شكل صغير جوّه شكل كبير المفروض يتمسك هو.
+                                    .minByOrNull { a ->
+                                        annotationBounds(annotationPoints[a.id].orEmpty())
+                                            ?.let { it.width * it.height } ?: Float.MAX_VALUE
+                                    }
+                            }
+                            if (picked != null && hit != null) {
+                                selectedIds.clear()
+                                selectedIds.add(picked.id)
+                                selectPage = hit.page
+                            } else {
+                                // نقرة على الفاضي بتفضّي التحديد. ولو مافيش
+                                // تحديد أصلاً بتعمل اللي بتعمله دايماً —
+                                // تخفي الواجهة. من غير كده الشريط بيبقى
+                                // مالوش طريقة يختفي وانت في وضع التحديد.
+                                val had = selectedIds.isNotEmpty()
+                                clearSelection()
+                                if (!had) chromeVisible = !chromeVisible
+                            }
+                        }
                         // أي نقرة بتلغي التحديد الأول. النقرة اللي بتخفي
                         // الواجهة وسايبة تحديد معلّق بتبان كأنها باج.
                         selection.isActive -> selection.clear()
@@ -654,7 +812,33 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                     if (searchOpen) {
                         drawSearchLayer(s, hitsByPage, search.activeHit, c.warning.solid, c.accent)
                     }
-                    drawAnnotations(s, annotationsByPage, annotationPoints)
+                    // أثناء شدّ الصندوق بنرسم الأشكال في مكانها الجديد
+                    // مباشرة. من غير المعاينة دي "اظبط أبعاده" بتبقى تخمين:
+                    // بتشدّ صندوق فاضي وتستنى ترفع إيدك عشان تشوف النتيجة.
+                    val previewFrom = grabFrom
+                    val previewTo = liveBox
+                    val previewing = previewFrom != null && previewTo != null
+                    drawAnnotations(
+                        s, annotationsByPage, annotationPoints,
+                        skip = if (previewing) selectedIds.toSet() else emptySet()
+                    )
+                    if (previewFrom != null && previewTo != null) {
+                        selectedIds.forEach { id ->
+                            val item = fileAnnotations.firstOrNull { it.id == id }
+                            val stored = annotationPoints[id].orEmpty()
+                            if (item != null && stored.isNotEmpty()) {
+                                val moved = transformPoints(stored, previewFrom, previewTo)
+                                val screen = (moved.indices step 2).mapNotNull { i ->
+                                    if (i + 1 >= moved.size) null
+                                    else s.pagePointToScreen(item.page, moved[i], moved[i + 1])
+                                }
+                                drawAnnotation(
+                                    PdfTool.fromId(item.tool), Color(item.color), screen,
+                                    item.strokeWidth, item.opacity, s.zoom
+                                )
+                            }
+                        }
+                    }
                     if (draft.size >= 2) {
                         drawAnnotation(
                             tool, Color(style.colorArgb), draft,
@@ -662,6 +846,21 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         )
                     }
                     if (selection.isActive) drawSelection(s, selection.quads, c.accent)
+
+                    // صندوق التحديد ومقابضه فوق الأشكال — لازم يبانوا حتى
+                    // لو الشكل نفسه غامق.
+                    if (tool == PdfTool.SELECT && selectPage >= 0) {
+                        drawObjectSelection(
+                            state = s,
+                            page = selectPage,
+                            boxes = selectedIds.mapNotNull { id ->
+                                annotationBounds(annotationPoints[id].orEmpty())
+                            },
+                            liveBox = liveBox,
+                            marquee = marquee,
+                            colour = c.accent
+                        )
+                    }
 
                     // القياس فوق الكل: هو النتيجة اللي المستخدم بيقرأها،
                     // ولو تعليق غطّاه بيبقى الرقم موجود ومش مقروء.
@@ -887,6 +1086,9 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         style = style,
                         onTool = { picked ->
                             tool = if (tool == picked) PdfTool.PAN else picked
+                            // الخروج من أداة التحديد بيفضّيه — صندوق فاضل
+                            // على الشاشة وانت ماسك قلم بيبان كأنه عطل.
+                            if (tool != PdfTool.SELECT) clearSelection()
                             // كل أداة بتفتح على إعداداتها الطبيعية: الماركر
                             // تخين وشفاف، والقلم رفيع وصامد. من غير كده
                             // المستخدم بيختار ماركر وبيلاقيه بيرسم زي القلم.
@@ -903,6 +1105,22 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
                         onUndo = { undo() },
                         onRedo = { redo() },
                         onClear = { vm.clearPdfPage(path, state.currentPage) },
+                        selectedCount = if (tool == PdfTool.SELECT) selectedIds.size else 0,
+                        onDeleteSelected = {
+                            vm.deletePdfAnnotations(selectedIds.toList())
+                            clearSelection()
+                        },
+                        onRestyleSelected = {
+                            vm.updatePdfAnnotations(
+                                selectedIds.mapNotNull { id ->
+                                    fileAnnotations.firstOrNull { it.id == id }?.copy(
+                                        color = style.colorArgb,
+                                        strokeWidth = style.widthPt,
+                                        opacity = style.opacity
+                                    )
+                                }
+                            )
+                        },
                         modifier = Modifier.padding(bottom = Space.md)
                     )
                 }
@@ -1176,6 +1394,15 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
  * فقرة كاملة كاستعلام مش هتلاقي نفسها حتى — PDFium بيدوّر على تطابق حرفي،
  * وأي فرق في مسافة أو سطر بيلغي النتيجة. أول كام حرف هي اللي بتنفع.
  */
+/** نصف قطر مسك مقبض الصندوق بالبكسل. */
+private const val HANDLE_GRAB_PX = 28f
+
+/** سماحية اختيار شكل بالنقر، بالبكسل — إصبع مش فأرة. */
+private const val HIT_TOLERANCE_PX = 18f
+
+/** أقل مقاس لمستطيل التحديد قبل ما نعتبره سحب مش نقرة (منسّب). */
+private const val MARQUEE_MIN = 0.01f
+
 private const val MAX_SEARCH_FROM_SELECTION = 40
 
 /**
@@ -1251,16 +1478,82 @@ private fun DrawScope.drawSearchLayer(
     )
 }
 
+/**
+ * صندوق التحديد ومقابضه ومستطيل التحديد.
+ *
+ * المقابض بمقاس ثابت **بالبكسل** مش منسّب: المقبض حاجة بتتمسك بالصباع،
+ * فمقاسه بيتبع الشاشة مش الورقة — عكس العلامة نفسها اللي بتكبر مع الرسمة.
+ */
+private fun DrawScope.drawObjectSelection(
+    state: PdfViewerState,
+    page: Int,
+    boxes: List<Rect>,
+    liveBox: Rect?,
+    marquee: Rect?,
+    colour: Color
+) {
+    fun screenRect(box: Rect): Rect? {
+        val a = state.pagePointToScreen(page, box.left, box.top) ?: return null
+        val b = state.pagePointToScreen(page, box.right, box.bottom) ?: return null
+        return Rect(min(a.x, b.x), min(a.y, b.y), max(a.x, b.x), max(a.y, b.y))
+    }
+
+    val dash = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+
+    // كل شكل محدّد بحدّ خفيف — عشان تعرف إيه اللي جوّه التحديد بالظبط.
+    if (liveBox == null && boxes.size > 1) {
+        boxes.forEach { box ->
+            screenRect(box)?.let { r ->
+                drawRect(
+                    colour.copy(alpha = 0.5f), r.topLeft, Size(r.width, r.height),
+                    style = Stroke(1.5f, pathEffect = dash)
+                )
+            }
+        }
+    }
+
+    val outer = liveBox ?: unionBounds(boxes)
+    if (outer != null) {
+        screenRect(outer)?.let { r ->
+            drawRect(colour.copy(alpha = 0.10f), r.topLeft, Size(r.width, r.height))
+            drawRect(colour, r.topLeft, Size(r.width, r.height), style = Stroke(2f))
+            listOf(
+                Offset(r.left, r.top), Offset(r.right, r.top),
+                Offset(r.left, r.bottom), Offset(r.right, r.bottom)
+            ).forEach { corner ->
+                drawCircle(Color.White, HANDLE_DRAW_PX, corner)
+                drawCircle(colour, HANDLE_DRAW_PX, corner, style = Stroke(2.5f))
+            }
+        }
+    }
+
+    if (marquee != null) {
+        screenRect(marquee)?.let { r ->
+            drawRect(colour.copy(alpha = 0.08f), r.topLeft, Size(r.width, r.height))
+            drawRect(
+                colour, r.topLeft, Size(r.width, r.height),
+                style = Stroke(2f, pathEffect = dash)
+            )
+        }
+    }
+}
+
+/** نصف قطر المقبض المرسوم بالبكسل. */
+private const val HANDLE_DRAW_PX = 11f
+
 /** بيرسم تعليقات كل صفحة مرئية في مكانها الصح. */
 private fun DrawScope.drawAnnotations(
     state: PdfViewerState,
     annotationsByPage: Map<Int, List<PdfAnnotationEntity>>,
-    pointsById: Map<Long, List<Float>>
+    pointsById: Map<Long, List<Float>>,
+    /** علامات بترسم في مكان تاني دلوقتي (معاينة التحويل) — بنتخطّاها هنا. */
+    skip: Set<Long> = emptySet()
 ) {
     if (annotationsByPage.isEmpty()) return
     val rect = state.visibleDocRect()
     for (slot in state.layout.visible(rect.left, rect.top, rect.right, rect.bottom)) {
         for (a in annotationsByPage[slot.index].orEmpty()) {
+        if (a.id in skip) continue
         val flat = pointsById[a.id].orEmpty()
         if (flat.isEmpty()) continue
         val points = (flat.indices step 2).mapNotNull { i ->

@@ -26,7 +26,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.FormatPaint
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -72,6 +74,10 @@ fun PdfToolbar(
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onClear: () -> Unit,
+    /** كام شكل محدّد دلوقتي — صفر معناها مافيش شريط تحديد. */
+    selectedCount: Int = 0,
+    onDeleteSelected: () -> Unit = {},
+    onRestyleSelected: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val c = LocalCwColors.current
@@ -80,9 +86,44 @@ fun PdfToolbar(
         modifier.padding(horizontal = Space.sm),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // ── خصائص الأداة (بتظهر مع أداة الرسم بس)
+        // ── شريط التحديد: بيظهر بس لما يكون فيه حاجة محدّدة.
         AnimatedVisibility(
-            visible = tool.isDrawing,
+            visible = selectedCount > 0,
+            enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
+            exit = fadeOut(Motion.exit()) + shrinkVertically(Motion.exit())
+        ) {
+            Surface(
+                shape = Radius.pill,
+                color = c.accentContainer,
+                shadowElevation = Elevation.floating,
+                modifier = Modifier.padding(bottom = Space.sm)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = Space.md, vertical = Space.xxs),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm)
+                ) {
+                    Text(
+                        "$selectedCount محدّد",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = c.onAccentContainer
+                    )
+                    CwIconButton(
+                        Icons.Filled.FormatPaint, "طبّق اللون والسُمك", onRestyleSelected,
+                        tint = c.onAccentContainer
+                    )
+                    CwIconButton(
+                        Icons.Filled.DeleteOutline, "امسح المحدّد", onDeleteSelected,
+                        tint = c.danger.fg
+                    )
+                }
+            }
+        }
+
+        // ── خصائص الأداة. بتظهر كمان مع تحديد شغّال، عشان "طبّق اللون
+        // والسُمك" يكون قدّامك اللون اللي هيتطبّق.
+        AnimatedVisibility(
+            visible = tool.isDrawing || selectedCount > 0,
             enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
             exit = fadeOut(Motion.exit()) + shrinkVertically(Motion.exit())
         ) {
@@ -122,6 +163,9 @@ fun PdfToolbar(
                 horizontalArrangement = Arrangement.spacedBy(Space.xxs)
             ) {
                 ToolButton(PdfTool.PAN, tool == PdfTool.PAN, style.colorArgb) { onTool(PdfTool.PAN) }
+                ToolButton(PdfTool.SELECT, tool == PdfTool.SELECT, style.colorArgb) {
+                    onTool(PdfTool.SELECT)
+                }
 
                 Divider()
 

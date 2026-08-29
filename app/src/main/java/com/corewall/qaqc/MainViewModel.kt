@@ -686,7 +686,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         addedAt = now
                     )
                 )
-                onDone("اتضافت لـ«$clean» — بقى فيه $pages صفحة")
+                // التأشير بيتنقل مع الصفحة — من غير ده الصفحة بتوصل ورق
+                // نضيف، وده مش اللي المستخدم شافه لما بعتها.
+                val moved = repo.copyPageMarkup(sourcePath, page, dest.absolutePath, pages - 1)
+                onDone(
+                    if (moved > 0) "اتضافت لـ«$clean» مع $moved تأشير — بقى فيه $pages صفحة"
+                    else "اتضافت لـ«$clean» — بقى فيه $pages صفحة"
+                )
             }.onFailure { e ->
                 onDone("مقدرناش نضيف الصفحة: ${e.message ?: "خطأ غير معروف"}")
             }
@@ -2206,6 +2212,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addPdfAnnotation(entity: PdfAnnotationEntity) {
         viewModelScope.launch { repo.addPdfAnnotation(entity) }
+    }
+
+    /**
+     * تعديل علامة موجودة — نفس الـid فالصف بيتبدّل مش بيتضاف.
+     *
+     * منفصلة عن [addPdfAnnotation] بالاسم بس: الاتنين `upsert`. الفرق إن
+     * القارئ يعرف إن ده تعديل على حاجة المستخدم شايفها، مش إضافة.
+     */
+    fun updatePdfAnnotation(entity: PdfAnnotationEntity) {
+        viewModelScope.launch { repo.addPdfAnnotation(entity) }
+    }
+
+    fun updatePdfAnnotations(entities: List<PdfAnnotationEntity>) {
+        if (entities.isEmpty()) return
+        viewModelScope.launch { entities.forEach { repo.addPdfAnnotation(it) } }
+    }
+
+    fun deletePdfAnnotations(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch { repo.deletePdfAnnotations(ids) }
     }
 
     fun undoLastPdfAnnotation(filePath: String, page: Int) {

@@ -257,6 +257,13 @@ interface PdfAnnotationDao {
 
     @Query("DELETE FROM pdf_annotations WHERE filePath = :filePath")
     suspend fun clearForFile(filePath: String)
+
+    /** تعليقات صفحة واحدة — للنسخ مع الصفحة لملف تاني. */
+    @Query("SELECT * FROM pdf_annotations WHERE filePath = :filePath AND page = :page ORDER BY id")
+    suspend fun forPage(filePath: String, page: Int): List<PdfAnnotationEntity>
+
+    @Query("DELETE FROM pdf_annotations WHERE id IN (:ids)")
+    suspend fun deleteAll(ids: List<Long>)
 }
 
 @Dao
@@ -302,6 +309,9 @@ interface PdfMeasurementDao {
 
     @Query("DELETE FROM pdf_measurements WHERE filePath = :filePath AND page = :page")
     suspend fun clearPage(filePath: String, page: Int)
+
+    @Query("SELECT * FROM pdf_measurements WHERE filePath = :filePath AND page = :page ORDER BY id")
+    suspend fun forPage(filePath: String, page: Int): List<PdfMeasurementEntity>
 }
 
 @Dao
@@ -320,6 +330,9 @@ interface PdfScaleDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<PdfScaleEntity>)
+
+    @Query("SELECT * FROM pdf_scales WHERE filePath = :filePath AND page = :page LIMIT 1")
+    suspend fun forPage(filePath: String, page: Int): PdfScaleEntity?
 
     @Query("DELETE FROM pdf_scales WHERE filePath = :filePath AND page = :page")
     suspend fun delete(filePath: String, page: Int)

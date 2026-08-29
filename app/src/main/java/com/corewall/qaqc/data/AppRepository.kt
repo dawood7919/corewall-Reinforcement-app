@@ -341,6 +341,44 @@ class AppRepository(context: Context) {
     suspend fun addWirItem(item: WirItemEntity): Long = db.wirDao().upsertItem(item)
 
     /**
+     * بينقل التأشير مع الصفحة.
+     *
+     * التعليقات مخزّنة في القاعدة بمسار الملف ورقم الصفحة، مش متحبّرة جوّه
+     * الـPDF — وده مقصود عشان تفضل قابلة للتعديل والمسح. بس معناه إن نسخ
+     * الصفحة لملف تاني بينقل الورق من غير اللي اتكتب عليه، لو مانقلناش
+     * الصفوف دي كمان.
+     *
+     * النقط متخزّنة منسّبة (٠..١) لأبعاد الصفحة، فالنقل مايحتاجش أي تحويل:
+     * نفس النسب على نفس الصفحة = نفس المكان بالظبط.
+     *
+     * والنسخة **مستقلة**: تعديلها في الـWIR مابيأثرش على الرسمة الأصلية،
+     * وده الصح — التأشير للفحص مش تعديل على المستند المعتمد.
+     */
+    suspend fun copyPageMarkup(
+        fromPath: String,
+        fromPage: Int,
+        toPath: String,
+        toPage: Int
+    ): Int {
+        val annotations = db.pdfAnnotationDao().forPage(fromPath, fromPage)
+        db.pdfAnnotationDao().upsertAll(
+            annotations.map { it.copy(id = 0, filePath = toPath, page = toPage) }
+        )
+        val measurements = db.pdfMeasurementDao().forPage(fromPath, fromPage)
+        db.pdfMeasurementDao().upsertAll(
+            measurements.map { it.copy(id = 0, filePath = toPath, page = toPage) }
+        )
+        // المقياس بينتقل كمان — من غيره القياسات المنقولة بتظهر بأرقام
+        // غلط، وده أسوأ من إنها ماتظهرش.
+        val scale = db.pdfScaleDao().forPage(fromPath, fromPage)
+            ?: db.pdfScaleDao().forPage(fromPath, PdfScaleEntity.WHOLE_DOCUMENT)
+        if (scale != null) {
+            db.pdfScaleDao().upsert(scale.copy(filePath = toPath, page = toPage))
+        }
+        return annotations.size + measurements.size
+    }
+
+    /**
      * المسح بيشيل الملف والتعليقات كمان.
      *
      * سيب التعليقات وراك معناه إن WIR جديد بنفس الاسم هيرث هايلايت طلب
@@ -382,6 +420,8 @@ class AppRepository(context: Context) {
         db.pdfAnnotationDao().deleteLast(filePath, page)
 
     suspend fun deletePdfAnnotation(id: Long) = db.pdfAnnotationDao().delete(id)
+
+    suspend fun deletePdfAnnotations(ids: List<Long>) = db.pdfAnnotationDao().deleteAll(ids)
     suspend fun clearPdfPage(filePath: String, page: Int) =
         db.pdfAnnotationDao().clearPage(filePath, page)
 
