@@ -305,6 +305,55 @@ def missing_opt_in(sources: dict) -> list:
     return out
 
 
+# ═══════════════════════════════════════════ ٦) نداء على عضو مش موجود
+
+# الملفات اللي كل الشاشات بتنده عليها بالاسم ده. الاتنين دول هما "الدرزة"
+# بتاعة التطبيق: أي شاشة بتقول `vm.` أو `repo.`، فحذف دالة منهم بيكسر البناء
+# في مكان بعيد عن التعديل. الفحص ده بيمسك ده في ثانيتين بدل خمس دقايق.
+#
+# مش محلّل أنواع: بيقارن الأسماء المستعملة بالأسماء المعرّفة في الملف
+# المقصود بس. فلو حد ورث دوال من كلاس تاني لازم تتضاف تحت.
+SEAMS = {
+    "vm": ("app/src/main/java/com/corewall/qaqc/MainViewModel.kt",
+           # موروثة من AndroidViewModel — مش معرّفة في الملف.
+           {"getApplication", "addCloseable", "getCloseable", "onCleared"}),
+    "repo": ("app/src/main/java/com/corewall/qaqc/data/AppRepository.kt", set()),
+}
+
+MEMBER = re.compile(r"\b(?:private |internal |public |override |abstract )*"
+                    r"(?:suspend )?(?:fun|val|var)\s+<?[^>]*>?\s*(\w+)")
+
+
+def declared_members(text: str) -> set:
+    out = set()
+    for m in re.finditer(r"(?:fun|val|var)\s+(?:<[^>]+>\s*)?(\w+)", text):
+        out.add(m.group(1))
+    return out
+
+
+def missing_members(sources: dict) -> list:
+    out = []
+    for receiver, (path, inherited) in SEAMS.items():
+        target = REPO / path
+        if not target.exists():
+            continue
+        known = declared_members(strip_noise(target.read_text(encoding="utf-8"))) | inherited
+        call = re.compile(r"(?<![\w.])" + receiver + r"\.(\w+)\s*\(")
+        for f, text in sources.items():
+            if f == target:
+                continue
+            for m in call.finditer(text):
+                name = m.group(1)
+                if name in known:
+                    continue
+                line = text.count("\n", 0, m.start()) + 1
+                out.append(
+                    f"{f.relative_to(REPO)}:{line}: "
+                    f"{receiver}.{name}(…) مش معرّفة في {path.split('/')[-1]}."
+                )
+    return out
+
+
 def main() -> int:
     files = sorted(SRC.rglob("*.kt"))
     sources = {f: strip_noise(f.read_text(encoding="utf-8")) for f in files}
@@ -351,6 +400,7 @@ def main() -> int:
     problems += non_exhaustive_whens(sources, enum_values(sources))
     problems += orphan_entities(sources)
     problems += missing_opt_in(sources)
+    problems += missing_members(sources)
 
     if problems:
         print("مشاكل بتوقّع البناء:\n")

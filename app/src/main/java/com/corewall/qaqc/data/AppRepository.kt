@@ -340,6 +340,19 @@ class AppRepository(context: Context) {
 
     suspend fun addWirItem(item: WirItemEntity): Long = db.wirDao().upsertItem(item)
 
+    /**
+     * المسح بيشيل الملف والتعليقات كمان.
+     *
+     * سيب التعليقات وراك معناه إن WIR جديد بنفس المسار هيرث تأشير طلب
+     * قديم — والأسماء بتتكرر بطبيعة الشغل.
+     */
+    suspend fun deleteWir(wir: WirEntity) {
+        db.wirDao().clearItems(wir.id)
+        db.wirDao().delete(wir.id)
+        db.pdfAnnotationDao().clearForFile(wir.filePath)
+        runCatching { java.io.File(wir.filePath).delete() }
+    }
+
     /** تأشير صفحة واحدة — بيتكتب جوّه الـPDF وقت الإرسال لطلب فحص. */
     suspend fun annotationsForPage(path: String, page: Int): List<PdfAnnotationEntity> =
         db.pdfAnnotationDao().forPage(path, page)
