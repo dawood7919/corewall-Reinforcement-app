@@ -61,7 +61,27 @@ class UiScreenshotTest {
      */
     private val presentFile = File(outDir, "sample-wir.pdf").apply { writeText("%PDF-1.4") }
 
+    /**
+     * بيرسم ويحفظ، ولو وقع بيكتب سبب الوقوع في ملف نصّي جنب الصور.
+     *
+     * الاستثناء مابيترميش. الرندر بيجري في بيئة من غير جهاز، والفشل فيه
+     * مالوش علاقة بالتطبيق — لكن **لازم يوصل**. من غير الملف ده كنت
+     * بأطارد السبب في سجل الـCI الخام كل مرة، وده كلّف أكتر من الميزة
+     * نفسها. دلوقتي القناة اللي بتوصّل الصور بتوصّل سبب غيابها.
+     */
     private fun shoot(name: String, content: @Composable () -> Unit) {
+        runCatching { render(name, content) }.onFailure { error ->
+            File(outDir, "$name.error.txt").writeText(
+                buildString {
+                    appendLine(error::class.java.name)
+                    appendLine(error.message ?: "")
+                    error.stackTrace.take(15).forEach { appendLine("    at $it") }
+                }
+            )
+        }
+    }
+
+    private fun render(name: String, content: @Composable () -> Unit) {
         // الساعة بتتقدّم بالإيد.
         //
         // `waitForIdle` بيستنى الساعة تهدى، وتحت Robolectric مابتهداش —

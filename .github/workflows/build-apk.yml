@@ -144,45 +144,47 @@ jobs:
       #
       # بعد النشر عن قصد: الرندر بيشتغل في بيئة من غير جهاز ولا محاكي، وأي
       # عطل فيه مالوش علاقة بالتطبيق. لو وقع، الـAPK يكون خرج خلاص.
+      # اللقطات — بترسم مكوّنات حقيقية على الـJVM وتتحفظ كصور.
+      #
+      # بعد النشر عن قصد: الرندر بيشتغل في بيئة من غير جهاز ولا محاكي، وأي
+      # عطل فيه مالوش علاقة بالتطبيق. لو وقع، الـAPK يكون خرج خلاص.
       - name: Render UI screenshots
         if: always()
         continue-on-error: true
         run: |
           set +e
           ./gradlew testFullDebugUnitTest -Pscreenshots=true --no-daemon --console=plain \
-            --tests "com.corewall.qaqc.shots.*"
+            --tests "com.corewall.qaqc.shots.*" > /tmp/shots.log 2>&1
           status=$?
-          echo "───────── screenshot run: exit $status ─────────"
-          ls -la app/build/screenshots 2>&1 || echo "(مفيش مجلد لقطات)"
-          if [ $status -ne 0 ]; then
-            python3 - <<'PY'
-          import glob, xml.etree.ElementTree as ET
-          for path in glob.glob("app/build/test-results/**/*.xml", recursive=True):
-              for case in ET.parse(path).getroot().iter("testcase"):
-                  for bad in list(case.iter("failure")) + list(case.iter("error")):
-                      print(f"\n✗ {case.get('name')}: {(bad.get('message') or '')[:400]}")
-                      for line in (bad.text or "").strip().splitlines()[:12]:
-                          print("   ", line)
-          PY
-          fi
+          mkdir -p app/build/screenshots
+          {
+            echo "commit: ${GITHUB_SHA::7}"
+            echo "gradle exit: $status"
+            echo
+            echo "── الملفات المتولّدة ──"
+            ls -la app/build/screenshots 2>&1
+            echo
+            echo "── آخر ٤٠ سطر من جريدل ──"
+            tail -40 /tmp/shots.log
+          } > app/build/screenshots/report.txt
+          cat app/build/screenshots/report.txt
           exit 0
 
+      # الدفع بيحصل حتى لو مفيش صور: التقرير لوحده هو اللي بيقول ليه.
+      # القناة اللي بتوصّل الصور لازم توصّل سبب غيابها كمان، وإلا كل تشخيص
+      # بيتحوّل لمطاردة في سجل الـCI.
       - name: Push screenshots to the screenshots branch
         if: always()
         continue-on-error: true
         run: |
-          SHOTS=app/build/screenshots
-          if [ ! -d "$SHOTS" ] || [ -z "$(ls -A "$SHOTS"/*.png 2>/dev/null)" ]; then
-            echo "مفيش صور اتولّدت — الخطوة اللي فاتت غالباً فشلت."
-            exit 0
-          fi
           rm -rf /tmp/shots && mkdir -p /tmp/shots
-          cp "$SHOTS"/*.png /tmp/shots/
+          cp app/build/screenshots/* /tmp/shots/ 2>/dev/null || true
+          [ -z "$(ls -A /tmp/shots 2>/dev/null)" ] && { echo "مفيش أي مخرجات."; exit 0; }
           cd /tmp/shots
           git init -b screenshots
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add *.png
+          git add -A
           git commit -m "Screenshots from ${GITHUB_SHA::7}"
           git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" screenshots
 
