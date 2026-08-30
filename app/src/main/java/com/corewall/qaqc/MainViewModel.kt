@@ -750,7 +750,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             PdfOps.ensureInit(appContext)
             val marks = repo.pdfAnnotationsForFileOnce(wir.filePath)
-            if (marks.isEmpty()) { files.share(file); return@launch }
+            if (marks.isEmpty()) {
+                files.shareChecked(file)?.let { onDone("المشاركة فشلت: $it") }
+                return@launch
+            }
             val out = java.io.File(appContext.cacheDir, "${file.nameWithoutExtension}-معلّق.pdf")
             PdfOps.writeAnnotations(
                 src = file,
@@ -762,8 +765,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             .decodeFromString<List<Float>>(entity.pointsJson)
                     }.getOrDefault(emptyList())
                 }
-            ).onSuccess { files.share(out) }
-                .onFailure { files.share(file); onDone("اتشارك الملف من غير آخر تأشير") }
+            ).onSuccess {
+                files.shareChecked(out)?.let { reason -> onDone("المشاركة فشلت: $reason") }
+            }.onFailure {
+                // الكتابة فشلت — نبعت الملف زي ما هو بدل ما نسيب المستخدم
+                // من غير حاجة، ونقوله إن آخر تأشير مش فيه.
+                val reason = files.shareChecked(file)
+                onDone(
+                    if (reason != null) "المشاركة فشلت: $reason"
+                    else "اتشارك الملف من غير آخر تأشير"
+                )
+            }
         }
     }
 

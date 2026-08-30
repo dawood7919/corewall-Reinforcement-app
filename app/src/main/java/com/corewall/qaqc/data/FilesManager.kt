@@ -258,7 +258,14 @@ class FilesManager(private val context: Context) {
         context.startActivity(intent)
     }.isSuccess
 
-    fun share(file: File): Boolean = runCatching {
+    /**
+     * بيرجّع سبب الفشل، أو `null` لو اتشارك.
+     *
+     * الفشل هنا **صامت بطبعه**: `FileProvider` بيرمي لو الملف مش تحت جذر
+     * مدرج في `file_paths.xml`، والنتيجة إن الزرار بيتداس ومفيش حاجة
+     * بتحصل. أي شاشة بتشارك ملف من مكان جديد لازم تعرف ده بدل ما تبتلعه.
+     */
+    fun shareChecked(file: File): String? = runCatching {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mimeOf(file)
             putExtra(Intent.EXTRA_STREAM, uriFor(file))
@@ -268,5 +275,10 @@ class FilesManager(private val context: Context) {
             Intent.createChooser(intent, "مشاركة ${file.name}")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
-    }.isSuccess
+    }.fold(
+        onSuccess = { null },
+        onFailure = { it.message?.takeIf(String::isNotBlank) ?: "مقدرناش نشارك الملف" }
+    )
+
+    fun share(file: File): Boolean = shareChecked(file) == null
 }

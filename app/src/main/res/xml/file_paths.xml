@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  الجذور اللي `FileProvider` مسموح له يطلّع منها روابط.
+
+  المسار اللي مش مدرج هنا بيخلّي `getUriForFile` يرمي
+  `IllegalArgumentException`، والمشاركة بتفشل من غير أي رسالة — الزرار
+  بيتداس ومفيش حاجة بتحصل. الكاش مطلوب لأن النسخ المؤقّتة (نسخة معلّقة
+  من طلب فحص مثلاً) بتتكتب هناك قبل ما تتبعت.
+-->
 <paths>
     <external-files-path name="external_files" path="." />
     <files-path name="internal_files" path="." />
+    <cache-path name="internal_cache" path="." />
+    <external-cache-path name="external_cache" path="." />
 </paths>
