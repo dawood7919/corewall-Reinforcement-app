@@ -1,6 +1,8 @@
 package com.corewall.qaqc.shots
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,10 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.corewall.qaqc.data.AppTheme
 import com.corewall.qaqc.data.db.WirEntity
 import com.corewall.qaqc.ui.design.LocalCwColors
@@ -49,7 +48,7 @@ import java.io.File
 class UiScreenshotTest {
 
     @get:Rule
-    val compose = createComposeRule()
+    val compose = createAndroidComposeRule<ComponentActivity>()
 
     /** جريدل بيمرّر المسار المطلق — مافيش اعتماد على دليل الشغل. */
     private val outDir =
@@ -59,7 +58,8 @@ class UiScreenshotTest {
      * الكارت بيعرض "الملف مش موجود" لو مسار الطلب مش على القرص، فالصورة
      * كانت هتوري الحالة الاستثنائية بدل العادية.
      */
-    private val presentFile = File(outDir, "sample-wir.pdf").apply { writeText("%PDF-1.4") }
+    private val presentFile =
+        File(System.getProperty("java.io.tmpdir"), "sample-wir.pdf").apply { writeText("%PDF-1.4") }
 
     /**
      * بيرسم ويحفظ، ولو وقع بيكتب سبب الوقوع في ملف نصّي جنب الصور.
@@ -103,7 +103,21 @@ class UiScreenshotTest {
         }
         // حركات الدخول في التطبيق أقصاها ٢٨٠ms — نصف ثانية بتغطّيها.
         compose.mainClock.advanceTimeBy(500L)
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+
+        // الرسم من الـView مباشرة، مش `captureToImage`.
+        //
+        // `captureToImage` بيمرّ على نسخ بكسل من نافذة النظام، وبيستنى
+        // إعادة رسم مابتحصلش من غير سطح حقيقي — كل لقطة كانت بتقع بـ
+        // "Condition still not satisfied after 2000 ms" جوّه `forceRedraw`.
+        // `View.draw` على كانفاس بيتماب شغّال بالكامل على الـCPU، ومحتاجش
+        // نافذة ولا جهاز.
+        val view = compose.activity.window.decorView
+        val bitmap = Bitmap.createBitmap(
+            view.width.coerceAtLeast(1),
+            view.height.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        view.draw(Canvas(bitmap))
         File(outDir, "$name.png").outputStream().use { out ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         }
