@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 114
-        versionName = "11.63"
+        versionCode = 115
+        versionName = "11.64"
 
         // PDFium مكتبة أصلية، ومعاها ٤ معماريات = ١٨ ميجا. الأجهزة الحقيقية
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.
@@ -162,6 +162,12 @@ ksp {
  * بـ`-Pscreenshots=true`.
  */
 tasks.withType<Test>().configureEach {
+    // مسار مطلق للقطات. دليل شغل مهام الاختبار مش مضمون، ولقطة بتتكتب
+    // في مكان تاني بتبان زي لقطة ما اتولّدتش خالص.
+    systemProperty(
+        "corewall.screenshots",
+        layout.buildDirectory.dir("screenshots").get().asFile.absolutePath
+    )
     if (project.findProperty("screenshots") != "true") {
         filter { excludeTestsMatching("*ScreenshotTest") }
     }

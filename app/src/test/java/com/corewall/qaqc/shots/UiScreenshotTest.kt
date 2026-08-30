@@ -51,7 +51,9 @@ class UiScreenshotTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private val outDir = File("build/screenshots").apply { mkdirs() }
+    /** جريدل بيمرّر المسار المطلق — مافيش اعتماد على دليل الشغل. */
+    private val outDir =
+        File(System.getProperty("corewall.screenshots") ?: "build/screenshots").apply { mkdirs() }
 
     /**
      * الكارت بيعرض "الملف مش موجود" لو مسار الطلب مش على القرص، فالصورة

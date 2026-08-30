@@ -148,8 +148,24 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
+          set +e
           ./gradlew testFullDebugUnitTest -Pscreenshots=true --no-daemon --console=plain \
             --tests "com.corewall.qaqc.shots.*"
+          status=$?
+          echo "───────── screenshot run: exit $status ─────────"
+          ls -la app/build/screenshots 2>&1 || echo "(مفيش مجلد لقطات)"
+          if [ $status -ne 0 ]; then
+            python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          for path in glob.glob("app/build/test-results/**/*.xml", recursive=True):
+              for case in ET.parse(path).getroot().iter("testcase"):
+                  for bad in list(case.iter("failure")) + list(case.iter("error")):
+                      print(f"\n✗ {case.get('name')}: {(bad.get('message') or '')[:400]}")
+                      for line in (bad.text or "").strip().splitlines()[:12]:
+                          print("   ", line)
+          PY
+          fi
+          exit 0
 
       - name: Push screenshots to the screenshots branch
         if: always()
