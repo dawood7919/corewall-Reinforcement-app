@@ -67,6 +67,27 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testFullDebugUnitTest --no-daemon
 
+      # جريدل بيطبع سطر واحد لكل اختبار فاشل من غير رسالة التأكيد نفسها،
+      # والرسالة هي اللي بتقول إيه اللي وقع بالظبط. التقارير الـXML فيها
+      # الرسالة كاملة — بنطلّعها في السجل بدل ما نخمّن أو نعيد البناء.
+      - name: Show failing tests
+        if: failure()
+        run: |
+          echo "───────── failing tests ─────────"
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          found = False
+          for path in glob.glob("app/build/test-results/**/*.xml", recursive=True):
+              for case in ET.parse(path).getroot().iter("testcase"):
+                  for bad in list(case.iter("failure")) + list(case.iter("error")):
+                      found = True
+                      print(f"\n✗ {case.get('classname')} > {case.get('name')}")
+                      print((bad.get("message") or "").strip()[:2000])
+                      print((bad.text or "").strip().splitlines()[0:6])
+          if not found:
+              print("(مفيش تقارير اختبارات — الفشل قبل مرحلة الاختبار)")
+          PY
+
       - name: Test local DWG geometry fixtures
         run: bash tools/test_dwg_host.sh
 

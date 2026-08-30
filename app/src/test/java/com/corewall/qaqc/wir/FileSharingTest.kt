@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.corewall.qaqc.data.FilesManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -33,21 +34,30 @@ class FileSharingTest {
         return file
     }
 
+    /**
+     * بيجمع كل الجذور المكسورة قبل ما يفشل، مش بيقف على أول واحد: جولة
+     * واحدة بتقول كل اللي ناقص بدل ما كل إصلاح يكشف اللي بعده.
+     */
     @Test
     fun `every directory the app shares from resolves through the provider`() {
-        val roots = mapOf(
-            "الملفات الخارجية" to File(context.getExternalFilesDir(null), "corewall-files/wir/GF/x.pdf"),
-            "الملفات الداخلية" to File(context.filesDir, "x.pdf"),
-            "الكاش الداخلي" to File(context.cacheDir, "WIR-1-معلّق.pdf"),
-            "الكاش الخارجي" to File(context.externalCacheDir, "x.pdf")
-        )
-        roots.forEach { (label, file) ->
-            val uri = runCatching { files.uriFor(seed(file)) }
-            assertNotNull(
-                "$label: FileProvider مارضيش يطلّع رابط — المشاركة من هنا هتفشل بصمت",
-                uri.getOrNull()
-            )
+        val roots = buildMap<String, File> {
+            put("مجلد ملفات الدور", File(files.levelDir("GF"), "x.pdf"))
+            put("مجلد طلبات الفحص", File(files.wirDir("GF"), "WIR-1.pdf"))
+            put("الكاش الداخلي", File(context.cacheDir, "WIR-1-معلّق.pdf"))
+            put("الملفات الداخلية", File(context.filesDir, "x.pdf"))
+            // الكاش الخارجي مش مضمون على كل جهاز — بنختبره لو موجود بس.
+            context.externalCacheDir?.let { put("الكاش الخارجي", File(it, "x.pdf")) }
         }
+        val broken = roots.mapNotNull { (label, file) ->
+            runCatching { files.uriFor(seed(file)) }
+                .exceptionOrNull()
+                ?.let { "$label → ${file.absolutePath}\n    ${it.message}" }
+        }
+        assertTrue(
+            "FileProvider مارضيش يطلّع رابط من الجذور دي — المشاركة منها بتفشل بصمت:\n" +
+                broken.joinToString("\n"),
+            broken.isEmpty()
+        )
     }
 
     @Test
