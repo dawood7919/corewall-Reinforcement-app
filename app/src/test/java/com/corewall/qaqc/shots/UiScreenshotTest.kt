@@ -60,6 +60,14 @@ class UiScreenshotTest {
     private val presentFile = File(outDir, "sample-wir.pdf").apply { writeText("%PDF-1.4") }
 
     private fun shoot(name: String, content: @Composable () -> Unit) {
+        // الساعة بتتقدّم بالإيد.
+        //
+        // `waitForIdle` بيستنى الساعة تهدى، وتحت Robolectric مابتهداش —
+        // كل لقطة كانت بتقع بـ`ComposeTimeoutException`. مع إيقاف التقدّم
+        // التلقائي بنقدّم كام إطار بنفسنا لحد ما حركات الدخول تخلص،
+        // وبعدين نصوّر. وده أدق كمان: اللقطة بتتاخد عند لحظة معروفة مش
+        // عند "أول ما يهدى".
+        compose.mainClock.autoAdvance = false
         compose.setContent {
             CoreWallTheme(AppTheme.IOS_LIGHT) {
                 val c = LocalCwColors.current
@@ -71,7 +79,8 @@ class UiScreenshotTest {
                 ) { content() }
             }
         }
-        compose.waitForIdle()
+        // حركات الدخول في التطبيق أقصاها ٢٨٠ms — نصف ثانية بتغطّيها.
+        compose.mainClock.advanceTimeBy(500L)
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         File(outDir, "$name.png").outputStream().use { out ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
