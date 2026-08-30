@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 112
-        versionName = "11.61"
+        versionCode = 113
+        versionName = "11.62"
 
         // PDFium مكتبة أصلية، ومعاها ٤ معماريات = ١٨ ميجا. الأجهزة الحقيقية
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.
@@ -102,6 +102,19 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    /**
+     * اختبارات الوحدة محتاجة موارد التطبيق الحقيقية (منها
+     * `res/xml/file_paths.xml` اللي `FileProvider` بيقراه) — من غير كده
+     * الاختبار اللي بيتأكد إن المشاركة شغّالة مايقدرش يشوف الإعداد اللي
+     * كسر المشاركة أصلاً.
+     */
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
+
     buildFeatures {
         compose = true
         // مطلوب من AGP 8: من غيره `BuildConfig` مابيتولّدش أصلاً.
@@ -143,6 +156,11 @@ dependencies {
     // اختبارات وحدة على الـJVM — من غير أندرويد. الغرض تثبيت محرّك
     // الحساب وهندسة الـPDF: أي تحسين أداء لازم يفضل بيطلع نفس الأرقام.
     testImplementation("junit:junit:4.13.2")
+    // Robolectric بيشغّل إطار أندرويد على الـJVM. من غيره أي اختبار
+    // بيلمس Context أو FileProvider أو PDFBox-android مايتكتبش أصلاً —
+    // وآخر اتنين باجات وصلوا للمستخدم كانوا بالظبط في الطبقة دي.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
 
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.core:core-ktx:1.13.1")

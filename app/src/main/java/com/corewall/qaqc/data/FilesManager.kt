@@ -14,6 +14,19 @@ import java.io.File
  */
 class FilesManager(private val context: Context) {
 
+    companion object {
+        /**
+         * الجزء الخالص من [safeFileName] — من غير `Context` فبيتختبر
+         * على الـJVM. المحارف دي هي اللي نظام الملفات بيرفضها، والعربي
+         * مش واحد منها.
+         */
+        fun safeFileName(name: String): String =
+            name.replace(Regex("[\\\\/:*?\"<>|\\x00-\\x1F]"), "_")
+                .trim()
+                .take(80)
+                .ifBlank { "WIR" }
+    }
+
     /**
      * المجلدات اللي اتعمِلت في العملية دي.
      *
@@ -79,11 +92,7 @@ class FilesManager(private val context: Context) {
      * كانت هتبقى شرطات سفلية. هنا بنشيل المحارف اللي نظام الملفات نفسه
      * بيرفضها بس.
      */
-    fun safeFileName(name: String): String =
-        name.replace(Regex("[\\\\/:*?\"<>|\\x00-\\x1F]"), "_")
-            .trim()
-            .take(80)
-            .ifBlank { "WIR" }
+    fun safeFileName(name: String): String = Companion.safeFileName(name)
 
     private fun sanitize(name: String) = name.replace(Regex("[^A-Za-z0-9._\\- ]"), "_")
 
