@@ -149,7 +149,7 @@ private fun labelFor(status: String): String =
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun WirCard(
+internal fun WirCard(
     wir: WirEntity,
     onOpen: () -> Unit,
     onStatus: (String) -> Unit,

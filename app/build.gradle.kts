@@ -14,8 +14,8 @@ android {
         applicationId = "com.corewall.qaqc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 113
-        versionName = "11.62"
+        versionCode = 114
+        versionName = "11.63"
 
         // PDFium مكتبة أصلية، ومعاها ٤ معماريات = ١٨ ميجا. الأجهزة الحقيقية
         // كلها ARM؛ الـx86 للمحاكيات بس. بنشيلهم فبنوفّر ١٠ ميجا من الـAPK.
@@ -115,6 +115,7 @@ android {
         }
     }
 
+
     buildFeatures {
         compose = true
         // مطلوب من AGP 8: من غيره `BuildConfig` مابيتولّدش أصلاً.
@@ -152,6 +153,20 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
+/**
+ * اختبارات اللقطات مستبعدة من الجولة العادية.
+ *
+ * هي مش بتقارن بصورة مرجعية — بترسم الشاشة وتحفظها عشان تتشاف. ولإنها
+ * بتشغّل رندر حقيقي، أي عطل في بيئة الرندر كان هيوقّع البناء ويمنع وصول
+ * الـAPK لسبب مالوش علاقة بالتطبيق. بتجري في خطوة منفصلة بعد النشر
+ * بـ`-Pscreenshots=true`.
+ */
+tasks.withType<Test>().configureEach {
+    if (project.findProperty("screenshots") != "true") {
+        filter { excludeTestsMatching("*ScreenshotTest") }
+    }
+}
+
 dependencies {
     // اختبارات وحدة على الـJVM — من غير أندرويد. الغرض تثبيت محرّك
     // الحساب وهندسة الـPDF: أي تحسين أداء لازم يفضل بيطلع نفس الأرقام.
@@ -161,6 +176,11 @@ dependencies {
     // وآخر اتنين باجات وصلوا للمستخدم كانوا بالظبط في الطبقة دي.
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core-ktx:1.6.1")
+    // رندر شاشات Compose لصورة على الـJVM. `ui-test-manifest` بيضيف
+    // `ComponentActivity` للمانيفست عشان قاعدة الاختبار تلاقي مضيف —
+    // نشاط فاضي مش مصدَّر، في نسخة الـdebug بس.
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.core:core-ktx:1.13.1")
