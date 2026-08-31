@@ -50,6 +50,7 @@ import com.corewall.qaqc.ui.design.CwStatusBadge
 import com.corewall.qaqc.ui.design.CwText
 import com.corewall.qaqc.ui.design.CwTone
 import com.corewall.qaqc.ui.design.LocalCwColors
+import com.corewall.qaqc.ui.design.ltrIsolate
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Space
 import java.io.File
@@ -162,7 +163,7 @@ internal fun WirCard(
     var menuOpen by remember { mutableStateOf(false) }
     var sourcesOpen by remember { mutableStateOf(false) }
     val missing = remember(wir.filePath, wir.updatedAt) { !File(wir.filePath).exists() }
-    val date = remember(wir.updatedAt) { wirDateFmt.format(Date(wir.updatedAt)) }
+    val date = remember(wir.updatedAt) { ltrIsolate(wirDateFmt.format(Date(wir.updatedAt))) }
 
     CwCard(onClick = if (missing) null else onOpen, contentPadding = PaddingValues(Space.lg)) {
         Row(

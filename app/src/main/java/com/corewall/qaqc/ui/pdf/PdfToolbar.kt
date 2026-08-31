@@ -10,8 +10,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
@@ -63,6 +63,10 @@ import com.corewall.qaqc.ui.design.Stroke as CwStroke
  * وخصائص الأداة (اللون والسُمك والشفافية) بتظهر **بس لما تكون ماسك أداة**.
  * كنترول ظاهر وانت مش محتاجه مش "غني" — هو زحمة.
  */
+/** أدوات في الصف الواحد. تلتاشر زرار على صفّين متوازنين. */
+private const val TOOLS_PER_ROW = 7
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PdfToolbar(
     tool: PdfTool,
@@ -149,31 +153,36 @@ fun PdfToolbar(
         }
 
         // ── الأدوات
+        //
+        // **بيلتفّوا على صفّين، مابيتمرّروش.** الشريط كان `horizontalScroll`:
+        // تلتاشر زرار × ٤٨dp = أكتر من ٦٢٠dp على شاشة عرضها ٤١١ — يعني
+        // سحابة المراجعة والمستطيل والدايرة والتراجع والمسح كلهم بره
+        // الشاشة، من غير أي علامة إن فيه حاجة تانية.
+        //
+        // وأسوأ من كده: **الأداة الشغّالة نفسها كانت بتختفي**. لقطة الشريط
+        // وأنا ماسك سحابة مراجعة طلعت مفيهاش أي أداة متظللة — الشريط
+        // مابيرجعش لمكان الأداة المختارة، فالمستخدم مش عارف هو ماسك إيه.
+        // اللفّ بيخلّي كل حاجة ظاهرة والمشكلة تختفي من أصلها.
         Surface(
-            shape = Radius.pill,
+            shape = Radius.shapeXl,
             color = c.surface,
             shadowElevation = Elevation.floating,
             border = androidx.compose.foundation.BorderStroke(CwStroke.hair, c.outline)
         ) {
-            Row(
-                Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = Space.xs, vertical = Space.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.xxs)
+            FlowRow(
+                Modifier.padding(horizontal = Space.xs, vertical = Space.xs),
+                horizontalArrangement = Arrangement.spacedBy(Space.xxs),
+                verticalArrangement = Arrangement.spacedBy(Space.xxs),
+                maxItemsInEachRow = TOOLS_PER_ROW
             ) {
                 ToolButton(PdfTool.PAN, tool == PdfTool.PAN, style.colorArgb) { onTool(PdfTool.PAN) }
                 ToolButton(PdfTool.SELECT, tool == PdfTool.SELECT, style.colorArgb) {
                     onTool(PdfTool.SELECT)
                 }
 
-                Divider()
-
                 PdfTool.drawing.forEach { t ->
                     ToolButton(t, tool == t, style.colorArgb) { onTool(t) }
                 }
-
-                Divider()
 
                 CwIconButton(
                     Icons.AutoMirrored.Filled.Undo, "تراجع", onUndo,
@@ -190,18 +199,6 @@ fun PdfToolbar(
             }
         }
     }
-}
-
-@Composable
-private fun Divider() {
-    val c = LocalCwColors.current
-    Box(
-        Modifier
-            .padding(horizontal = Space.xxs)
-            .width(CwStroke.hair)
-            .height(Sizes.control)
-            .background(c.outline)
-    )
 }
 
 /**

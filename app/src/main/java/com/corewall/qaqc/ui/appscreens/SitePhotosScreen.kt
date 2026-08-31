@@ -64,6 +64,7 @@ import com.corewall.qaqc.ui.design.IconSize
 import com.corewall.qaqc.ui.design.Radius
 import com.corewall.qaqc.ui.design.Sizes
 import com.corewall.qaqc.ui.design.Space
+import com.corewall.qaqc.ui.design.ltrIsolate
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.ui.EmptyState
 import coil3.compose.AsyncImage
@@ -378,7 +379,8 @@ private fun SitePhotoCard(
     // من غير كاش ومن غير إلغاء لما يخرج منها. مجلد فيه ٢٠٠ صورة موقع كان
     // بيهتهت ويضغط الذاكرة بلا داعي.
     val photoFile = remember(photo.filePath) { File(photo.filePath) }
-    val dateText = remember(photo.timestamp) { photoDateFmt.format(Date(photo.timestamp)) }
+    val dateText =
+        remember(photo.timestamp) { ltrIsolate(photoDateFmt.format(Date(photo.timestamp))) }
 
     Surface(
         shape = Radius.shapeLg,
