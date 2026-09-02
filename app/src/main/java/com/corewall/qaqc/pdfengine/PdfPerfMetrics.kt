@@ -31,7 +31,14 @@ class PdfPerfMetrics {
         sampleCount = (sampleCount + 1).coerceAtMost(MAX_SAMPLES)
     }
 
-    fun snapshot(cachedTiles: Int, queuedTiles: Int, active: Boolean, bitmapBytes: Long): Snapshot {
+    fun snapshot(
+        cachedTiles: Int,
+        queuedTiles: Int,
+        active: Boolean,
+        bitmapBytes: Long,
+        renderers: Int = 1,
+        busyRenderers: Int = 0
+    ): Snapshot {
         val samples = renderSamplesMs.copyOf(sampleCount).sorted()
         val average = if (samples.isEmpty()) 0L else samples.average().toLong()
         val p95 = if (samples.isEmpty()) 0L else {
@@ -50,7 +57,9 @@ class PdfPerfMetrics {
             cachedTiles = cachedTiles,
             queuedTiles = queuedTiles,
             activeRender = active,
-            bitmapBytes = bitmapBytes
+            bitmapBytes = bitmapBytes,
+            renderers = renderers,
+            busyRenderers = busyRenderers
         )
     }
 
@@ -65,7 +74,11 @@ class PdfPerfMetrics {
         val cachedTiles: Int,
         val queuedTiles: Int,
         val activeRender: Boolean,
-        val bitmapBytes: Long
+        val bitmapBytes: Long,
+        /** كام نسخة مستند بترسم بالتوازي. ١ = السلوك القديم. */
+        val renderers: Int = 1,
+        /** كام واحدة منهم شغّالة دلوقتي — ده اللي بيقول التوازي بيتحقّق فعلاً. */
+        val busyRenderers: Int = 0
     )
 
     private companion object { const val MAX_SAMPLES = 120 }

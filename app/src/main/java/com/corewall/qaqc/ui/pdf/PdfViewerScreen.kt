@@ -165,7 +165,7 @@ fun PdfViewerScreen(vm: MainViewModel, path: String, onClose: () -> Unit) {
     }
 
     // ── المحرّك والحالة
-    val engine = remember(active) { TileEngine(active, TileEngine.budgetFor(context)) }
+    val engine = remember(active) { TileEngine.create(context, active) }
     val thumbs = remember(active) { ThumbnailCache(active) }
     var perfSnapshot by remember(active) { mutableStateOf(engine.performanceSnapshot()) }
     var perfVisible by remember(path) { mutableStateOf(true) }
@@ -1477,6 +1477,13 @@ private fun PdfPerfHud(snapshot: PdfPerfMetrics.Snapshot, modifier: Modifier = M
                 "${snapshot.cachedTiles} cache · ${snapshot.queuedTiles} queue · ${(snapshot.bitmapBytes / 1_048_576)}MB",
                 style = CwText.codeSmall,
                 color = Color(0xFFBAC3CE)
+            )
+            // بيقول التوازي بيتحقّق فعلاً ولا لأ: `2/3` معناها تلات نسخ
+            // مستند وواحدة منهم بس شغّالة — يبقى الطابور مش السقف.
+            Text(
+                "render ${snapshot.busyRenderers}/${snapshot.renderers}",
+                style = CwText.codeSmall,
+                color = Color(0xFF6BE4B5)
             )
         }
     }

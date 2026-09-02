@@ -29,7 +29,12 @@ import java.util.PriorityQueue
  */
 class TileEngine(
     private val session: PdfDocumentSession,
-    maxBytes: Long
+    maxBytes: Long,
+    /**
+     * نسخ المستند اللي بيترسم منها. الافتراضي نسخة واحدة = السلوك القديم.
+     * [create] بيبني المجمّع المتوازي.
+     */
+    private val pool: PdfRenderPool? = null
 ) {
     /** البلاطات الجاهزة فقط؛ Canvas يراقب هذه الخريطة ولا يراقب طابور الرندر. */
     val tiles: SnapshotStateMap<Long, ImageBitmap> = mutableStateMapOf()
@@ -47,8 +52,19 @@ class TileEngine(
     private var lastKeys: List<TileKey> = emptyList()
     private var queueLimit = MAX_QUEUED_SHARP
     private var pinned: Set<Long> = emptySet()
-    private var activeKey: Long? = null
-    private var worker: Job? = null
+
+    /**
+     * البلاطات اللي بتترسم دلوقتي — واحدة لكل عامل.
+     *
+     * كل الحسابات دي بتحصل على [Dispatchers.Main.immediate]، والعمال
+     * بيسلّموا الخيط بس عند `renderTile` اللي بيروح لخيطه الأصلي. يعني
+     * الطابور والمجموعات دي مالهاش أقفال حتى مع تعدد العمال.
+     */
+    private val active = HashSet<Long>()
+
+    /** عدد الرسمات المتوازية = عدد نسخ المستند المتاحة. */
+    private val concurrency: Int = (pool?.size ?: 1).coerceAtLeast(1)
+    private val workers = arrayOfNulls<Job>(concurrency)
 
     private val pending = PriorityQueue<TileRequest>(
         compareBy<TileRequest> { it.rank }.thenBy { it.key.packed }
@@ -94,7 +110,7 @@ class TileEngine(
                 touch(packed)
                 return@forEachIndexed
             }
-            if (packed == activeKey || packed in queued) return@forEachIndexed
+            if (packed in active || packed in queued) return@forEachIndexed
             if (queued.size >= queueLimit) return@forEachIndexed
             enqueue(key, rank)
         }
@@ -119,41 +135,54 @@ class TileEngine(
     }
 
     private fun ensureWorker() {
-        if (worker?.isActive == true) return
-        worker = scope.launch {
-            while (true) {
-                val next = pending.poll() ?: break
-                queued.remove(next.key.packed)
-                if (next.generation != generation || next.key.packed in tiles) continue
-
-                val key = next.key
-                val size = session.knownSize(key.page) ?: continue
-                val grid = TileGrid(key.page, key.level, size)
-                activeKey = key.packed
-                val startedAt = android.os.SystemClock.elapsedRealtime()
-                val bitmap = session.renderTile(
-                    page = key.page,
-                    gridWidth = grid.pixelWidth,
-                    gridHeight = grid.pixelHeight,
-                    originX = key.col * TILE_SIZE,
-                    originY = key.row * TILE_SIZE,
-                    tileWidth = grid.tileWidth(key.col),
-                    tileHeight = grid.tileHeight(key.row)
-                )
-                activeKey = null
-                metrics.rendered(android.os.SystemClock.elapsedRealtime() - startedAt)
-
-                val stillCurrent = next.generation == generation && key.packed in pinned
-                if (bitmap != null && stillCurrent) {
-                    put(key.packed, bitmap)
-                } else {
-                    bitmap?.takeIf { !it.isRecycled }?.recycle()
-                }
-            }
-            worker = null
-            // لو وصل طلب جديد بين آخر poll وخروج coroutine، لا نتركه معلقاً.
-            if (pending.isNotEmpty()) ensureWorker()
+        for (slot in workers.indices) {
+            if (workers[slot]?.isActive == true) continue
+            if (pending.isEmpty()) return
+            workers[slot] = scope.launch { renderLoop(slot) }
         }
+    }
+
+    /**
+     * عامل واحد: بياخد أعلى طلب في الطابور، يرسمه على نسخته من المستند،
+     * ويرجع يجيب اللي بعده.
+     *
+     * كل عامل بيرسم من نسخة مستند مستقلة، فمفيش تزاحم على PDFium. والعمال
+     * كلهم بيقروا ويكتبوا في نفس الطابور من على خيط الواجهة، فمفيش سباق.
+     */
+    private suspend fun renderLoop(slot: Int) {
+        val renderer = pool?.sessionAt(slot) ?: session
+        while (true) {
+            val next = pending.poll() ?: break
+            queued.remove(next.key.packed)
+            if (next.generation != generation || next.key.packed in tiles) continue
+
+            val key = next.key
+            val size = session.knownSize(key.page) ?: continue
+            val grid = TileGrid(key.page, key.level, size)
+            active += key.packed
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            val bitmap = renderer.renderTile(
+                page = key.page,
+                gridWidth = grid.pixelWidth,
+                gridHeight = grid.pixelHeight,
+                originX = key.col * TILE_SIZE,
+                originY = key.row * TILE_SIZE,
+                tileWidth = grid.tileWidth(key.col),
+                tileHeight = grid.tileHeight(key.row)
+            )
+            active -= key.packed
+            metrics.rendered(android.os.SystemClock.elapsedRealtime() - startedAt)
+
+            val stillCurrent = next.generation == generation && key.packed in pinned
+            if (bitmap != null && stillCurrent) {
+                put(key.packed, bitmap)
+            } else {
+                bitmap?.takeIf { !it.isRecycled }?.recycle()
+            }
+        }
+        workers[slot] = null
+        // لو وصل طلب جديد بين آخر poll وخروج coroutine، مانسيبهوش معلّق.
+        if (pending.isNotEmpty()) ensureWorker()
     }
 
     private fun put(packed: Long, bitmap: Bitmap) {
@@ -195,22 +224,26 @@ class TileEngine(
 
     fun clear() {
         scope.cancel()
-        worker = null
+        workers.fill(null)
         pending.clear()
         queued.clear()
         tiles.keys.toList().forEach(::release)
         lru.clear()
         pinned = emptySet()
-        activeKey = null
+        active.clear()
         measuring.clear()
+        // النسخ الإضافية بتتقفل هنا؛ النسخة الأساسية ملك الشاشة.
+        runCatching { pool?.close() }
     }
 
     /** لقطة تشخيصية تستخدم في debug فقط؛ لا تُندَه من Canvas لكل إطار. */
     fun performanceSnapshot(): PdfPerfMetrics.Snapshot = metrics.snapshot(
         cachedTiles = tiles.size,
         queuedTiles = pending.size,
-        active = activeKey != null,
-        bitmapBytes = bitmaps.values.sumOf { it.byteCount.toLong() }
+        active = active.isNotEmpty(),
+        bitmapBytes = bitmaps.values.sumOf { it.byteCount.toLong() },
+        renderers = concurrency,
+        busyRenderers = active.size
     )
 
     private fun release(packed: Long) {
@@ -231,6 +264,15 @@ class TileEngine(
         private const val MIN_TILES = 24
         private const val MAX_TILES = 320
         private const val MAX_QUEUED_SHARP = 18
+
+        /**
+         * المحرك بمجمّع رسم متوازي.
+         *
+         * فتح النسخ الإضافية بيحصل هنا مش في الشاشة، عشان الشاشة تفضل
+         * ماتعرفش حاجة عن التوازي — وعشان القفل يبقى في مكان واحد.
+         */
+        fun create(context: Context, session: PdfDocumentSession): TileEngine =
+            TileEngine(session, budgetFor(context), PdfRenderPool.open(context, session))
 
         /** ميزانية محددة للمستند، لا تتجاوز ربع heap التطبيق ولا 192MB. */
         fun budgetFor(context: Context): Long {

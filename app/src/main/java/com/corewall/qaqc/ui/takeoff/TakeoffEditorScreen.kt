@@ -252,7 +252,7 @@ fun TakeoffEditorScreen(
         return
     }
 
-    val engine = remember(active) { TileEngine(active, TileEngine.budgetFor(context)) }
+    val engine = remember(active) { TileEngine.create(context, active) }
     DisposableEffect(active) { onDispose { engine.clear() } }
 
     val state = remember(active) { PdfViewerState(active.pageCount) }
