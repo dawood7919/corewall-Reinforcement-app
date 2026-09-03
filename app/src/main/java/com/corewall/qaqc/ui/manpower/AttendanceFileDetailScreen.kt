@@ -109,12 +109,16 @@ fun AttendanceFileDetailScreen(vm: MainViewModel, fileId: Long, onClose: () -> U
             }
 
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(Space.lg)) {
-                listOf("السجل اليومي", "التقويم").forEachIndexed { i, label ->
-                    SegmentedButton(selected = view == i, onClick = { view = i }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+                listOf("السجل اليومي", "التقويم", "الشيت").forEachIndexed { i, label ->
+                    SegmentedButton(selected = view == i, onClick = { view = i }, shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text(label) }
                 }
             }
 
-            if (records.isEmpty()) {
+            // الشيت طبقة مستقلة: بيشتغل حتى لو مفيش أي تسجيل يومي، عشان
+            // أول حاجة بتحصل إن المقاول بيسلّم كشف الأسماء قبل أول يوم شغل.
+            if (view == 2) {
+                AttendanceSheetView(vm = vm, fileId = fileId, modifier = Modifier.fillMaxSize())
+            } else if (records.isEmpty()) {
                 EmptyState(
                     icon = Icons.Filled.Add,
                     title = "مفيش تسجيل حضور لسه",

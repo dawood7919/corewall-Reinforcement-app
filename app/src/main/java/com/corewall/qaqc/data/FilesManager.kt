@@ -84,6 +84,9 @@ class FilesManager(private val context: Context) {
      */
     fun wirDir(level: String): File = File(root, "wir/${sanitize(level)}").ensure()
 
+    /** شيتات المقاولين الأصلية — مشتركة بين الأدوار زي ملفات المقاول نفسه. */
+    fun attendanceSheetsDir(): File = File(root, "attendance-sheets").ensure()
+
     /**
      * اسم ملف آمن من اسم كتبه المستخدم.
      *

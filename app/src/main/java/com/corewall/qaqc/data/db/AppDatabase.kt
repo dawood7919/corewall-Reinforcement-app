@@ -54,9 +54,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TakeoffFormulaEntity::class,
         TakeoffAnnotationEntity::class,
         WirEntity::class,
-        WirItemEntity::class
+        WirItemEntity::class,
+        AttendanceRosterEntity::class,
+        AttendanceMarkEntity::class
     ],
-    version = 29,
+    version = 30,
     // بيتصدّر لـ`app/schemas` عشان الفحص الآلي في الـCI يقدر يقراه.
     exportSchema = true
 )
@@ -93,6 +95,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun noteLabelDao(): NoteLabelDao
     abstract fun noteLabelLinkDao(): NoteLabelLinkDao
     abstract fun wirDao(): WirDao
+    abstract fun attendanceSheetDao(): AttendanceSheetDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -658,6 +661,47 @@ abstract class AppDatabase : RoomDatabase() {
          * أول فتح والتطبيق يقفل. `tools/check_room_schema.py` بيقارنهم
          * بالمخطط المصدَّر في الـCI قبل نشر الـAPK.
          */
+        /**
+         * شيت الحضور بالأسماء.
+         *
+         * الفهرس الفريد على (`rosterId`,`day`) هو اللي بيخلّي تسجيل نفس
+         * اليوم مرتين **يستبدل** بدل ما يضيف صف تاني — من غيره الخلية
+         * الواحدة بتبقى ليها تاريخين متناقضين ومحدش يعرف أنهي واحد الصح.
+         */
+        private val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `attendance_roster` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`fileId` INTEGER NOT NULL, `name` TEXT NOT NULL, " +
+                        "`code` TEXT NOT NULL, `trade` TEXT NOT NULL, " +
+                        "`ordinal` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_attendance_roster_fileId` " +
+                        "ON `attendance_roster` (`fileId`)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `attendance_marks` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`fileId` INTEGER NOT NULL, `rosterId` INTEGER NOT NULL, " +
+                        "`day` INTEGER NOT NULL, `state` TEXT NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_attendance_marks_rosterId_day` " +
+                        "ON `attendance_marks` (`rosterId`, `day`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_attendance_marks_fileId_day` " +
+                        "ON `attendance_marks` (`fileId`, `day`)"
+                )
+                db.execSQL(
+                    "ALTER TABLE `attendance_files` ADD COLUMN `sheetPath` TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
         private val MIGRATION_28_29 = object : Migration(28, 29) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -769,7 +813,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                     MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27,
-                    MIGRATION_27_28, MIGRATION_28_29
+                    MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30
                 ).build().also { instance = it }
             }
     }

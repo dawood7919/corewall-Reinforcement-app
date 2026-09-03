@@ -94,6 +94,14 @@ data class AttendanceFileEntity(
     val notes: String = "",
     val colorTag: Long = 0xFF5B66D6,
     val logoPath: String? = null,
+    /**
+     * شيت المقاول الأصلي زي ما سلّمه.
+     *
+     * الصفوف بتتقري منه للقاعدة، بس الملف نفسه بيتحفظ: المراجعة بتحصل
+     * على الورق اللي اتوقّع عليه، وأي خلاف على اسم أو رقم بيترجع للأصل
+     * مش للنسخة اللي التطبيق فهمها.
+     */
+    val sheetPath: String = "",
     val createdAt: Long
 )
 
@@ -1061,3 +1069,60 @@ data class WirItemEntity(
     val page: Int,
     val addedAt: Long
 )
+
+/**
+ * صف في شيت الحضور — عامل واحد.
+ *
+ * ده **مستوى تاني** جنب [DailyAttendanceEntity] مش بديل ليه: القديم
+ * بيسجّل أعداد في اليوم (٢٠ عامل، ٣ مراقبين) وبيغذّي التقارير
+ * والإحصائيات؛ ودا بيسجّل **مين** حضر بالاسم. الشيت اللي المقاول بيسلّمه
+ * أسماء، والأعداد بتتحسب منه.
+ */
+@Serializable
+@Entity(tableName = "attendance_roster", indices = [Index(value = ["fileId"])])
+data class AttendanceRosterEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fileId: Long,
+    val name: String,
+    /** رقم العامل عند المقاول — بيتطبع في الشيت وبيتقارن بيه. */
+    val code: String = "",
+    val trade: String = "",
+    /** ترتيب الصف زي ما هو في شيت المقاول، عشان المراجعة تبقى سطر بسطر. */
+    val ordinal: Int = 0,
+    val createdAt: Long
+)
+
+/**
+ * خلية في الشيت: عامل × يوم.
+ *
+ * **الفاضي مالوش صف.** التلات حالات (حاضر/غايب/فاضي) ممكن تتخزّن كلها،
+ * بس شيت شهر لمية عامل = تلات آلاف خلية أغلبها فاضية. غياب الصف هو
+ * "لسه ما اتسجّلش"، وده الفرق اللي المهندس محتاجه: خانة زرقا فاضية معناها
+ * محدش راجعها، مش معناها العامل غايب.
+ *
+ * [day] رقم `yyyyMMdd` مش طابع زمني: المقارنة والترتيب والنطاقات كلها
+ * بتشتغل عليه بالظبط، ومفيش منطقة زمنية بتزحلق اليوم ساعة ورا أو قدّام.
+ */
+@Serializable
+@Entity(
+    tableName = "attendance_marks",
+    indices = [
+        Index(value = ["rosterId", "day"], unique = true),
+        Index(value = ["fileId", "day"])
+    ]
+)
+data class AttendanceMarkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fileId: Long,
+    val rosterId: Long,
+    /** `yyyyMMdd` */
+    val day: Int,
+    /** PRESENT | ABSENT */
+    val state: String,
+    val updatedAt: Long
+) {
+    companion object {
+        const val PRESENT = "PRESENT"
+        const val ABSENT = "ABSENT"
+    }
+}

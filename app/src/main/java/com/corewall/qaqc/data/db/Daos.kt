@@ -955,3 +955,44 @@ interface WirDao {
     @Query("DELETE FROM wir_items WHERE wirId = :wirId")
     suspend fun clearItems(wirId: Long)
 }
+
+/** شيت الحضور بالأسماء — الصفوف والخلايا. */
+@Dao
+interface AttendanceSheetDao {
+    @Query("SELECT * FROM attendance_roster WHERE fileId = :fileId ORDER BY ordinal, id")
+    fun observeRoster(fileId: Long): Flow<List<AttendanceRosterEntity>>
+
+    @Query("SELECT * FROM attendance_roster ORDER BY fileId, ordinal, id")
+    suspend fun allRoster(): List<AttendanceRosterEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRow(row: AttendanceRosterEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRows(rows: List<AttendanceRosterEntity>)
+
+    @Query("DELETE FROM attendance_roster WHERE id = :id")
+    suspend fun deleteRow(id: Long)
+
+    @Query("DELETE FROM attendance_roster WHERE fileId = :fileId")
+    suspend fun clearRoster(fileId: Long)
+
+    @Query("SELECT * FROM attendance_marks WHERE fileId = :fileId")
+    fun observeMarks(fileId: Long): Flow<List<AttendanceMarkEntity>>
+
+    @Query("SELECT * FROM attendance_marks")
+    suspend fun allMarks(): List<AttendanceMarkEntity>
+
+    /**
+     * الفهرس على (`rosterId`,`day`) فريد، فالاستبدال بيحدّث الخلية
+     * الموجودة بدل ما يزوّد صف تاني لنفس اليوم.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMark(mark: AttendanceMarkEntity)
+
+    @Query("DELETE FROM attendance_marks WHERE rosterId = :rosterId AND day = :day")
+    suspend fun clearMark(rosterId: Long, day: Int)
+
+    @Query("DELETE FROM attendance_marks WHERE fileId = :fileId")
+    suspend fun clearMarks(fileId: Long)
+}

@@ -10,6 +10,7 @@ import com.corewall.qaqc.data.AppSettings
 import com.corewall.qaqc.data.FilesManager
 import com.corewall.qaqc.data.SettingsStore
 import com.corewall.qaqc.data.db.AttendanceFileEntity
+import com.corewall.qaqc.data.db.AttendanceRosterEntity
 import com.corewall.qaqc.data.db.BarCountEntity
 import com.corewall.qaqc.data.db.CommentEntity
 import com.corewall.qaqc.data.db.DailyAttendanceEntity
@@ -21,6 +22,8 @@ import com.corewall.qaqc.data.db.PdfMeasurementEntity
 import com.corewall.qaqc.data.db.PdfScaleEntity
 import com.corewall.qaqc.data.db.SitePhotoEntity
 import com.corewall.qaqc.data.db.TaskEntity
+import com.corewall.qaqc.data.AttendanceSheetImport
+import com.corewall.qaqc.data.SheetReader
 import com.corewall.qaqc.data.db.WirEntity
 import com.corewall.qaqc.data.db.WirItemEntity
 import com.corewall.qaqc.pdfengine.PdfOps
@@ -776,6 +779,69 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     else "اتشارك الملف من غير آخر تأشير"
                 )
             }
+        }
+    }
+
+    // -------- شيت الحضور بالأسماء --------
+
+    fun attendanceRoster(fileId: Long) = repo.attendanceRoster(fileId)
+    fun attendanceMarks(fileId: Long) = repo.attendanceMarks(fileId)
+
+    fun setAttendanceMark(fileId: Long, rosterId: Long, day: Int, state: String?) {
+        viewModelScope.launch { repo.setAttendanceMark(fileId, rosterId, day, state) }
+    }
+
+    fun addRosterRow(fileId: Long, name: String, code: String, trade: String, ordinal: Int) {
+        val clean = name.trim()
+        if (clean.isBlank()) return
+        viewModelScope.launch {
+            repo.addRosterRow(
+                AttendanceRosterEntity(
+                    fileId = fileId, name = clean, code = code.trim(), trade = trade.trim(),
+                    ordinal = ordinal, createdAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun deleteRosterRow(id: Long) {
+        viewModelScope.launch { repo.deleteRosterRow(id) }
+    }
+
+    /**
+     * استيراد شيت المقاول (xlsx أو csv) لصفوف الحضور.
+     *
+     * الملف بيتنسخ جنب البروفايل الأول: الرابط اللي منتقّى من نافذة النظام
+     * صلاحيته مؤقّتة، وبعد إعادة التشغيل بيبقى مالوش معنى.
+     *
+     * **بيستبدل الشيت كله** مش بيضيف عليه: المقاول بيسلّم كشف جديد كل
+     * فترة، والدمج التلقائي بينتج أسماء مكررة باختلاف حرف أو مسافة.
+     */
+    fun importRoster(fileId: Long, uri: android.net.Uri, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val stored = files.importUris(listOf(uri), files.attendanceSheetsDir()).firstOrNull()
+                        ?: error("مقدرناش ننسخ الملف")
+                    val sheet = SheetReader.read(stored).getOrThrow()
+                    if (sheet.isEmpty) error("الشيت فاضي")
+                    val rows = AttendanceSheetImport.rowsFrom(sheet, fileId)
+                    if (rows.isEmpty()) {
+                        error("مالقيناش عمود فيه أسماء — لازم يكون فيه عمود اسمه «الاسم» أو Name")
+                    }
+                    repo.replaceRoster(fileId, rows)
+                    attendanceFiles.value.firstOrNull { it.id == fileId }?.let { profile ->
+                        repo.saveAttendanceFile(profile.copy(sheetPath = stored.absolutePath))
+                    }
+                    rows.size
+                }
+            }
+            onDone(
+                outcome.fold(
+                    onSuccess = { "اتقرا $it اسم من الشيت" },
+                    onFailure = { "الاستيراد فشل: ${it.message ?: "خطأ غير معروف"}" }
+                )
+            )
         }
     }
 

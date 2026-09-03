@@ -3,6 +3,8 @@ package com.corewall.qaqc.data
 import android.content.Context
 import com.corewall.qaqc.data.db.AppDatabase
 import com.corewall.qaqc.data.db.AttendanceFileEntity
+import com.corewall.qaqc.data.db.AttendanceMarkEntity
+import com.corewall.qaqc.data.db.AttendanceRosterEntity
 import com.corewall.qaqc.data.db.BarCountEntity
 import com.corewall.qaqc.data.db.CommentEntity
 import com.corewall.qaqc.data.db.DailyAttendanceEntity
@@ -384,6 +386,49 @@ class AppRepository(context: Context) {
             db.pdfScaleDao().upsert(scale.copy(filePath = toPath, page = toPage))
         }
         return measurements.size
+    }
+
+    // ---------- شيت الحضور بالأسماء ----------
+
+    fun attendanceRoster(fileId: Long): Flow<List<AttendanceRosterEntity>> =
+        db.attendanceSheetDao().observeRoster(fileId)
+
+    fun attendanceMarks(fileId: Long): Flow<List<AttendanceMarkEntity>> =
+        db.attendanceSheetDao().observeMarks(fileId)
+
+    suspend fun addRosterRow(row: AttendanceRosterEntity): Long =
+        db.attendanceSheetDao().upsertRow(row)
+
+    suspend fun addRosterRows(rows: List<AttendanceRosterEntity>) =
+        db.attendanceSheetDao().upsertRows(rows)
+
+    suspend fun deleteRosterRow(id: Long) = db.attendanceSheetDao().deleteRow(id)
+
+    suspend fun replaceRoster(fileId: Long, rows: List<AttendanceRosterEntity>) {
+        // الخلايا بتتمسح مع الصفوف: علامة حضور مربوطة بصف اتشال بتفضل
+        // في القاعدة للأبد من غير ما حد يشوفها.
+        db.attendanceSheetDao().clearMarks(fileId)
+        db.attendanceSheetDao().clearRoster(fileId)
+        db.attendanceSheetDao().upsertRows(rows)
+    }
+
+    /** `null` بيمسح الخلية — ودي حالة "لسه ما اتراجعتش" مش "غايب". */
+    suspend fun setAttendanceMark(
+        fileId: Long,
+        rosterId: Long,
+        day: Int,
+        state: String?
+    ) {
+        if (state == null) {
+            db.attendanceSheetDao().clearMark(rosterId, day)
+        } else {
+            db.attendanceSheetDao().upsertMark(
+                AttendanceMarkEntity(
+                    fileId = fileId, rosterId = rosterId, day = day,
+                    state = state, updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
     }
 
     // ---------- Manpower (ملفات الحضور + السجلات اليومية) ----------
