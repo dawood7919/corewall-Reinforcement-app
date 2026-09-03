@@ -1,0 +1,5 @@
+{
+  "com.corewall.qaqc":         { "versionCode": 121, "versionName": "11.70",          "url": "https://github.com/dawood7919/corewall-Reinforcement-app/releases/download/latest-debug/app-debug.apk" },
+  "com.corewall.qaqc.takeoff": { "versionCode": 121, "versionName": "11.70-takeoff",  "url": "https://github.com/dawood7919/corewall-Reinforcement-app/releases/download/latest-debug/app-takeoff-debug.apk" },
+  "commit": "bea3925"
+}
