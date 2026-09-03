@@ -1,0 +1,54 @@
+commit: bea3925
+gradle exit: 0
+
+── الملفات المتولّدة ──
+total 228
+drwxr-xr-x  2 runner runner  4096 Sep  3 09:46 .
+drwxr-xr-x 11 runner runner  4096 Sep  3 09:46 ..
+-rw-r--r--  1 runner runner 58759 Sep  3 09:46 pdf-toolbar-drawing.png
+-rw-r--r--  1 runner runner 63232 Sep  3 09:46 pdf-toolbar-selection.png
+-rw-r--r--  1 runner runner    80 Sep  3 09:46 report.txt
+-rw-r--r--  1 runner runner 52639 Sep  3 09:46 wir-card-long-name.png
+-rw-r--r--  1 runner runner 40741 Sep  3 09:46 wir-card-short.png
+
+── آخر ٤٠ سطر من جريدل ──
+> Task :app:packageFullDebugResources UP-TO-DATE
+> Task :app:parseFullDebugLocalResources UP-TO-DATE
+> Task :app:createFullDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksFullDebug UP-TO-DATE
+> Task :app:processFullDebugMainManifest UP-TO-DATE
+> Task :app:processFullDebugManifest UP-TO-DATE
+> Task :app:processFullDebugManifestForPackage UP-TO-DATE
+> Task :app:processFullDebugResources UP-TO-DATE
+> Task :app:kspFullDebugKotlin UP-TO-DATE
+> Task :app:compileFullDebugKotlin UP-TO-DATE
+> Task :app:javaPreCompileFullDebug UP-TO-DATE
+> Task :app:compileFullDebugJavaWithJavac UP-TO-DATE
+> Task :app:bundleFullDebugClassesToRuntimeJar UP-TO-DATE
+> Task :app:bundleFullDebugClassesToCompileJar UP-TO-DATE
+> Task :app:kspFullDebugUnitTestKotlin UP-TO-DATE
+> Task :app:compileFullDebugUnitTestKotlin UP-TO-DATE
+> Task :app:preFullDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileFullDebugUnitTest UP-TO-DATE
+> Task :app:compileFullDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:mergeFullDebugShaders UP-TO-DATE
+> Task :app:compileFullDebugShaders NO-SOURCE
+> Task :app:generateFullDebugAssets UP-TO-DATE
+> Task :app:mergeFullDebugAssets UP-TO-DATE
+> Task :app:packageFullDebugUnitTestForUnitTest UP-TO-DATE
+> Task :app:generateFullDebugUnitTestConfig UP-TO-DATE
+> Task :app:processFullDebugJavaRes UP-TO-DATE
+> Task :app:processFullDebugUnitTestJavaRes UP-TO-DATE
+> Task :app:testFullDebugUnitTest
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_12-1788428769563.json
+
+[Incubating] Problems report is available at: file:///home/runner/work/corewall-Reinforcement-app/corewall-Reinforcement-app/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 17s
+30 actionable tasks: 1 executed, 29 up-to-date
