@@ -454,6 +454,27 @@ object PdfOps {
             PdfAnnotationEntity.TOOL_RECT -> square(points, border, width, cloudy = false)
             PdfAnnotationEntity.TOOL_CLOUD -> square(points, border, width, cloudy = true)
 
+            /**
+             * التظليل **مستطيل مملوء**، مش خط.
+             *
+             * كان بيقع في فرع `else` مع القلم والماركر فبيتصدّر `Ink` —
+             * والتظليل نقطتين بس (ركن وركن)، يعني الناتج كان **خط قطري
+             * واحد** جوّه مستطيل كبير. في التطبيق بيبان تظليل، وفي الملف
+             * اللي بيتبعت بيبان شخبطة رفيعة.
+             *
+             * `interiorColor` هو الحشو؛ والحدّ بصفر عشان الشكل يطابق اللي
+             * الشاشة بترسمه بالظبط — مساحة ملوّنة من غير إطار.
+             */
+            PdfAnnotationEntity.TOOL_HIGHLIGHT ->
+                PDAnnotationSquareCircle(PDAnnotationSquareCircle.SUB_TYPE_SQUARE).apply {
+                    interiorColor = rgb(entity.color)
+                    borderStyle = PDBorderStyleDictionary().apply {
+                        style = PDBorderStyleDictionary.STYLE_SOLID
+                        this.width = 0f
+                    }
+                    rectangle = boundsOf(points, 0f)
+                }
+
             PdfAnnotationEntity.TOOL_CIRCLE ->
                 PDAnnotationSquareCircle(PDAnnotationSquareCircle.SUB_TYPE_CIRCLE).apply {
                     borderStyle = border

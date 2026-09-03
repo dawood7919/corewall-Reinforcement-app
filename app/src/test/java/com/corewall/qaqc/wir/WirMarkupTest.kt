@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.corewall.qaqc.data.db.PdfAnnotationEntity
 import com.corewall.qaqc.pdfengine.PdfOps
 import com.corewall.qaqc.pdfengine.WirPdf
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
@@ -109,6 +110,56 @@ class WirMarkupTest {
             assertEquals(2, doc.numberOfPages)
             assertTrue("الصفحة الأولى فقدت تأشيرها", doc.getPage(0).annotations.isNotEmpty())
             assertTrue("الصفحة الجديدة وصلت من غير تأشير", doc.getPage(1).annotations.isNotEmpty())
+        }
+    }
+
+    /**
+     * كل أداة لازم تتصدّر بالشكل الصح في الـPDF.
+     *
+     * التظليل كان بيتصدّر `Ink` — وهو نقطتين بس (ركن وركن)، فالناتج كان
+     * **خط قطري واحد** بدل مستطيل مملوء. في التطبيق كان شكله سليم، وفي
+     * الملف اللي بيوصل للاستشاري بيبان شخبطة رفيعة. الفرق ده مايبانش غير
+     * لما تفتح الملف المُصدَّر نفسه — وده اللي الاختبار ده بيعمله.
+     */
+    @Test
+    fun `each tool exports as the right kind of pdf annotation`() = runBlocking {
+        val expected = mapOf(
+            PdfAnnotationEntity.TOOL_HIGHLIGHT to "Square",
+            PdfAnnotationEntity.TOOL_RECT to "Square",
+            PdfAnnotationEntity.TOOL_CLOUD to "Square",
+            PdfAnnotationEntity.TOOL_CIRCLE to "Circle",
+            PdfAnnotationEntity.TOOL_LINE to "Line",
+            PdfAnnotationEntity.TOOL_ARROW to "Line",
+            PdfAnnotationEntity.TOOL_FREEHAND to "Ink",
+            PdfAnnotationEntity.TOOL_MARKER to "Ink"
+        )
+        expected.forEach { (tool, subtype) ->
+            val dest = File(dir, "shape-$tool.pdf")
+            WirPdf.appendPage(
+                source = source, page = 0, dest = dest, workDir = dir,
+                markup = listOf(mark(0, tool)), pointsOf = { points }
+            ).getOrThrow()
+            PDDocument.load(dest).use { doc ->
+                val annots = doc.getPage(0).annotations
+                assertEquals("$tool: عدد التعليقات", 1, annots.size)
+                assertEquals("$tool اتصدّر بالشكل الغلط", subtype, annots[0].subtype)
+            }
+            dest.delete()
+        }
+    }
+
+    /** التظليل مساحة ملوّنة — من غير حشو بيبان إطار فاضي أو لا شيء. */
+    @Test
+    fun `a highlight carries an interior colour`() = runBlocking {
+        val dest = File(dir, "highlight-fill.pdf")
+        WirPdf.appendPage(
+            source = source, page = 0, dest = dest, workDir = dir,
+            markup = listOf(mark(0, PdfAnnotationEntity.TOOL_HIGHLIGHT)), pointsOf = { points }
+        ).getOrThrow()
+        PDDocument.load(dest).use { doc ->
+            val annot = doc.getPage(0).annotations.first()
+            val interior = annot.cosObject.getDictionaryObject(COSName.getPDFName("IC"))
+            assertTrue("التظليل اتصدّر من غير لون حشو", interior != null)
         }
     }
 
